@@ -2,7 +2,7 @@
 ![WynnVistaicon](https://github.com/user-attachments/assets/c24c317a-d54f-41b8-9932-9d56e3fc5469)
 
 
-WynnVista is a Minecraft mod designed to enhance the gameplay experience on the Wynncraft server by automatically adjusting the render distance of the Distant Horizons mod. Made for my modpack [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft)
+The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay experience on the Wynncraft server by automatically adjusting the render distance of the Distant Horizons mod. Made for my modpack [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft)
 
 ## What's Up
 
