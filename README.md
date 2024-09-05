@@ -39,7 +39,7 @@ Once installed, the mod will work automatically when you join Wynncraft. You'll 
 
 ## Go Ham
 
-- I don't know nothing about java so if you wanna pull request and fix this up go ham.
+- I don't know nothing about java so if you wanna fork this and fix this up go ham.
 - Feel free to use this in your modpack
 
 ## License
