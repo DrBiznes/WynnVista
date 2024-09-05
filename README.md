@@ -1,5 +1,6 @@
 # WynnVista
-![WynnVistalogoLarge](https://github.com/user-attachments/assets/a15ce380-5645-41f4-b780-72c07aa7521c)
+![WynnVistaicon](https://github.com/user-attachments/assets/c24c317a-d54f-41b8-9932-9d56e3fc5469)
+
 
 WynnVista is a Minecraft mod designed to enhance the gameplay experience on the Wynncraft server by automatically adjusting the render distance of the Distant Horizons mod. Made for my modpack [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft)
 
