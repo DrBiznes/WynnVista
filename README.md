@@ -34,7 +34,7 @@ Once installed, the mod will work automatically when you join the Wynncraft serv
 - Minecraft 1.21
 - Fabric Loader 0.16.0 or higher
 - Fabric API
-- Distant Horizons mod 2.2 or higher
+- Distant Horizons 2.2 or higher
 - Mod Menu
 
 ## Contributing
