@@ -27,7 +27,7 @@ You can configure WynnVista using Mod Menu. The following options are available:
 
 ## Usage
 
-Once installed, the mod will work automatically when you join the Wynncraft server. You'll see a message when entering or leaving the main Wynncraft map area, and the LOD render distance will adjust to whatever you set in the config (default 16). Once you return to the main map your LOD render distance will go back to normal.
+Once installed, the mod will work automatically when you join Wynncraft. You'll see a message when entering or leaving the main Wynncraft map area, and the LOD render distance will adjust to whatever you set in the config (default 16). Once you return to the main map your LOD render distance will go back to normal.
 
 ## Requirements
 
@@ -37,9 +37,10 @@ Once installed, the mod will work automatically when you join the Wynncraft serv
 - Distant Horizons 2.2 or higher
 - Mod Menu
 
-## Contributing
+## Go Ham
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+- I don't know nothing about java so if you wanna pull request and fix this up go ham.
+- Feel free to use this in your modpack
 
 ## License
 
