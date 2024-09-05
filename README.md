@@ -14,7 +14,7 @@ The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay
 ## Installation
 
 1. Make sure you have Fabric Loader and Fabric API installed
-2. Download and install version 2.2 or higher of the Distant Horizons mod
+2. Download and install version 2.2 or higher of Distant Horizons
 3. Download the latest version of WynnVista from the releases page
 4. Place the downloaded .jar file in your Minecraft mods folder
 
