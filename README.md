@@ -12,20 +12,20 @@ WynnVista is a Minecraft mod designed to enhance the gameplay experience on the 
 ## Installation
 
 1. Make sure you have Fabric Loader and Fabric API installed
-2. Download and install the Distant Horizons mod
-3. Download the latest version of WynnDHLimiter from the releases page
+2. Download and install version 2.2 or higher of the Distant Horizons mod
+3. Download the latest version of WynnVista from the releases page
 4. Place the downloaded .jar file in your Minecraft mods folder
 
 ## Configuration
 
-You can configure WynnDHLimiter using Mod Menu. The following options are available:
+You can configure WynnVista using Mod Menu. The following options are available:
 
 - Show In-Game Messages: Toggle whether to display messages when the mod enables itself
 - Reduced Render Distance: Set the render distance for areas outside the Wynncraft map (12-36 chunks to avoid rendering issues)
 
 ## Usage
 
-Once installed, the mod will work automatically when you join the Wynncraft server. You'll see a message when entering or leaving the Wynncraft map area, and the render distance will adjust accordingly.
+Once installed, the mod will work automatically when you join the Wynncraft server. You'll see a message when entering or leaving the main Wynncraft map area, and the LOD render distance will adjust accordingly.
 
 ## Requirements
 
