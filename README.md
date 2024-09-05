@@ -1,11 +1,11 @@
-# Wynncraft Distant Horizons Limiter
+# WynnVista
 
-WynnDHLimiter is a Minecraft mod designed to enhance the gameplay experience on the Wynncraft server by automatically adjusting the render distance of the Distant Horizons mod.
+WynnVista is a Minecraft mod designed to enhance the gameplay experience on the Wynncraft server by automatically adjusting the render distance of the Distant Horizons mod. Made for my modpack [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft)
 
 ## Features
 
 - Automagically adjusts Distant Horizons render distance based on player location
-- Remembers your LOD render distance and returns the DH config to normal when re-entering to the Wynncraft map
+- Remembers your LOD render distance and returns the DH config to normal when re-entering the Wynncraft map
 - Decreases render distance when outside the Wynncraft map to improve immersion
 - Configurable settings via Mod Menu
 
