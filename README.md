@@ -27,7 +27,7 @@ You can configure WynnVista using Mod Menu. The following options are available:
 
 ## Usage
 
-Once installed, the mod will work automatically when you join the Wynncraft server. You'll see a message when entering or leaving the main Wynncraft map area, and the LOD render distance will adjust accordingly.
+Once installed, the mod will work automatically when you join the Wynncraft server. You'll see a message when entering or leaving the main Wynncraft map area, and the LOD render distance will adjust to whatever you set in the config (default 16). Once you return to the main map your LOD render distance will go back to normal.
 
 ## Requirements
 
