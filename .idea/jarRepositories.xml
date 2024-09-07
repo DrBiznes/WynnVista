@@ -56,5 +56,10 @@
       <option name="name" value="maven2" />
       <option name="url" value="https://maven.shedaniel.me/" />
     </remote-repository>
+    <remote-repository>
+      <option name="id" value="LoomGlobalMinecraft" />
+      <option name="name" value="LoomGlobalMinecraft" />
+      <option name="url" value="file:/$PROJECT_DIR$/../../Users/Jam%20Femino/.gradle/caches/fabric-loom/minecraftMaven/" />
+    </remote-repository>
   </component>
 </project>

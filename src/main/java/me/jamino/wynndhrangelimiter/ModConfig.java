@@ -39,13 +39,11 @@ public class ModConfig implements ModMenuApi {
         return config.reducedRenderDistance;
     }
 
-    public static int getOriginalRenderDistance() {
-        return config.originalRenderDistance;
-    }
-
     public static void setOriginalRenderDistance(int distance) {
-        config.originalRenderDistance = distance;
-        saveConfig();
+        if (config.originalRenderDistance != distance) {
+            config.originalRenderDistance = distance;
+            saveConfig();
+        }
     }
 
     private static void loadConfig() {
