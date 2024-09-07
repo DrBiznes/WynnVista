@@ -2,13 +2,13 @@
   "schemaVersion": 1,
   "id": "wynn-dh-range-limiter",
   "version": "${version}",
-  "name": "Wynn DH Range Limiter",
+  "name": "WynnVista",
   "description": "Automagically lowers the Distant Horizons render distance when outside the Wynncraft map.",
   "authors": [
     "DrBiznes"
   ],
   "contact": {
-    "sources": "https://github.com/bob10234/WynnDHLimiter"
+    "sources": "https://github.com/bob10234/WynnVista"
   },
   "license": "MIT",
   "icon": "wynnvista/icon.png",

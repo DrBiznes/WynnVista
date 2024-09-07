@@ -17,7 +17,9 @@ import java.io.IOException;
 
 public class ModConfig implements ModMenuApi {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "wynn-dh-range-limiter.json");
+
+    // Updated the config file name to be "WynnVista"
+    private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "WynnVista.json");
 
     private static Config config;
 
@@ -68,12 +70,13 @@ public class ModConfig implements ModMenuApi {
         }
     }
 
+    // Updated the Mod Menu name to "WynnVista"
     @Override
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
         return parent -> {
             ConfigBuilder builder = ConfigBuilder.create()
                     .setParentScreen(parent)
-                    .setTitle(Text.literal("Wynn DH Range Limiter Config"));
+                    .setTitle(Text.literal("WynnVista Config"));
 
             ConfigCategory general = builder.getOrCreateCategory(Text.literal("General"));
 
