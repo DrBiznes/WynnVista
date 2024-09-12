@@ -8,7 +8,9 @@
     "DrBiznes"
   ],
   "contact": {
-    "sources": "https://github.com/bob10234/WynnVista"
+    "sources": "https://github.com/bob10234/WynnVista",
+    "homepage": "https://modrinth.com/mod/wynnvista",
+    "issues": "https://github.com/bob10234/WynnVista/issues"
   },
   "license": "MIT",
   "icon": "wynnvista/icon.png",
@@ -28,5 +30,12 @@
     "java": ">=17",
     "modmenu": "*",
     "cloth-config": "*"
+  },
+  "custom": {
+    "modmenu": {
+      "links": {
+        "modmenu.discord": "https://discord.gg/jqFF64rXZZ"
+      }
+    }
   }
 }
