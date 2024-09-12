@@ -44,7 +44,7 @@ Once installed, the mod will work automatically when you join Wynncraft. You'll 
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE.txt) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
