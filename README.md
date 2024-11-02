@@ -51,6 +51,17 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Thanks to the Distant Horizons team for their amazing mod
 - Thanks to the Wynncraft team for creating an awesome MMORPG experience in Minecraft
 
-## Support
+## Support and My Mods
+Please report any bugs or feature suggestions on the Github Issues page, I'll be updating this frequently with community feedback and ideas! You can also [join my discord](https://discord.gg/jqFF64rXZZ) if you need direct support, or want to stay updated with all of my mods.
+### Check out all my projects!
+>   [World of Wynncraft Modpack](https://modrinth.com/modpack/world-of-wynncraft)
 
-If you encounter any issues or have any questions, please open an issue on the GitHub repository.
+>   [WynnVista](https://modrinth.com/mod/wynnvista)
+
+>   [Wynn Weapon Bigger](https://modrinth.com/mod/wynnweaponbigger)
+
+>   [Nimble ReWynnded](https://modrinth.com/mod/nimble-rewynnded)
+
+>   [Class Keybind Profiles](https://modrinth.com/mod/class-keybind-profiles)
+
+>   [WynnBubbles](https://modrinth.com/mod/wynnbubbles)
