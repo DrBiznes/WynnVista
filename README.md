@@ -42,10 +42,6 @@ Once installed, the mod will work automatically when you join Wynncraft. You'll 
 - I don't know nothing about java so if you wanna fork this and fix this up go ham.
 - Feel free to use this in your modpack
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 ## Acknowledgments
 
 - Thanks to the Distant Horizons team for their amazing mod
