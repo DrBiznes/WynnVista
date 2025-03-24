@@ -28,10 +28,10 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Distant Horizons API
-    implementation "maven.modrinth:DistantHorizonsApi:2.1.0"
+    implementation "maven.modrinth:DistantHorizonsApi:4.0.0"
 
     // Distant Horizons mod (runtime only)
-    modRuntimeOnly "maven.modrinth:DistantHorizons:2.1.2-a-1.21"
+    modRuntimeOnly "maven.modrinth:DistantHorizons:2.3.0-b-1.21.4"
 
     // ModMenu
     modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
