@@ -29,7 +29,7 @@
     "minecraft": "~1.21",
     "java": ">=17",
     "cloth-config": "*",
-    "distant-horizons": "*"
+    "distanthorizons": "*"
   },
   "custom": {
     "modmenu": {
