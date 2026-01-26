@@ -3,7 +3,7 @@
   "id": "wynn-dh-range-limiter",
   "version": "${version}",
   "name": "WynnVista",
-  "description": "Automagically lowers the Distant Horizons render distance when outside the Wynncraft map.",
+  "description": "Automagically lowers the LOD render distance (Distant Horizons or Voxy) when outside the Wynncraft map.",
   "authors": [
     "DrBiznes"
   ],
@@ -28,8 +28,11 @@
     "fabric-api": "*",
     "minecraft": "~1.21",
     "java": ">=17",
-    "cloth-config": "*",
-    "distanthorizons": "*"
+    "cloth-config": "*"
+  },
+  "suggests": {
+    "distanthorizons": "*",
+    "voxy": "*"
   },
   "custom": {
     "modmenu": {

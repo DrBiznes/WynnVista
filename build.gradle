@@ -27,11 +27,17 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    // Distant Horizons API
-    implementation "maven.modrinth:DistantHorizonsApi:4.0.0"
+    // Distant Horizons API (optional - compile only)
+    compileOnly "maven.modrinth:DistantHorizonsApi:${project.dh_api_version}"
 
-    // Distant Horizons mod (runtime only)
-    modRuntimeOnly "maven.modrinth:DistantHorizons:2.3.0-b-1.21.4"
+    // Distant Horizons mod (runtime only for testing)
+    // modRuntimeOnly "maven.modrinth:DistantHorizons:${project.dh_mod_version}"
+
+    // Voxy (optional - compile only)
+    compileOnly "maven.modrinth:voxy:${project.voxy_version}"
+
+    // Voxy mod (runtime only for testing) - uncomment to test with Voxy instead of DH
+    modRuntimeOnly "maven.modrinth:voxy:${project.voxy_version}"
 
     // ModMenu
     modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"

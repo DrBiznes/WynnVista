@@ -1,45 +1,62 @@
 package me.jamino.wynndhrangelimiter;
 
+import me.jamino.wynndhrangelimiter.controller.DistantHorizonsController;
+import me.jamino.wynndhrangelimiter.controller.IRenderDistanceController;
+import me.jamino.wynndhrangelimiter.controller.VoxyController;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.text.Text;
-import com.seibel.distanthorizons.api.DhApi;
-import com.seibel.distanthorizons.api.methods.events.DhApiEventRegister;
-import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiAfterDhInitEvent;
-import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiEventParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class WynnVistaMod {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
+
+    private IRenderDistanceController controller;
     private boolean isOnServer = false;
     private int originalRenderDistance;
-    private boolean hasInitialized = false;
-    private long joinTimestamp = 0;  // Tracks the time when the player joined
+    private long joinTimestamp = 0;
 
     void initialize() {
-        DhApiEventRegister.on(DhApiAfterDhInitEvent.class, new DhApiAfterDhInitEvent() {
-            @Override
-            public void afterDistantHorizonsInit(DhApiEventParam<Void> event) {
-                onAfterDhInit();
-            }
-        });
+        // Detect which LOD mod is installed
+        boolean hasDH = FabricLoader.getInstance().isModLoaded("distanthorizons");
+        boolean hasVoxy = FabricLoader.getInstance().isModLoaded("voxy");
+
+        if (hasDH) {
+            LOGGER.info("Distant Horizons detected, using DH controller");
+            controller = new DistantHorizonsController();
+        } else if (hasVoxy) {
+            LOGGER.info("Voxy detected, using Voxy controller");
+            controller = new VoxyController();
+        } else {
+            LOGGER.warn("No supported LOD mod detected (Distant Horizons or Voxy). WynnVista will be disabled.");
+            return;
+        }
+
+        controller.initialize(this::onControllerInitialized);
     }
 
-    private void onAfterDhInit() {
-        LOGGER.info("Distant Horizons initialized. Mod version: " + DhApi.getModVersion());
-        originalRenderDistance = DhApi.Delayed.configs.graphics().chunkRenderDistance().getValue();
-        ModConfig.setOriginalRenderDistance(originalRenderDistance);
-        hasInitialized = true;
+    private void onControllerInitialized() {
+        LOGGER.info("{} initialized successfully", controller.getModName());
+        int currentDistance = controller.getRenderDistance();
+        boolean wasFirstRun = ModConfig.isFirstRun();
+        // Only capture on first run, otherwise use the saved value from config
+        originalRenderDistance = ModConfig.initializeMaxRenderDistance(currentDistance);
+        if (wasFirstRun) {
+            LOGGER.info("First run - captured max render distance: {}", originalRenderDistance);
+        } else {
+            LOGGER.info("Using saved max render distance: {}", originalRenderDistance);
+        }
     }
 
     void onPlayerJoin(MinecraftClient client) {
-        if (!hasInitialized) return;
+        if (controller == null || !controller.isInitialized()) return;
 
         isOnServer = client.getCurrentServerEntry() != null && !client.isIntegratedServerRunning();
         LOGGER.info("Player joined " + (isOnServer ? "a server" : "singleplayer"));
         if (isOnServer) {
-            joinTimestamp = System.currentTimeMillis();  // Record the time when the player joins
-            checkAndUpdateRenderDistance(client, true);  // Perform an initial check without sending messages
+            joinTimestamp = System.currentTimeMillis();
+            checkAndUpdateRenderDistance(client, true);
         }
     }
 
@@ -48,8 +65,8 @@ public class WynnVistaMod {
     }
 
     void onClientTick(MinecraftClient client) {
-        if (isOnServer && client.player != null && hasInitialized) {
-            checkAndUpdateRenderDistance(client, false);  // Normal checks after joining
+        if (controller != null && isOnServer && client.player != null && controller.isInitialized()) {
+            checkAndUpdateRenderDistance(client, false);
         }
     }
 
@@ -63,11 +80,13 @@ public class WynnVistaMod {
         double z = client.player.getZ();
         boolean withinWynnRange = x >= -2512 && x <= 1553 && z >= -5774 && z <= -207;
 
+        // Use config values directly so changes in GUI take effect immediately
+        int maxDistance = ModConfig.getMaxRenderDistance();
         int targetRenderDistance = withinWynnRange ?
-                originalRenderDistance : ModConfig.getReducedRenderDistance();
+                (maxDistance > 0 ? maxDistance : originalRenderDistance) : ModConfig.getReducedRenderDistance();
 
-        if (DhApi.Delayed.configs.graphics().chunkRenderDistance().getValue() != targetRenderDistance) {
-            DhApi.Delayed.configs.graphics().chunkRenderDistance().setValue(targetRenderDistance);
+        if (controller.getRenderDistance() != targetRenderDistance) {
+            controller.setRenderDistance(targetRenderDistance);
 
             // Suppress messages for the first 1 second after joining
             if (!initialCheck && ModConfig.shouldShowMessage() && System.currentTimeMillis() - joinTimestamp > 1000) {
@@ -78,7 +97,11 @@ public class WynnVistaMod {
 
     private void resetState() {
         isOnServer = false;
-        DhApi.Delayed.configs.graphics().chunkRenderDistance().setValue(originalRenderDistance);
-        LOGGER.info("Reset mod state and restored original render distance");
+        if (controller != null && controller.isInitialized()) {
+            int maxDistance = ModConfig.getMaxRenderDistance();
+            int restoreDistance = maxDistance > 0 ? maxDistance : originalRenderDistance;
+            controller.onDisconnect(restoreDistance);
+            LOGGER.info("Reset mod state and restored render distance to {}", restoreDistance);
+        }
     }
 }
