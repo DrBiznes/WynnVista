@@ -39,4 +39,12 @@ public interface IRenderDistanceController {
     default void onDisconnect(int originalDistance) {
         setRenderDistance(originalDistance);
     }
+
+    /**
+     * Called every client tick. Used for controllers that need periodic updates
+     * (e.g., waiting for delayed initialization).
+     */
+    default void tick() {
+        // Default implementation does nothing
+    }
 }

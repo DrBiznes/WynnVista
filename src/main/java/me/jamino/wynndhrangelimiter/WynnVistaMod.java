@@ -47,15 +47,31 @@ public class WynnVistaMod {
         } else {
             LOGGER.info("Using saved max render distance: {}", originalRenderDistance);
         }
+
+        // Check if we're already on a server (player joined before controller initialized)
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client != null && client.player != null && isOnServer) {
+            LOGGER.info("Controller initialized while on server - applying initial render distance");
+            checkAndUpdateRenderDistance(client, true);
+        }
     }
 
     void onPlayerJoin(MinecraftClient client) {
-        if (controller == null || !controller.isInitialized()) return;
-
+        // Always track whether we're on a server, even if controller isn't ready
         isOnServer = client.getCurrentServerEntry() != null && !client.isIntegratedServerRunning();
         LOGGER.info("Player joined " + (isOnServer ? "a server" : "singleplayer"));
+
         if (isOnServer) {
             joinTimestamp = System.currentTimeMillis();
+        }
+
+        // Only update render distance if controller is ready
+        if (controller == null || !controller.isInitialized()) {
+            LOGGER.info("Controller not ready yet, will update render distance when initialized");
+            return;
+        }
+
+        if (isOnServer) {
             checkAndUpdateRenderDistance(client, true);
         }
     }
@@ -65,7 +81,13 @@ public class WynnVistaMod {
     }
 
     void onClientTick(MinecraftClient client) {
-        if (controller != null && isOnServer && client.player != null && controller.isInitialized()) {
+        if (controller == null) return;
+
+        // Always tick the controller (needed for Voxy's delayed initialization)
+        controller.tick();
+
+        // Only check render distance if initialized and on server
+        if (isOnServer && client.player != null && controller.isInitialized()) {
             checkAndUpdateRenderDistance(client, false);
         }
     }
