@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter.controller;
 
+import me.jamino.wynndhrangelimiter.util.VoxyVisibilityHandler;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,8 +14,9 @@ public class VoxyController implements IRenderDistanceController {
     private int liveAppliedDistance = -1;      // What we've actually applied to the live system (in chunks)
     private Runnable initCallback;
     private int initCheckTicks = 0;
-    private static final int INIT_DELAY_TICKS = 100; // Wait ~5 seconds before first check
-    private static final int MAX_INIT_TICKS = 1500;  // Give up after ~75 seconds (Voxy can take 30+ sec)
+    private boolean playerJoined = false;      // Track if player has joined a world
+    private static final int INIT_DELAY_TICKS = 100; // Wait ~5 seconds after player joins before first check
+    private static final int MAX_INIT_TICKS = 600;   // Give up after ~30 seconds from player join
 
     // Voxy uses a MUCH larger scale: 1 Voxy section = 32 chunks (observed behavior)
     // This is different from what documentation suggests - empirically determined
@@ -23,8 +25,21 @@ public class VoxyController implements IRenderDistanceController {
     @Override
     public void initialize(Runnable callback) {
         this.initCallback = callback;
-        // Don't mark as initialized yet - we'll do that once VoxyRenderSystem is available
-        LOGGER.info("Voxy controller waiting for VoxyRenderSystem to become available...");
+        // Don't start checking yet - wait until player joins a world
+        LOGGER.info("Voxy controller created - will initialize when player joins a world");
+    }
+
+    /**
+     * Called when the player joins a server/world.
+     * Starts the VoxyRenderSystem availability checks.
+     */
+    @Override
+    public void onPlayerJoinWorld() {
+        if (!playerJoined) {
+            playerJoined = true;
+            initCheckTicks = 0; // Reset tick counter
+            LOGGER.info("Player joined world - starting Voxy initialization checks");
+        }
     }
 
     /**
@@ -34,8 +49,22 @@ public class VoxyController implements IRenderDistanceController {
     public void tick() {
         if (initialized) {
             // Already initialized, check if we have a pending distance that hasn't been applied to live system
-            if (pendingDistance > 0 && pendingDistance != liveAppliedDistance) {
-                if (VoxyApiWrapper.isSystemAvailable()) {
+            if (pendingDistance != liveAppliedDistance) {
+                // Handle soft hide/show
+                if (pendingDistance <= 0) {
+                    if (VoxyVisibilityHandler.voxyVisible) {
+                        VoxyVisibilityHandler.voxyVisible = false;
+                        liveAppliedDistance = pendingDistance;
+                        cachedDistance = pendingDistance;
+                        LOGGER.info("Applied pending Voxy soft hide");
+                    }
+                } else if (VoxyApiWrapper.isSystemAvailable()) {
+                    // Re-enable visibility if needed
+                    if (!VoxyVisibilityHandler.voxyVisible) {
+                        VoxyVisibilityHandler.voxyVisible = true;
+                        LOGGER.info("Re-enabled Voxy rendering");
+                    }
+
                     // Convert chunks to Voxy sections (divide by 32)
                     int voxySections = Math.max(2, Math.round(pendingDistance / (float) CHUNK_TO_VOXY_SECTION_RATIO));
                     boolean success = VoxyApiWrapper.setRenderDistance(voxySections);
@@ -47,6 +76,11 @@ public class VoxyController implements IRenderDistanceController {
                     }
                 }
             }
+            return;
+        }
+
+        // Don't start checking until player has joined a world
+        if (!playerJoined) {
             return;
         }
 
@@ -63,14 +97,14 @@ public class VoxyController implements IRenderDistanceController {
         }
 
         if (initCheckTicks > MAX_INIT_TICKS) {
-            LOGGER.warn("Voxy system not available after {} ticks, initializing anyway with config-only mode", initCheckTicks);
+            LOGGER.warn("Voxy system not available after {} ticks from player join, initializing anyway with config-only mode", initCheckTicks);
             completeInitialization(false);
             return;
         }
 
         // Check if system is available
         if (VoxyApiWrapper.isSystemAvailable()) {
-            LOGGER.info("VoxyRenderSystem became available after {} ticks", initCheckTicks);
+            LOGGER.info("VoxyRenderSystem became available {} ticks after player joined", initCheckTicks);
             completeInitialization(true);
         }
     }
@@ -104,9 +138,15 @@ public class VoxyController implements IRenderDistanceController {
 
     @Override
     public int getRenderDistance() {
+        // If Voxy is soft-hidden, return 0
+        if (!VoxyVisibilityHandler.voxyVisible) {
+            return 0;
+        }
+
         if (cachedDistance > 0) {
             return cachedDistance;
         }
+
         // Convert Voxy sections back to chunks (multiply by 32)
         int voxySections = VoxyApiWrapper.getRenderDistance();
         return voxySections * CHUNK_TO_VOXY_SECTION_RATIO;
@@ -114,22 +154,37 @@ public class VoxyController implements IRenderDistanceController {
 
     @Override
     public void setRenderDistance(int distanceInChunks) {
-        // Convert chunks to Voxy sections: divide by 32 and round
-        // Use Math.round for proper rounding (0.375 → 0, 0.5 → 1, etc.)
-        int voxySections = Math.max(1, Math.round(distanceInChunks / (float) CHUNK_TO_VOXY_SECTION_RATIO));
-
-        // Voxy has a hard minimum of 2 sections
-        voxySections = Math.max(2, voxySections);
-
-        // Store the chunk distance for comparisons
+        // Store the requested distance for comparisons
         pendingDistance = distanceInChunks;
         cachedDistance = distanceInChunks;
 
-        // Always update the config
-        int beforeSections = VoxyApiWrapper.getRenderDistance();
-        VoxyApiWrapper.setConfigValue(voxySections);
-        int afterSections = VoxyApiWrapper.getRenderDistance();
+        // 1. Handle the "Lens Cap" (Soft Hide)
+        // If distance is 0, hide Voxy. Otherwise, show it.
+        boolean shouldBeVisible = distanceInChunks > 0;
+
+        LOGGER.info("[CONTROLLER] setRenderDistance called with {} chunks, shouldBeVisible={}, current VoxyVisibilityHandler.voxyVisible={}",
+                distanceInChunks, shouldBeVisible, VoxyVisibilityHandler.voxyVisible);
+
+        if (VoxyVisibilityHandler.voxyVisible != shouldBeVisible) {
+            VoxyVisibilityHandler.voxyVisible = shouldBeVisible;
+            LOGGER.info("[CONTROLLER] Voxy visibility toggled: {} (VoxyVisibilityHandler.voxyVisible now = {})",
+                    shouldBeVisible ? "VISIBLE" : "HIDDEN (Soft Toggle)", VoxyVisibilityHandler.voxyVisible);
+        }
+
+        // 2. If it's hidden, we stop here (no need to update live distance)
+        if (!shouldBeVisible) {
+            liveAppliedDistance = 0;
+            LOGGER.info("Voxy rendering PAUSED (soft hide - no lag, data stays in memory)");
+            return;
+        }
+
+        // 3. Apply standard distance conversion for the "Visible" state
+        // 1 section = 32 chunks. Minimum 2 sections (64 chunks).
+        int voxySections = Math.max(2, Math.round(distanceInChunks / (float) CHUNK_TO_VOXY_SECTION_RATIO));
         int effectiveChunks = voxySections * CHUNK_TO_VOXY_SECTION_RATIO;
+
+        // Always update the config
+        VoxyApiWrapper.setConfigValue(voxySections);
         LOGGER.info("Voxy: requested {} chunks → setting {} sections (effective: {} chunks)",
                 distanceInChunks, voxySections, effectiveChunks);
 

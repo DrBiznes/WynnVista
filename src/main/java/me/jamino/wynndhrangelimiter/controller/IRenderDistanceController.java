@@ -47,4 +47,12 @@ public interface IRenderDistanceController {
     default void tick() {
         // Default implementation does nothing
     }
+
+    /**
+     * Called when the player joins a world/server.
+     * Allows controllers to start initialization that requires an active world.
+     */
+    default void onPlayerJoinWorld() {
+        // Default implementation does nothing
+    }
 }

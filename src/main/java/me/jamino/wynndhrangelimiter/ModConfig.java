@@ -140,16 +140,16 @@ public class ModConfig implements ModMenuApi {
             general.addEntry(entryBuilder.startIntSlider(Text.literal("Max Render Distance"),
                             config.maxRenderDistance > 0 ? config.maxRenderDistance : 80, 16, 256)
                     .setDefaultValue(80)
-                    .setTooltip(Text.literal("Your preferred LOD render distance inside the Wynncraft area"))
+                    .setTooltip(Text.literal("Your preferred LOD render distance inside the Wynncraft area (in chunks).\nNote: Voxy users may see rounded values due to 32-chunk increments (e.g., 80 → 96)."))
                     .setSaveConsumer(newValue -> {
                         config.maxRenderDistance = newValue;
                         saveConfig();
                     })
                     .build());
 
-            general.addEntry(entryBuilder.startIntSlider(Text.literal("Reduced Render Distance"), config.reducedRenderDistance, 12, 64)
+            general.addEntry(entryBuilder.startIntSlider(Text.literal("Reduced Render Distance"), config.reducedRenderDistance, 12, 128)
                     .setDefaultValue(16)
-                    .setTooltip(Text.literal("Reduced render distance for LODs outside Wynncraft area"))
+                    .setTooltip(Text.literal("Reduced render distance for LODs outside Wynncraft area.\nNote: This only applies to Distant Horizons. Voxy users will have rendering disabled outside Wynn (no lag)."))
                     .setSaveConsumer(newValue -> {
                         config.reducedRenderDistance = newValue;
                         saveConfig();

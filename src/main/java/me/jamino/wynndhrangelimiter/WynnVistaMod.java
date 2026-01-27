@@ -16,6 +16,7 @@ public class WynnVistaMod {
     private boolean isOnServer = false;
     private int originalRenderDistance;
     private long joinTimestamp = 0;
+    private Boolean previousWithinWynnRange = null; // Track previous state to avoid log spam
 
     void initialize() {
         // Detect which LOD mod is installed
@@ -65,6 +66,11 @@ public class WynnVistaMod {
             joinTimestamp = System.currentTimeMillis();
         }
 
+        // Notify controller that player has joined a world (for Voxy's delayed init)
+        if (controller != null) {
+            controller.onPlayerJoinWorld();
+        }
+
         // Only update render distance if controller is ready
         if (controller == null || !controller.isInitialized()) {
             LOGGER.info("Controller not ready yet, will update render distance when initialized");
@@ -105,13 +111,44 @@ public class WynnVistaMod {
         // Use config values directly so changes in GUI take effect immediately
         int maxDistance = ModConfig.getMaxRenderDistance();
         int reducedDistance = ModConfig.getReducedRenderDistance();
-        int targetRenderDistance = withinWynnRange ?
-                (maxDistance > 0 ? maxDistance : originalRenderDistance) : reducedDistance;
+
+        // Determine target render distance based on controller type
+        int targetRenderDistance;
+        String modName = controller.getModName();
+        boolean isVoxy = "Voxy".equals(modName);
+
+        if (withinWynnRange) {
+            // Inside Wynn area: use max distance (applies to both DH and Voxy)
+            targetRenderDistance = maxDistance > 0 ? maxDistance : originalRenderDistance;
+        } else {
+            // Outside Wynn area: behavior differs by mod
+            if (isVoxy) {
+                // Voxy: Always disable rendering (soft hide, no lag)
+                targetRenderDistance = 0;
+            } else {
+                // Distant Horizons: Use reduced distance from config
+                targetRenderDistance = reducedDistance;
+            }
+        }
+
+        // Log only when transitioning between inside/outside Wynn area
+        if (previousWithinWynnRange == null || previousWithinWynnRange != withinWynnRange) {
+            if (withinWynnRange) {
+                LOGGER.info("Entered Wynn area - setting distance to {}", targetRenderDistance);
+            } else {
+                if (isVoxy) {
+                    LOGGER.info("Left Wynn area with Voxy - setting distance to 0 (soft hide)");
+                } else {
+                    LOGGER.info("Left Wynn area with {} - using reduced distance {}", modName, reducedDistance);
+                }
+            }
+            previousWithinWynnRange = withinWynnRange;
+        }
 
         int currentDistance = controller.getRenderDistance();
         if (currentDistance != targetRenderDistance) {
-            LOGGER.info("Updating render distance: current={}, target={}, withinWynnRange={}, coords=({}, {})",
-                    currentDistance, targetRenderDistance, withinWynnRange, (int)x, (int)z);
+            LOGGER.info("Updating render distance: current={}, target={}, withinWynnRange={}, mod={}, coords=({}, {})",
+                    currentDistance, targetRenderDistance, withinWynnRange, controller.getModName(), (int)x, (int)z);
             controller.setRenderDistance(targetRenderDistance);
 
             // Suppress messages for the first 1 second after joining
