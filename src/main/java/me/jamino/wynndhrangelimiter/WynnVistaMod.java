@@ -104,10 +104,14 @@ public class WynnVistaMod {
 
         // Use config values directly so changes in GUI take effect immediately
         int maxDistance = ModConfig.getMaxRenderDistance();
+        int reducedDistance = ModConfig.getReducedRenderDistance();
         int targetRenderDistance = withinWynnRange ?
-                (maxDistance > 0 ? maxDistance : originalRenderDistance) : ModConfig.getReducedRenderDistance();
+                (maxDistance > 0 ? maxDistance : originalRenderDistance) : reducedDistance;
 
-        if (controller.getRenderDistance() != targetRenderDistance) {
+        int currentDistance = controller.getRenderDistance();
+        if (currentDistance != targetRenderDistance) {
+            LOGGER.info("Updating render distance: current={}, target={}, withinWynnRange={}, coords=({}, {})",
+                    currentDistance, targetRenderDistance, withinWynnRange, (int)x, (int)z);
             controller.setRenderDistance(targetRenderDistance);
 
             // Suppress messages for the first 1 second after joining

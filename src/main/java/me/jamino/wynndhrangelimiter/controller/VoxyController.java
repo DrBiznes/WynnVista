@@ -8,13 +8,17 @@ public class VoxyController implements IRenderDistanceController {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
 
     private boolean initialized = false;
-    private int cachedDistance = -1;           // What getRenderDistance() returns (to prevent spam)
-    private int pendingDistance = -1;          // What we want the distance to be
-    private int liveAppliedDistance = -1;      // What we've actually applied to the live system
+    private int cachedDistance = -1;           // What getRenderDistance() returns (in chunks, to prevent spam)
+    private int pendingDistance = -1;          // What we want the distance to be (in chunks)
+    private int liveAppliedDistance = -1;      // What we've actually applied to the live system (in chunks)
     private Runnable initCallback;
     private int initCheckTicks = 0;
     private static final int INIT_DELAY_TICKS = 100; // Wait ~5 seconds before first check
     private static final int MAX_INIT_TICKS = 1500;  // Give up after ~75 seconds (Voxy can take 30+ sec)
+
+    // Voxy uses a MUCH larger scale: 1 Voxy section = 32 chunks (observed behavior)
+    // This is different from what documentation suggests - empirically determined
+    private static final int CHUNK_TO_VOXY_SECTION_RATIO = 32;
 
     @Override
     public void initialize(Runnable callback) {
@@ -32,11 +36,14 @@ public class VoxyController implements IRenderDistanceController {
             // Already initialized, check if we have a pending distance that hasn't been applied to live system
             if (pendingDistance > 0 && pendingDistance != liveAppliedDistance) {
                 if (VoxyApiWrapper.isSystemAvailable()) {
-                    boolean success = VoxyApiWrapper.setRenderDistance(pendingDistance);
+                    // Convert chunks to Voxy sections (divide by 32)
+                    int voxySections = Math.max(2, Math.round(pendingDistance / (float) CHUNK_TO_VOXY_SECTION_RATIO));
+                    boolean success = VoxyApiWrapper.setRenderDistance(voxySections);
                     if (success) {
                         liveAppliedDistance = pendingDistance;
                         cachedDistance = pendingDistance;
-                        LOGGER.info("Applied pending Voxy render distance to live system: {}", pendingDistance);
+                        LOGGER.info("Applied pending Voxy render distance to live system: {} chunks → {} sections",
+                                pendingDistance, voxySections);
                     }
                 }
             }
@@ -72,6 +79,11 @@ public class VoxyController implements IRenderDistanceController {
         initialized = true;
         if (systemAvailable) {
             LOGGER.info("Voxy controller fully initialized with live system access");
+            // Log Voxy's current config value for debugging
+            int voxySections = VoxyApiWrapper.getRenderDistance();
+            int equivalentChunks = voxySections * CHUNK_TO_VOXY_SECTION_RATIO;
+            LOGGER.info("Voxy current config: {} sections (equivalent to {} chunks)",
+                    voxySections, equivalentChunks);
         } else {
             LOGGER.info("Voxy controller initialized in config-only mode (changes require restart)");
         }
@@ -95,29 +107,44 @@ public class VoxyController implements IRenderDistanceController {
         if (cachedDistance > 0) {
             return cachedDistance;
         }
-        return VoxyApiWrapper.getRenderDistance();
+        // Convert Voxy sections back to chunks (multiply by 32)
+        int voxySections = VoxyApiWrapper.getRenderDistance();
+        return voxySections * CHUNK_TO_VOXY_SECTION_RATIO;
     }
 
     @Override
-    public void setRenderDistance(int distance) {
-        pendingDistance = distance;
-        // Update cache for getRenderDistance() to prevent message spam
-        cachedDistance = distance;
+    public void setRenderDistance(int distanceInChunks) {
+        // Convert chunks to Voxy sections: divide by 32 and round
+        // Use Math.round for proper rounding (0.375 → 0, 0.5 → 1, etc.)
+        int voxySections = Math.max(1, Math.round(distanceInChunks / (float) CHUNK_TO_VOXY_SECTION_RATIO));
+
+        // Voxy has a hard minimum of 2 sections
+        voxySections = Math.max(2, voxySections);
+
+        // Store the chunk distance for comparisons
+        pendingDistance = distanceInChunks;
+        cachedDistance = distanceInChunks;
 
         // Always update the config
-        VoxyApiWrapper.setConfigValue(distance);
+        int beforeSections = VoxyApiWrapper.getRenderDistance();
+        VoxyApiWrapper.setConfigValue(voxySections);
+        int afterSections = VoxyApiWrapper.getRenderDistance();
+        int effectiveChunks = voxySections * CHUNK_TO_VOXY_SECTION_RATIO;
+        LOGGER.info("Voxy: requested {} chunks → setting {} sections (effective: {} chunks)",
+                distanceInChunks, voxySections, effectiveChunks);
 
         // Try to apply to live system if available
         if (VoxyApiWrapper.isSystemAvailable()) {
-            boolean success = VoxyApiWrapper.setRenderDistance(distance);
+            boolean success = VoxyApiWrapper.setRenderDistance(voxySections);
             if (success) {
-                liveAppliedDistance = distance;
-                LOGGER.info("Voxy render distance set to {} (live system)", distance);
+                liveAppliedDistance = distanceInChunks;
+                LOGGER.info("Voxy applied: {} sections (effective: {} chunks) [live system]",
+                        voxySections, effectiveChunks);
             } else {
-                LOGGER.debug("Config updated to {}, but failed to apply to live system", distance);
+                LOGGER.debug("Config updated to {} sections, but failed to apply to live system", voxySections);
             }
         } else {
-            LOGGER.debug("Voxy config updated to {} (live system unavailable, will retry)", distance);
+            LOGGER.debug("Voxy config updated to {} sections (live system unavailable, will retry)", voxySections);
         }
     }
 
