@@ -39,7 +39,8 @@ You can configure WynnVista using Mod Menu. The following options are available:
 - **One of the following LOD mods:**
   - Distant Horizons 2.2 or higher
   - Voxy 0.2.9-alpha or higher
-- Cloth Config (for settings GUI)
+- Cloth Config
+- Mod Menu
 
 ## Go Ham
 
