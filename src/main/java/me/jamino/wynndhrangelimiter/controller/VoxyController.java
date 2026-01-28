@@ -162,13 +162,9 @@ public class VoxyController implements IRenderDistanceController {
         // If distance is 0, hide Voxy. Otherwise, show it.
         boolean shouldBeVisible = distanceInChunks > 0;
 
-        LOGGER.info("[CONTROLLER] setRenderDistance called with {} chunks, shouldBeVisible={}, current VoxyVisibilityHandler.voxyVisible={}",
-                distanceInChunks, shouldBeVisible, VoxyVisibilityHandler.voxyVisible);
-
         if (VoxyVisibilityHandler.voxyVisible != shouldBeVisible) {
             VoxyVisibilityHandler.voxyVisible = shouldBeVisible;
-            LOGGER.info("[CONTROLLER] Voxy visibility toggled: {} (VoxyVisibilityHandler.voxyVisible now = {})",
-                    shouldBeVisible ? "VISIBLE" : "HIDDEN (Soft Toggle)", VoxyVisibilityHandler.voxyVisible);
+            LOGGER.info("Voxy visibility toggled: {}", shouldBeVisible ? "VISIBLE" : "HIDDEN (Soft Toggle)");
         }
 
         // 2. If it's hidden, we stop here (no need to update live distance)

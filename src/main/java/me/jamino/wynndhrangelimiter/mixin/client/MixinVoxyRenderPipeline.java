@@ -3,8 +3,6 @@ package me.jamino.wynndhrangelimiter.mixin.client;
 import me.cortex.voxy.client.core.AbstractRenderPipeline;
 import me.cortex.voxy.client.core.rendering.Viewport;
 import me.jamino.wynndhrangelimiter.util.VoxyVisibilityHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -17,8 +15,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(value = AbstractRenderPipeline.class, remap = false)
 public class MixinVoxyRenderPipeline {
-    private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
-    private static boolean lastVisibilityState = true;
 
     /**
      * Target the main orchestration method.
@@ -27,16 +23,7 @@ public class MixinVoxyRenderPipeline {
      */
     @Inject(method = "runPipeline", at = @At("HEAD"), cancellable = true)
     private void wynnvista$onRunPipeline(Viewport<?> viewport, int sourceFrameBuffer, int srcWidth, int srcHeight, CallbackInfo ci) {
-        boolean visible = VoxyVisibilityHandler.voxyVisible;
-
-        // Log state changes
-        if (lastVisibilityState != visible) {
-            LOGGER.info("[MIXIN] runPipeline - VoxyVisibilityHandler.voxyVisible changed to: {}", visible);
-            lastVisibilityState = visible;
-        }
-
-        if (!visible) {
-            LOGGER.debug("[MIXIN] runPipeline - CANCELLING entire pipeline (blocks Opaque, Translucent, Temporal)");
+        if (!VoxyVisibilityHandler.voxyVisible) {
             ci.cancel();
         }
     }
