@@ -67,3 +67,5 @@ Please report any bugs or feature suggestions on the Github Issues page, I'll be
 >   [Class Keybind Profiles](https://modrinth.com/mod/class-keybind-profiles)
 
 >   [WynnBubbles](https://modrinth.com/mod/wynnbubbles)
+
+>   [WynnLODGrabber](https://modrinth.com/mod/wynnlodgrabber)
