@@ -230,7 +230,7 @@ public class VoxyController implements IRenderDistanceController {
                 }
 
                 if (client.worldRenderer instanceof me.cortex.voxy.client.core.IGetVoxyRenderSystem voxyAccessor) {
-                    me.cortex.voxy.client.core.VoxyRenderSystem system = voxyAccessor.getVoxyRenderSystem();
+                    me.cortex.voxy.client.core.VoxyRenderSystem system = voxyAccessor.voxy$getRenderSystem();
                     return system != null;
                 }
                 return false;
@@ -247,7 +247,7 @@ public class VoxyController implements IRenderDistanceController {
                 }
 
                 if (client.worldRenderer instanceof me.cortex.voxy.client.core.IGetVoxyRenderSystem voxyAccessor) {
-                    me.cortex.voxy.client.core.VoxyRenderSystem system = voxyAccessor.getVoxyRenderSystem();
+                    me.cortex.voxy.client.core.VoxyRenderSystem system = voxyAccessor.voxy$getRenderSystem();
                     if (system != null) {
                         // Update config first
                         me.cortex.voxy.client.config.VoxyConfig.CONFIG.sectionRenderDistance = distance;
