@@ -1,5 +1,37 @@
 # Project exclude paths
 /.gradle/
 /build/
+/.local-fixtures/
+/run/
+/run-dh/
+/run-neither/
+/out/
+
+# Local Minecraft worlds, imported LOD caches, and generated evidence
+**/saves/
+**/screenshots/
+**/crash-reports/
+**/logs/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.mca
+*.mcr
+*.log
+*.hprof
+*.jfr
+hs_err_pid*
+replay_pid*
+
+# Local editor and machine state
+.DS_Store
+/.idea/
+/.vscode/
+.env
+.env.*
+!.env.example
 
 /repomix-output.txt

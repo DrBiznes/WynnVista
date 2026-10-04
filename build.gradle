@@ -10,6 +10,28 @@ base {
     archivesName = project.archives_base_name
 }
 
+loom {
+    runs {
+        client {
+            runDir = project.findProperty('runDir') ?: "run-dh"
+            property("wynnvista.fixture.autoload", "New World")
+            property("wynnvista.fixture.autostopTicks", "400")
+            if (System.getenv("WYNNVISTA_FIXTURE_COMMANDS")) {
+                property("wynnvista.fixture.commands", System.getenv("WYNNVISTA_FIXTURE_COMMANDS"))
+            }
+            if (System.getenv("WYNNVISTA_FIXTURE_SCREENSHOT")) {
+                property("wynnvista.fixture.screenshot", System.getenv("WYNNVISTA_FIXTURE_SCREENSHOT"))
+            }
+            if (System.getenv("WYNNVISTA_FIXTURE_TIMELINE")) {
+                property("wynnvista.fixture.timeline", System.getenv("WYNNVISTA_FIXTURE_TIMELINE"))
+            }
+            if (System.getenv("WYNNVISTA_FIXTURE_CAPTURE_PREFIX")) {
+                property("wynnvista.fixture.capturePrefix", System.getenv("WYNNVISTA_FIXTURE_CAPTURE_PREFIX"))
+            }
+        }
+    }
+}
+
 repositories {
     maven {
         name = "Modrinth"
@@ -28,16 +50,16 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Distant Horizons API (optional - compile only)
-    compileOnly "maven.modrinth:DistantHorizonsApi:${project.dh_api_version}"
+    compileOnly "maven.modrinth:distanthorizonsapi:${project.dh_api_version}"
+    modCompileOnly "maven.modrinth:distanthorizons:${project.dh_mod_version}"
 
     // Distant Horizons mod (runtime only for testing)
-    // modRuntimeOnly "maven.modrinth:DistantHorizons:${project.dh_mod_version}"
+    // Enable with -PlodBackend=dh for an isolated development run.
 
-    // Voxy (optional - compile only)
-    compileOnly "maven.modrinth:voxy:${project.voxy_version}"
-
-    // Voxy mod (runtime only for testing) - uncomment to test with Voxy instead of DH
-    modRuntimeOnly "maven.modrinth:voxy:${project.voxy_version}"
+    // Voxy integration is intentionally deferred until its renderer adapter is implemented.
+    if (project.findProperty('lodBackend') == 'dh') {
+        modRuntimeOnly "maven.modrinth:distanthorizons:${project.dh_mod_version}"
+    }
 
     // ModMenu
     modImplementation "com.terraformersmc:modmenu:${project.modmenu_version}"
@@ -45,6 +67,23 @@ dependencies {
     // Cloth Config
     modApi("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
         exclude(group: "net.fabricmc.fabric-api")
+    }
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation "maven.modrinth:distanthorizons:${project.dh_mod_version}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.named('runClient', JavaExec) {
+    if (project.hasProperty('fixtureJava')) {
+        executable = project.property('fixtureJava')
+    }
+    if (project.hasProperty('fixtureCheckJni')) {
+        jvmArgs '-Xcheck:jni'
     }
 }
 
@@ -62,7 +101,7 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 17
+    it.options.release = 21
 }
 
 java {

@@ -2,43 +2,64 @@
 
 ![WynnVistaBanner](https://github.com/user-attachments/assets/495e19de-1f5b-40b0-a24b-7f28692427e5)
 
-The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay experience on Wynncraft by automatically adjusting the render distance of LOD mods (Distant Horizons or Voxy). Made for my modpack [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft)
+WynnVista shows only the active Wynncraft region's Distant Horizons LOD terrain without changing DH's render distance. Made for [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft).
 
-## What's Up
+## Development status
 
-- Supports both **Distant Horizons** and **Voxy** LOD mods
-- Automagically adjusts LOD render distance based on player location
-- Captures your current LOD render distance on first launch
-- Returns to saved distance when inside the Wynncraft map, reduces when outside
-- Configurable settings via Mod Menu or config file
+- The Java region policy recognizes the main map, Realm of Light, and Void/Outer Void. Unit tests cover supplied corners, half-open edges, gaps, and section classification.
+- The DH fixture can identify one explicit local superflat save and set DH read-only at world load. This prevents ordinary flat chunks from replacing imported detail-0 terrain during the isolated smoke test.
+- DH 3.3.3 on Minecraft 1.21.11 uses a version-gated render-list filter. Stock Blaze3D and OpenGL terrain shaders clip mixed sections at the active region bounds. If an exact shader path is unavailable, the filter keeps only wholly contained sections; edges may have missing strips.
+- The isolated Blaze3D fixture passed build, shader patch, empty-mask, main, Light, Void, sampled realm transitions, opaque and transparent uniform binding, and cache-retention checks. OpenGL produced one masked screenshot with C2 compilation disabled, but ordinary OpenGL runs on this Mac crashed natively. OpenGL validation is deferred to a PC; depth, shadow, continuous-frame, and performance checks remain open. See [test status](docs/TESTING_DH.md).
+- Voxy integration is deferred and leaves Voxy untouched. Explicit Iris support is the third project goal after DH and Voxy.
+- WynnVista no longer reads or changes either LOD mod's render distance.
 
-## Installation
+## Build and isolated DH test
 
-1. Make sure you have Fabric Loader and Fabric API installed
-2. Download and install **either** Distant Horizons (2.2+) **or** Voxy (0.2.9+)
-3. Download the latest version of WynnVista from the releases page
-4. Place the downloaded .jar file in your Minecraft mods folder
+Install Java 21 and Python 3. The Gradle build resolves the pinned Minecraft 1.21.11, Fabric, and DH 3.3.3 dependencies. From the repository root:
 
-## Configuration
+```bash
+bash gradlew build
+```
 
-You can configure WynnVista using Mod Menu. The following options are available:
+Prepare three inputs **outside** `run-dh/`: a closed empty superflat save containing `level.dat`, a closed copy of the Wynncraft **overworld** `DistantHorizons.sqlite`, and a matching DH 3.3.3 `DistantHorizons.toml`. Close Minecraft before copying the save or database; the script rejects an active save lock or database journal. Keep the original LOD database as a master. The script replaces the disposable `run-dh/saves/New World` on each invocation.
 
-- **Show In-Game Messages**: Toggle whether to display "The Fog lifts/descends" messages
-- **Max Render Distance** (16-256 chunks): Your preferred LOD distance inside the Wynncraft map
-  - On first launch, WynnVista captures your current LOD render distance
-  - After that, you can adjust this value in the config to change your max distance
-- **Reduced Render Distance** (12-128 chunks): Distance for areas outside the Wynncraft map
-  - **Distant Horizons**: Uses this value outside the map
-  - **Voxy**: Ignores this setting and completely hides LODs outside the map
+The Gradle `runClient` task uses only `run-dh/`; it does not launch the Modrinth profile. The fixture script copies the inputs, disables DH distant generation and its update prompt in the isolated directory, runs the game twice, and checks the cache after each normal exit. On this Mac, select Blaze3D:
+
+```bash
+WYNNVISTA_DH_ENGINE=BLAZE_3D bash scripts/test_dh_fixture.sh \
+  "/path/to/closed/saves/New World" \
+  "/path/to/closed/Wynncraft-overworld-master.sqlite" \
+  "/path/to/matching/DistantHorizons.toml"
+```
+
+The first run may migrate DH's SQLite schema and update coarse parent rows. The test preserves that result as a disposable reference and requires every `FullData` row to remain stable across the second run. The original master is never opened for writing. See [the implementation plan](docs/PROJECT_UPDATE_LOD_VISIBILITY.md) for the remaining masking and visual test gates.
+
+Set `WYNNVISTA_TEST_JAVA` to a Java 21 executable to select the game runtime independently of Gradle's JDK. Each launch has a three-minute timeout. Logs and check results are saved under `run-dh/test-results/`; failures stop the script immediately. An optional fourth argument selects a DH worker count for diagnostics in the disposable installation. Omitting it retains the copied DH worker setting.
+
+`WYNNVISTA_DH_ENGINE` explicitly selects `AUTO`, `OPEN_GL`, or `BLAZE_3D` in the test client. Omitting it preserves the copied setting. OpenGL testing is deferred to a PC. See [test results and limits](docs/TESTING_DH.md).
+
+The preparation script writes `run-dh/config/WynnVista.json` with the fixture save path and `maskingEnabled: false` so the two-launch baseline does not clip terrain. To run masked visual checks afterward, set that value to `true` in the disposable config:
+
+```bash
+python3 -c 'import json; from pathlib import Path; p=Path("run-dh/config/WynnVista.json"); d=json.loads(p.read_text()); d["maskingEnabled"]=True; p.write_text(json.dumps(d, indent=2)+"\n")'
+WYNNVISTA_FIXTURE_COMMANDS='gamemode spectator @p|tp @p 1200 150 -3000 90 0' \
+WYNNVISTA_FIXTURE_SCREENSHOT='main-east-edge.png' \
+python3 scripts/run_fixture_client.py runClient -PlodBackend=dh
+```
+
+The sample teleports to the main-map east edge. `WYNNVISTA_FIXTURE_COMMANDS` accepts `|`-separated integrated-server commands at loaded-world tick 40. `WYNNVISTA_FIXTURE_SCREENSHOT` saves a HUD-free image in `run-dh/screenshots/` at tick 250. The client exits at tick 400. `run-dh/logs/latest.log` records visibility revisions and the active DH mask path. Use a second run with `maskingEnabled: false` and the same camera for a visual baseline; the two-launch cache script also starts unmasked.
+
+For sampled realm transitions, set `WYNNVISTA_FIXTURE_TIMELINE` to semicolon-separated `worldTick:command` events and `WYNNVISTA_FIXTURE_CAPTURE_PREFIX` to a screenshot prefix. The fixture captures ticks -1, +1, +2, +3, +5, and +15 around each event. The exact transition commands and results are in [the DH test notes](docs/TESTING_DH.md). These are sampled game-tick captures, so use continuous video/frame capture for the final flash gate.
+
+Fixture mode is off by default in ordinary installations and applies only to the designated save. An unsupported DH version leaves its renderer untouched. All large cache copies, saves, screenshots, logs, and crash reports under `run-dh/` are ignored by Git.
 
 ## Requirements
 
 - Minecraft 1.21.11
-- Fabric Loader 0.14.21 or higher
+- Fabric Loader 0.18.1 or higher
 - Fabric API
-- **One of the following LOD mods:**
-  - Distant Horizons 2.2 or higher
-  - Voxy 0.2.9-alpha or higher
+- Java 21
+- Distant Horizons 3.3.3 for the isolated fixture run
 - Cloth Config
 - Mod Menu
 

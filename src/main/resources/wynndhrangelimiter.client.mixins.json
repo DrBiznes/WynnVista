@@ -3,8 +3,14 @@
   "minVersion": "0.8",
   "package": "me.jamino.wynndhrangelimiter.mixin.client",
   "compatibilityLevel": "JAVA_21",
+  "plugin": "me.jamino.wynndhrangelimiter.mixin.WynnVistaMixinPlugin",
   "client": [
-    "MixinVoxyRenderPipeline"
+    "MixinIntegratedServerLoader",
+    "MixinDhRenderBufferHandler",
+    "MixinDhBlazeShaderLoader",
+    "MixinDhBlazeTerrainRenderer",
+    "MixinDhOpenGlShaderLoader",
+    "MixinDhOpenGlTerrainShaderProgram"
   ],
   "injectors": {
     "defaultRequire": 1

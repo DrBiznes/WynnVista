@@ -2,118 +2,89 @@ package me.jamino.wynndhrangelimiter;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
+import me.jamino.wynndhrangelimiter.visibility.MaskMode;
 import me.shedaniel.clothconfig2.api.ConfigBuilder;
 import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.text.Text;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Locale;
 
-public class ModConfig implements ModMenuApi {
+public final class ModConfig implements ModMenuApi {
+    private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final File CONFIG_FILE = new File(FabricLoader.getInstance().getConfigDir().toFile(), "WynnVista.json");
+    private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("WynnVista.json");
+    private static Config config = load();
 
-    private static Config config;
-
-    static {
-        loadConfig();
-    }
-
-    private static class Config {
+    private static final class Config {
+        int schemaVersion = 2;
         boolean showMessage = true;
-        int reducedRenderDistance = 16;
-        int maxRenderDistance = -1; // -1 indicates not yet initialized (first run)
+        boolean maskingEnabled = true;
+        boolean fixtureEnabled = false;
+        String fixtureSavePath = "";
+        String fixtureOverride = "AUTO";
     }
 
-    public static boolean shouldShowMessage() {
-        return config.showMessage;
-    }
-
-    public static int getReducedRenderDistance() {
-        return config.reducedRenderDistance;
-    }
-
-    public static int getMaxRenderDistance() {
-        return config.maxRenderDistance;
-    }
-
-    /**
-     * Called on mod initialization to capture the LOD mod's render distance.
-     * Only captures on first run (when maxRenderDistance is -1).
-     *
-     * @param distance The current render distance from the LOD mod
-     * @return The max render distance to use (either captured or previously saved)
-     */
-    public static int initializeMaxRenderDistance(int distance) {
-        if (config.maxRenderDistance == -1) {
-            // First run - capture the current distance
-            config.maxRenderDistance = distance;
-            saveConfig();
+    private static Config load() {
+        Config result = new Config();
+        if (!Files.exists(FILE)) {
+            save(result);
+            return result;
         }
-        return config.maxRenderDistance;
-    }
-
-    /**
-     * @return true if this is the first run (maxRenderDistance not yet set)
-     */
-    public static boolean isFirstRun() {
-        return config.maxRenderDistance == -1;
-    }
-
-    // Legacy method - kept for compatibility but now uses the new field
-    public static void setOriginalRenderDistance(int distance) {
-        if (config.maxRenderDistance != distance) {
-            config.maxRenderDistance = distance;
-            saveConfig();
-        }
-    }
-
-    private static void loadConfig() {
-        if (CONFIG_FILE.exists()) {
-            try (FileReader reader = new FileReader(CONFIG_FILE)) {
-                // First, read raw JSON to check for old field
-                com.google.gson.JsonObject jsonObj = GSON.fromJson(reader, com.google.gson.JsonObject.class);
-                if (jsonObj != null) {
-                    config = new Config();
-
-                    // Load standard fields
-                    if (jsonObj.has("showMessage")) {
-                        config.showMessage = jsonObj.get("showMessage").getAsBoolean();
-                    }
-                    if (jsonObj.has("reducedRenderDistance")) {
-                        config.reducedRenderDistance = jsonObj.get("reducedRenderDistance").getAsInt();
-                    }
-
-                    // Handle migration: check for old field name first
-                    if (jsonObj.has("maxRenderDistance")) {
-                        config.maxRenderDistance = jsonObj.get("maxRenderDistance").getAsInt();
-                    } else if (jsonObj.has("originalRenderDistance")) {
-                        // Migrate from old config format
-                        config.maxRenderDistance = jsonObj.get("originalRenderDistance").getAsInt();
-                        saveConfig(); // Save with new field name
-                    }
+        try {
+            JsonObject json = GSON.fromJson(Files.readString(FILE), JsonObject.class);
+            if (json != null) {
+                if (json.has("showMessage")) result.showMessage = json.get("showMessage").getAsBoolean();
+                if (json.has("maskingEnabled")) result.maskingEnabled = json.get("maskingEnabled").getAsBoolean();
+                if (json.has("fixtureEnabled")) result.fixtureEnabled = json.get("fixtureEnabled").getAsBoolean();
+                if (json.has("fixtureSavePath")) result.fixtureSavePath = json.get("fixtureSavePath").getAsString();
+                if (json.has("fixtureOverride")) result.fixtureOverride = json.get("fixtureOverride").getAsString();
+                if (!json.has("schemaVersion") || json.get("schemaVersion").getAsInt() < 2) {
+                    Path backup = FILE.resolveSibling(FILE.getFileName() + ".bak");
+                    if (!Files.exists(backup)) Files.copy(FILE, backup, StandardCopyOption.COPY_ATTRIBUTES);
+                    save(result);
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
             }
+        } catch (Exception e) {
+            LOGGER.error("Unable to read WynnVista config; using defaults", e);
         }
-        if (config == null) {
-            config = new Config();
-            saveConfig();
+        return result;
+    }
+
+    private static void save(Config value) {
+        try {
+            Files.createDirectories(FILE.getParent());
+            Files.writeString(FILE, GSON.toJson(value), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            LOGGER.error("Unable to save WynnVista config", e);
         }
     }
 
-    private static void saveConfig() {
-        try (FileWriter writer = new FileWriter(CONFIG_FILE)) {
-            GSON.toJson(config, writer);
-        } catch (IOException e) {
-            e.printStackTrace();
+    private static void save() { save(config); }
+
+    public static boolean shouldShowMessage() { return config.showMessage; }
+    public static boolean maskingEnabled() { return config.maskingEnabled; }
+    public static boolean fixtureEnabled() { return config.fixtureEnabled; }
+    public static String fixtureSavePath() { return config.fixtureSavePath; }
+
+    public static MaskMode fixtureOverride() {
+        try {
+            if ("AUTO".equalsIgnoreCase(config.fixtureOverride)) return null;
+            return MaskMode.valueOf(config.fixtureOverride.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            LOGGER.warn("Invalid fixtureOverride: {}", config.fixtureOverride);
+            return null;
         }
     }
 
@@ -121,41 +92,37 @@ public class ModConfig implements ModMenuApi {
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
         return parent -> {
             ConfigBuilder builder = ConfigBuilder.create()
-                    .setParentScreen(parent)
-                    .setTitle(Text.literal("WynnVista Config"));
-
+                    .setParentScreen(parent).setTitle(Text.literal("WynnVista Config"));
             ConfigCategory general = builder.getOrCreateCategory(Text.literal("General"));
-
-            ConfigEntryBuilder entryBuilder = builder.entryBuilder();
-
-            general.addEntry(entryBuilder.startBooleanToggle(Text.literal("Show In-Game Messages"), config.showMessage)
-                    .setDefaultValue(true)
-                    .setTooltip(Text.literal("Toggle whether to show messages when entering/leaving the Wynncraft area"))
-                    .setSaveConsumer(newValue -> {
-                        config.showMessage = newValue;
-                        saveConfig();
-                    })
-                    .build());
-
-            general.addEntry(entryBuilder.startIntSlider(Text.literal("Max Render Distance"),
-                            config.maxRenderDistance > 0 ? config.maxRenderDistance : 80, 16, 256)
-                    .setDefaultValue(80)
-                    .setTooltip(Text.literal("Your preferred LOD render distance inside the Wynncraft area (in chunks).\nNote: Voxy users may see rounded values due to 32-chunk increments (e.g., 80 → 96)."))
-                    .setSaveConsumer(newValue -> {
-                        config.maxRenderDistance = newValue;
-                        saveConfig();
-                    })
-                    .build());
-
-            general.addEntry(entryBuilder.startIntSlider(Text.literal("Reduced Render Distance"), config.reducedRenderDistance, 12, 128)
-                    .setDefaultValue(16)
-                    .setTooltip(Text.literal("Reduced render distance for LODs outside Wynncraft area.\nNote: This only applies to Distant Horizons. Voxy users will have rendering disabled outside Wynn (no lag)."))
-                    .setSaveConsumer(newValue -> {
-                        config.reducedRenderDistance = newValue;
-                        saveConfig();
-                    })
-                    .build());
-
+            ConfigEntryBuilder entries = builder.entryBuilder();
+            general.addEntry(entries.startBooleanToggle(Text.literal("Show Region Messages"), config.showMessage)
+                    .setDefaultValue(true).setSaveConsumer(value -> {
+                        config.showMessage = value;
+                        save();
+                    }).build());
+            general.addEntry(entries.startBooleanToggle(Text.literal("Enable LOD Masking"), config.maskingEnabled)
+                    .setDefaultValue(true).setSaveConsumer(value -> {
+                        config.maskingEnabled = value;
+                        save();
+                    }).build());
+            ConfigCategory fixture = builder.getOrCreateCategory(Text.literal("Local Fixture"));
+            fixture.addEntry(entries.startBooleanToggle(Text.literal("Enable Fixture"), config.fixtureEnabled)
+                    .setDefaultValue(false).setSaveConsumer(value -> {
+                        config.fixtureEnabled = value;
+                        save();
+                    }).build());
+            fixture.addEntry(entries.startStrField(Text.literal("Fixture Save Path"), config.fixtureSavePath)
+                    .setDefaultValue("").setSaveConsumer(value -> {
+                        config.fixtureSavePath = value;
+                        save();
+                    }).build());
+            fixture.addEntry(entries.startStrField(Text.literal("Fixture Override"), config.fixtureOverride)
+                    .setDefaultValue("AUTO")
+                    .setTooltip(Text.literal("AUTO, MAIN, LIGHT, VOID_OUTER, NONE, or PASSTHROUGH"))
+                    .setSaveConsumer(value -> {
+                        config.fixtureOverride = value;
+                        save();
+                    }).build());
             return builder.build();
         };
     }
