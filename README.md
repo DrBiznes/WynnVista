@@ -2,7 +2,7 @@
 
 ![WynnVistaBanner](https://github.com/user-attachments/assets/495e19de-1f5b-40b0-a24b-7f28692427e5)
 
-WynnVista shows only the active Wynncraft region's Distant Horizons LOD terrain without changing DH's render distance. Made for [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft).
+WynnVista shows only the active Wynncraft region's Distant Horizons or Voxy LOD terrain without changing either mod's render distance. Made for [World of Wynncraft](https://github.com/bob10234/World-of-Wynncraft).
 
 ## Development status
 
@@ -10,7 +10,8 @@ WynnVista shows only the active Wynncraft region's Distant Horizons LOD terrain 
 - The DH fixture can identify one explicit local superflat save and set DH read-only at world load. This prevents ordinary flat chunks from replacing imported detail-0 terrain during the isolated smoke test.
 - DH 3.3.3 on Minecraft 1.21.11 uses a version-gated render-list filter. Stock Blaze3D and OpenGL terrain shaders clip mixed sections at the active region bounds. If an exact shader path is unavailable, the filter keeps only wholly contained sections; edges may have missing strips.
 - The isolated Blaze3D fixture passed build, shader patch, empty-mask, main, Light, Void, sampled realm transitions, opaque and transparent uniform binding, and cache-retention checks. OpenGL produced one masked screenshot with C2 compilation disabled, but ordinary OpenGL runs on this Mac crashed natively. OpenGL validation is deferred to a PC; depth, shadow, continuous-frame, and performance checks remain open. See [test status](docs/TESTING_DH.md).
-- Voxy integration is deferred and leaves Voxy untouched. Explicit Iris support is the third project goal after DH and Voxy.
+- Voxy 0.2.16-beta on Minecraft 1.21.11 uses the same region policy: a checked patch of Voxy's stock terrain shaders clips opaque, temporal and translucent terrain fragments to the active region (`EXACT` for the stock pipeline). Voxy's pipeline, distance, ingestion and storage are untouched. An isolated Voxy fixture built from a copy of a real Wynncraft Voxy cache passed build, GPU shader compile/link, MAIN/LIGHT/VOID_OUTER/NONE/AUTO, an exact clip through terrain, sampled realm transitions and cache-retention checks on a Windows PC (RTX 4070). Under an Iris shader pack Voxy terrain is currently **not** masked. See [Voxy test status](docs/TESTING_VOXY.md).
+- Explicit Iris support is the third project goal.
 - WynnVista no longer reads or changes either LOD mod's render distance.
 
 ## Build and isolated DH test
@@ -53,13 +54,26 @@ For sampled realm transitions, set `WYNNVISTA_FIXTURE_TIMELINE` to semicolon-sep
 
 Fixture mode is off by default in ordinary installations and applies only to the designated save. An unsupported DH version leaves its renderer untouched. All large cache copies, saves, screenshots, logs, and crash reports under `run-dh/` are ignored by Git.
 
+## Build and isolated Voxy test
+
+Install Java 21 and Python 3. `bash gradlew build` (or `gradlew.bat build` on Windows) resolves the pinned Minecraft, Fabric, Voxy 0.2.16-beta and Sodium 0.8.12 dependencies. The Voxy fixture works on Windows, macOS and Linux and **never writes to the source Voxy cache**: it copies a closed Wynncraft Voxy world storage (the folder containing `CURRENT`, e.g. `<profile>/.voxy/saves/play.wynncraft.com/<world id>/storage`) and that folder's parent `config.json` into a disposable superflat save under `run-voxy/`.
+
+```bash
+python scripts/voxy_fixture.py create-world --reset
+python scripts/voxy_fixture.py install --storage "/path/to/closed/<world id>/storage" --config "/path/to/play.wynncraft.com/config.json"
+python scripts/voxy_fixture.py run --masking --override LIGHT --commands 'gamemode spectator @p|tp @p -800 160 -6100 0 12' --screenshot light-view.png
+python scripts/voxy_fixture.py check
+```
+
+Close Minecraft before copying a cache. `scripts/loader_smoke.py neither|dh|voxy|both` checks that WynnVista loads with each backend combination. Options, evidence and open gates are in [the Voxy test notes](docs/TESTING_VOXY.md).
+
 ## Requirements
 
 - Minecraft 1.21.11
 - Fabric Loader 0.18.1 or higher
 - Fabric API
 - Java 21
-- Distant Horizons 3.3.3 for the isolated fixture run
+- Distant Horizons 3.3.3 or Voxy 0.2.16-beta (with Sodium 0.8.12) for the isolated fixture runs
 - Cloth Config
 - Mod Menu
 

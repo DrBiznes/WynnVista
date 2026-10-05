@@ -6,11 +6,14 @@
   "plugin": "me.jamino.wynndhrangelimiter.mixin.WynnVistaMixinPlugin",
   "client": [
     "MixinIntegratedServerLoader",
+    "InvokerCreateWorldScreen",
     "MixinDhRenderBufferHandler",
     "MixinDhBlazeShaderLoader",
     "MixinDhBlazeTerrainRenderer",
     "MixinDhOpenGlShaderLoader",
-    "MixinDhOpenGlTerrainShaderProgram"
+    "MixinDhOpenGlTerrainShaderProgram",
+    "MixinVoxyShaderLoader",
+    "MixinVoxyMDICSectionRenderer"
   ],
   "injectors": {
     "defaultRequire": 1

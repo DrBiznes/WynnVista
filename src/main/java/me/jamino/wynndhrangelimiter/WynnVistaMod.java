@@ -1,7 +1,9 @@
 package me.jamino.wynndhrangelimiter;
 
 import me.jamino.wynndhrangelimiter.debug.FixtureController;
+import me.jamino.wynndhrangelimiter.debug.VoxyFixtureController;
 import me.jamino.wynndhrangelimiter.compat.dh.DhVersionSupport;
+import me.jamino.wynndhrangelimiter.compat.voxy.VoxyVersionSupport;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
 import me.jamino.wynndhrangelimiter.visibility.VisibilityService;
 import me.jamino.wynndhrangelimiter.visibility.VisibilitySnapshot;
@@ -15,6 +17,7 @@ import org.slf4j.LoggerFactory;
 public final class WynnVistaMod {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
     private static boolean dhSupported;
+    private static boolean voxySupported;
 
     void initialize() {
         boolean dh = FabricLoader.getInstance().isModLoaded("distanthorizons");
@@ -28,7 +31,18 @@ public final class WynnVistaMod {
         } else if (dh) {
             LOGGER.warn("DH binary is unsupported for spatial masking; its renderer remains unchanged");
         }
-        if (voxy) LOGGER.warn("Voxy selective masking is not implemented yet; Voxy is left untouched");
+        voxySupported = voxy && VoxyVersionSupport.supported();
+        if (voxySupported) {
+            LOGGER.info("Voxy {} / Minecraft {}: stock terrain masking enabled (exact for the stock render pipeline; "
+                            + "Iris shader-pack pipelines are not masked)",
+                    VoxyVersionSupport.VOXY_VERSION, VoxyVersionSupport.MC_VERSION);
+            VoxyFixtureController.register();
+        } else if (voxy) {
+            LOGGER.warn("Voxy binary is unsupported for spatial masking; its renderer remains unchanged");
+        }
+        if (dhSupported && voxySupported) {
+            LOGGER.warn("Distant Horizons and Voxy are both present; simultaneous operation is untested");
+        }
     }
 
     void onPlayerJoin(MinecraftClient client) {
@@ -52,7 +66,7 @@ public final class WynnVistaMod {
         if (before.revision() != after.revision()) {
             LOGGER.info("Visibility revision {}: {} in {} (fixture={}, token={})",
                     after.revision(), after.mode(), after.dimension(), context.fixture(), after.worldToken());
-            if (dhSupported && ModConfig.shouldShowMessage() && client.player != null
+            if ((dhSupported || voxySupported) && ModConfig.shouldShowMessage() && client.player != null
                     && before.mode() != after.mode() && after.mode() != MaskMode.PASSTHROUGH) {
                 client.player.sendMessage(Text.literal("WynnVista: " + after.mode()), true);
             }

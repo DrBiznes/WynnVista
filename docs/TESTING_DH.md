@@ -75,6 +75,6 @@ The complete Blaze3D test passed with the original five-worker setting and Temur
 - Complete continuous-frame realm-change capture; exercise dimension changes, config reloads, third-person cameras, and all required terrain passes.
 - Run the OpenGL edge, pass, transition, and repeated-launch matrix on a PC before claiming that backend works. One C1-only Mac exit does not establish stability.
 - Verify cached legacy biome names/materials visually; DH emits obsolete/empty-biome warnings while reading this cache.
-- Voxy remains deferred; its selected published artifact requires Java 25, and no Voxy renderer adapter is implemented. Explicit Iris support follows Voxy as the third project goal.
+- Voxy masking is now implemented and tested separately in [TESTING_VOXY.md](TESTING_VOXY.md) (the 0.2.16-beta jar targets Java 21, not 25). Explicit Iris support follows Voxy as the third project goal.
 
 The automation checks startup, lifecycle ordering, shader source anchors and cache retention. The recorded screenshots establish selected shader-free mask cases; the remaining matrix is still required before a general DH release claim.

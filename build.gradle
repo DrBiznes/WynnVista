@@ -13,9 +13,13 @@ base {
 loom {
     runs {
         client {
-            runDir = project.findProperty('runDir') ?: "run-dh"
+            runDir = project.findProperty('runDir')
+                    ?: ["voxy": "run-voxy", "both": "run-both", "neither": "run-neither"].getOrDefault(project.findProperty('lodBackend'), "run-dh")
             property("wynnvista.fixture.autoload", "New World")
-            property("wynnvista.fixture.autostopTicks", "400")
+            property("wynnvista.fixture.autostopTicks", System.getenv("WYNNVISTA_FIXTURE_AUTOSTOP_TICKS") ?: "400")
+            if (System.getenv("WYNNVISTA_FIXTURE_CREATE_WORLD")) {
+                property("wynnvista.fixture.createWorld", System.getenv("WYNNVISTA_FIXTURE_CREATE_WORLD"))
+            }
             if (System.getenv("WYNNVISTA_FIXTURE_COMMANDS")) {
                 property("wynnvista.fixture.commands", System.getenv("WYNNVISTA_FIXTURE_COMMANDS"))
             }
@@ -54,11 +58,30 @@ dependencies {
     modCompileOnly "maven.modrinth:distanthorizons:${project.dh_mod_version}"
 
     // Distant Horizons mod (runtime only for testing)
-    // Enable with -PlodBackend=dh for an isolated development run.
+    // Enable with -PlodBackend=dh (or both) for an isolated development run.
 
-    // Voxy integration is intentionally deferred until its renderer adapter is implemented.
-    if (project.findProperty('lodBackend') == 'dh') {
+    if (project.findProperty('lodBackend') in ['dh', 'both']) {
         modRuntimeOnly "maven.modrinth:distanthorizons:${project.dh_mod_version}"
+    }
+
+    // Voxy (optional - compile only; Sodium supplies types in Voxy's signatures).
+    // Enable with -PlodBackend=voxy (or both) for an isolated development run.
+    modCompileOnly "maven.modrinth:voxy:${project.voxy_artifact_version}"
+    modCompileOnly "maven.modrinth:sodium:${project.sodium_version}"
+    if (project.findProperty('lodBackend') in ['voxy', 'both']) {
+        modRuntimeOnly "maven.modrinth:voxy:${project.voxy_artifact_version}"
+        modRuntimeOnly "maven.modrinth:sodium:${project.sodium_version}"
+        // Loom does not load Voxy's jar-in-jar libraries in a development run; supply them (same versions Voxy bundles).
+        def lwjglNatives = org.gradle.internal.os.OperatingSystem.current().isWindows() ? "natives-windows"
+                : org.gradle.internal.os.OperatingSystem.current().isMacOsX() ? "natives-macos-arm64" : "natives-linux"
+        runtimeOnly "org.rocksdb:rocksdbjni:10.2.1"
+        runtimeOnly "redis.clients:jedis:5.1.0"
+        runtimeOnly "org.apache.commons:commons-pool2:2.12.0"
+        runtimeOnly "org.tukaani:xz:1.10"
+        runtimeOnly "org.lwjgl:lwjgl-lmdb:3.3.3"
+        runtimeOnly "org.lwjgl:lwjgl-lmdb:3.3.3:${lwjglNatives}"
+        runtimeOnly "org.lwjgl:lwjgl-zstd:3.3.3"
+        runtimeOnly "org.lwjgl:lwjgl-zstd:3.3.3:${lwjglNatives}"
     }
 
     // ModMenu
@@ -71,6 +94,7 @@ dependencies {
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
     testImplementation "maven.modrinth:distanthorizons:${project.dh_mod_version}"
+    testImplementation "maven.modrinth:voxy:${project.voxy_artifact_version}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

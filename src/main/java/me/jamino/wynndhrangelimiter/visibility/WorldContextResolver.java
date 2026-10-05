@@ -27,6 +27,7 @@ public final class WorldContextResolver {
                 : RegionPolicy.select(recognized, dimension, client.player.getX(), client.player.getZ());
         if (fixture && client.player != null && ModConfig.fixtureOverride() != null) {
             mode = ModConfig.fixtureOverride();
+            if (mode == MaskMode.FIXTURE_CUSTOM) RegionPolicy.setFixtureCustomRect(ModConfig.fixtureCustomRect());
         }
         return new Resolution(token, dimension, mode, fixture);
     }

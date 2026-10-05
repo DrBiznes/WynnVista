@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
+import me.jamino.wynndhrangelimiter.visibility.BlockRect;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
 import me.shedaniel.clothconfig2.api.ConfigBuilder;
 import me.shedaniel.clothconfig2.api.ConfigCategory;
@@ -34,6 +35,7 @@ public final class ModConfig implements ModMenuApi {
         boolean fixtureEnabled = false;
         String fixtureSavePath = "";
         String fixtureOverride = "AUTO";
+        String fixtureCustomRect = "";
     }
 
     private static Config load() {
@@ -50,6 +52,7 @@ public final class ModConfig implements ModMenuApi {
                 if (json.has("fixtureEnabled")) result.fixtureEnabled = json.get("fixtureEnabled").getAsBoolean();
                 if (json.has("fixtureSavePath")) result.fixtureSavePath = json.get("fixtureSavePath").getAsString();
                 if (json.has("fixtureOverride")) result.fixtureOverride = json.get("fixtureOverride").getAsString();
+                if (json.has("fixtureCustomRect")) result.fixtureCustomRect = json.get("fixtureCustomRect").getAsString();
                 if (!json.has("schemaVersion") || json.get("schemaVersion").getAsInt() < 2) {
                     Path backup = FILE.resolveSibling(FILE.getFileName() + ".bak");
                     if (!Files.exists(backup)) Files.copy(FILE, backup, StandardCopyOption.COPY_ATTRIBUTES);
@@ -84,6 +87,19 @@ public final class ModConfig implements ModMenuApi {
             return MaskMode.valueOf(config.fixtureOverride.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             LOGGER.warn("Invalid fixtureOverride: {}", config.fixtureOverride);
+            return null;
+        }
+    }
+
+    /** Inclusive block corners "x1,z1,x2,z2" for the fixture-only FIXTURE_CUSTOM override; null if unset or invalid. */
+    public static BlockRect fixtureCustomRect() {
+        String[] parts = config.fixtureCustomRect.trim().split("\\s*,\\s*");
+        if (parts.length != 4) return null;
+        try {
+            return BlockRect.fromInclusive(Long.parseLong(parts[0]), Long.parseLong(parts[1]),
+                    Long.parseLong(parts[2]), Long.parseLong(parts[3]));
+        } catch (RuntimeException e) {
+            LOGGER.warn("Invalid fixtureCustomRect: {}", config.fixtureCustomRect);
             return null;
         }
     }

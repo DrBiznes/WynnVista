@@ -5,6 +5,8 @@
 /run/
 /run-dh/
 /run-neither/
+/run-voxy/
+/run-both/
 /out/
 
 # Local Minecraft worlds, imported LOD caches, and generated evidence

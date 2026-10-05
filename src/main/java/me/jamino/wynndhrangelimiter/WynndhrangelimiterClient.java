@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter;
 
+import me.jamino.wynndhrangelimiter.debug.FixtureWorldCreator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -42,7 +43,11 @@ public class WynndhrangelimiterClient implements ClientModInitializer {
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            autoOpenFixture(client);
+            if (FixtureWorldCreator.requested()) {
+                if (!FixtureWorldCreator.tick(client)) return;
+            } else {
+                autoOpenFixture(client);
+            }
             MOD.onClientTick(client);
             autoStopFixture(client);
         });

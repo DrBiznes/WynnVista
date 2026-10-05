@@ -1,6 +1,6 @@
 # WynnVista project update: selective LOD visibility
 
-Research date: 2026-10-04. Status: DH implementation in progress. The Blaze3D fixture passes selected clipping, pass-binding, transition, and cache-retention checks. OpenGL validation is deferred to a PC after native crashes on the test Mac. See [the DH test record](TESTING_DH.md) for evidence and open gates.
+Research date: 2026-10-04. Status: DH implementation in progress; Voxy stock-pipeline masking implemented and fixture-tested (2026-10-04). The DH Blaze3D fixture passes selected clipping, pass-binding, transition, and cache-retention checks; DH OpenGL validation is deferred after native crashes on the test Mac. The Voxy fixture passes GPU compile/link, region masks, an exact clip, sampled transitions and cache retention on a Windows PC. See [the DH test record](TESTING_DH.md) and [the Voxy test record](TESTING_VOXY.md) for evidence and open gates.
 
 ## 1. Outcome and scope
 
@@ -20,11 +20,12 @@ Excluded from the first release: deleting/rebuilding users' databases, distance 
 
 ### Implementation status on 2026-10-04
 
-- The Java 21 build and 11 JUnit tests pass. The pure region policy, Wynncraft host check, world context resolver, immutable snapshot, schema-2 config migration, and removal of DH/Voxy distance writes are implemented. Voxy masking remains deferred.
+- The Java 21 build and 11 JUnit tests pass. The pure region policy, Wynncraft host check, world context resolver, immutable snapshot, schema-2 config migration, and removal of DH/Voxy distance writes are implemented. Voxy masking is implemented (below).
 - DH 3.3.3 has a version-gated shared render-list filter and checked stock shader patches for Blaze3D and OpenGL. When an exact shader path is unavailable, mixed sections are withheld conservatively. This fallback can leave missing strips at region edges.
 - An opt-in, read-only superflat fixture preserves all 25,009 imported `FullData` rows, including 16,706 detail-0 rows. The two-launch harness, per-tick transition captures, and repeat full-file SQLite comparison are available under `scripts/`. The working saves, caches, logs, and screenshots are ignored by Git. Setup steps are in the [README](../README.md).
 - Blaze3D visual checks cover a MAIN edge against an unmasked baseline, NONE, automatic LIGHT and VOID_OUTER, and the MAIN → LIGHT → VOID_OUTER → MAIN → LIGHT sequence at sampled ticks. Runtime diagnostics confirm `WynnVistaMask` binds in both opaque and transparent terrain calls. The DH frustum-off edge view also remained clipped.
 - OpenGL has one exact-mode screenshot under a C1-only JVM setting; ordinary runs on the Mac crashed natively. PC validation is pending. Continuous-frame teleport capture, all edges and corners, synthetic translucent/depth landmarks, dimension/reload/camera modes, and performance measurements remain release gates. Iris remains the third project goal after Voxy.
+- Voxy 0.2.16-beta (version ID `H3w2nVdU`; its jar targets Java 21, so the earlier "requires Java 25" note was wrong for this build): `compat/voxy/*` plus `MixinVoxyShaderLoader` and `MixinVoxyMDICSectionRenderer` patch the expanded stock `quads3.vert`/`quads.frag`, export the pre-MVP quad position as a varying, and discard outside the active rectangles in the opaque/temporal and translucent programs. The old whole-pipeline cancellation and Voxy distance writes are removed. The Voxy fixture (`scripts/voxy_fixture.py`) copies a real Wynncraft Voxy storage into a headlessly created superflat save with ingestion frozen. Iris shader-pack pipelines are `UNSUPPORTED` (unmasked) until M7. See [the Voxy test record](TESTING_VOXY.md).
 
 ## 2. Pre-update source baseline
 
@@ -54,7 +55,7 @@ Do not implement against moving default branches. Target the **latest published 
 | Voxy | Branch `12111`, commit `59b62bee821518e06612e1d5c2c58c487bda761d`, source version `0.2.16-beta` | Latest verified Fabric build for 1.21.11: `0.2.16-beta`, version ID `H3w2nVdU`; verify embedded commit / signatures against the source |
 | Voxy default branch | Inspected `dev` at `534d58ec8b4aa412ef314b884295552c69d480a6`, targeting MC 26.2 | Do not use its class layout as the 1.21.11 implementation contract |
 
-Published artifact versions were checked using Modrinth's project-version API filtered to Fabric and 1.21.11. DH 3.3.3 is a stable release; Voxy 0.2.16-beta is marked beta. This section records the original source research. Subsequent DH binary inspection and fixture runs are recorded in `TESTING_DH.md`; Voxy has not been executed. Compatibility claims apply only to the pinned builds until other versions are checked.
+Published artifact versions were checked using Modrinth's project-version API filtered to Fabric and 1.21.11. DH 3.3.3 is a stable release; Voxy 0.2.16-beta is marked beta. This section records the original source research. Subsequent DH binary inspection and fixture runs are recorded in `TESTING_DH.md`; Voxy was first executed on 2026-10-04 (see `TESTING_VOXY.md`). Compatibility claims apply only to the pinned builds until other versions are checked.
 
 ### DH findings
 

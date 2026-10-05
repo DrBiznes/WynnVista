@@ -8,7 +8,14 @@ public final class RegionPolicy {
     public static final BlockRect LIGHT = BlockRect.fromInclusive(-636, -6616, -1111, -5815);
     public static final BlockRect VOID_OUTER = BlockRect.fromInclusive(13393, -3195, 14380, -4704);
 
+    private static volatile BlockRect fixtureCustom;
+
     private RegionPolicy() {}
+
+    /** Rectangle used by {@link MaskMode#FIXTURE_CUSTOM}; null makes that mode an empty mask. */
+    public static void setFixtureCustomRect(BlockRect rect) {
+        fixtureCustom = rect;
+    }
 
     public static boolean isWynncraftHost(String address) {
         if (address == null) return false;
@@ -34,6 +41,8 @@ public final class RegionPolicy {
             case MAIN -> new VisibilityMask(mode, List.of(MAIN));
             case LIGHT -> new VisibilityMask(mode, List.of(LIGHT));
             case VOID_OUTER -> new VisibilityMask(mode, List.of(VOID_OUTER));
+            case FIXTURE_CUSTOM -> new VisibilityMask(mode,
+                    fixtureCustom == null ? List.of() : List.of(fixtureCustom));
         };
     }
 }
