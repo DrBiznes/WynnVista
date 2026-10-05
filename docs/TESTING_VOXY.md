@@ -24,7 +24,7 @@ The old whole-pipeline cancellation and all Voxy distance writes are gone. Voxy 
 | Path | Status |
 | --- | --- |
 | Stock `NormalRenderPipeline` (no shader pack): opaque, temporal, translucent | `EXACT` (this section's evidence) |
-| Iris shader-pack pipeline (`IrisVoxyRenderPipeline`) | `UNSUPPORTED` — logged once; terrain is rendered **unmasked**. Explicit Iris support is the third project goal (M7) |
+| Iris shader-pack pipeline (`IrisVoxyRenderPipeline`) | `EXACT` for the tested pack (Complementary Reimagined on WynnIris 1.2.2); see [TESTING_IRIS.md](TESTING_IRIS.md) |
 | Other Voxy versions | Mixins not applied; Voxy untouched |
 | Distant Horizons and Voxy installed together | Both adapters initialise; simultaneous operation is untested (warned at startup) |
 
@@ -42,11 +42,11 @@ The old whole-pipeline cancellation and all Voxy distance writes are gone. Voxy 
 Windows, macOS or Linux; Java 21; Python 3. `WYNNVISTA_TEST_JAVA` may select the game's Java executable. From the repository root:
 
 ```bash
-python scripts/voxy_fixture.py create-world --reset
-python scripts/voxy_fixture.py install --storage "<closed .../play.wynncraft.com/<id>/storage>" --config "<.../play.wynncraft.com/config.json>"
-python scripts/voxy_fixture.py run --commands 'gamemode spectator @p|tp @p 1200 150 -3000 90 0' --screenshot main-view.png
-python scripts/voxy_fixture.py run --masking --override LIGHT --commands 'gamemode spectator @p|tp @p -800 160 -6100 0 12' --screenshot light-view.png
-python scripts/voxy_fixture.py check
+python scripts/lod_fixture.py --backend voxy create-world --reset
+python scripts/lod_fixture.py --backend voxy install --storage "<closed .../play.wynncraft.com/<id>/storage>" --config "<.../play.wynncraft.com/config.json>"
+python scripts/lod_fixture.py --backend voxy run --commands 'gamemode spectator @p|tp @p 1200 150 -3000 90 0' --screenshot main-view.png
+python scripts/lod_fixture.py --backend voxy run --masking --override LIGHT --commands 'gamemode spectator @p|tp @p -800 160 -6100 0 12' --screenshot light-view.png
+python scripts/lod_fixture.py --backend voxy check
 ```
 
 `run` options: `--masking` (default off = pass-through baseline), `--override AUTO|MAIN|LIGHT|VOID_OUTER|NONE|PASSTHROUGH|FIXTURE_CUSTOM`, `--custom-rect "x1,z1,x2,z2"` (inclusive block corners; fixture-only slice for exact-clip checks), `--commands` (`|`-separated, run at tick 40), `--timeline`/`--capture-prefix` (same format as the DH fixture), `--ticks`, `--results`. Screenshots go to `run-voxy/screenshots/`, logs to `run-voxy/test-results/<run>/`. `check` verifies the log evidence and compares the installed storage with the install-time fingerprint. The launcher needs Gradle's loopback networking; on a machine where the JVM cannot create a Selector (observed under this agent's sandbox, a Unix-domain-socket temp path problem) set `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=<short ASCII dir>`.
@@ -73,7 +73,7 @@ Legacy biome names in the copied cache (`minecraft:snowy_tundra`, `mountains`, `
 
 ## Not verified / open
 
-- **Iris shader packs** with Voxy: not masked (see the matrix); M7.
+- **Iris shader packs** with Voxy are covered in [TESTING_IRIS.md](TESTING_IRIS.md). (This record was written before that work; the "not masked" statements about Iris below were true at the time.)
 - **Continuous-frame teleport capture** and every region edge/corner: transitions are sampled game ticks, not rendered frames; only the main/Light seam, Light's west and east edges (top-down) and the custom slice were viewed. Light's island lies wholly inside its rectangle, so real boundary cuts were demonstrated with the fixture-only custom rectangle rather than the production edges.
 - **Synthetic translucent/depth landmarks**: coverage of the translucent program is shown by compile/link plus per-pass binding logs, not by a landmark water strip crossing a boundary.
 - **Performance** (median/p95 frame time, transition hitch, memory): not measured. Hidden terrain is still drawn and discarded, so GPU cost is unchanged by masking; the optional GPU command-stream cull (M8) is unimplemented.

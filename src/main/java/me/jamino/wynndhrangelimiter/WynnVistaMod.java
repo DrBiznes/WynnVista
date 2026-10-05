@@ -33,8 +33,7 @@ public final class WynnVistaMod {
         }
         voxySupported = voxy && VoxyVersionSupport.supported();
         if (voxySupported) {
-            LOGGER.info("Voxy {} / Minecraft {}: stock terrain masking enabled (exact for the stock render pipeline; "
-                            + "Iris shader-pack pipelines are not masked)",
+            LOGGER.info("Voxy {} / Minecraft {}: terrain masking enabled (exact for the stock pipeline and Iris shader-pack pipelines)",
                     VoxyVersionSupport.VOXY_VERSION, VoxyVersionSupport.MC_VERSION);
             VoxyFixtureController.register();
         } else if (voxy) {

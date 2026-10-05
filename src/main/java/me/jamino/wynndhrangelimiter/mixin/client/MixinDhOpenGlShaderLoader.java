@@ -3,7 +3,6 @@ package me.jamino.wynndhrangelimiter.mixin.client;
 import com.seibel.distanthorizons.common.render.openGl.glObject.shader.GlShader;
 import me.jamino.wynndhrangelimiter.compat.dh.DhOpenGlExactState;
 import me.jamino.wynndhrangelimiter.compat.dh.DhOpenGlShaderPatch;
-import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -19,7 +18,6 @@ public abstract class MixinDhOpenGlShaderLoader {
     private static void wynnvista$patchTerrainSource(String path, boolean mandatory,
                                                      CallbackInfoReturnable<String> cir) {
         if (!DhOpenGlShaderPatch.VERTEX.equals(path) && !DhOpenGlShaderPatch.FRAGMENT.equals(path)) return;
-        if (FabricLoader.getInstance().isModLoaded("iris")) return;
         try {
             cir.setReturnValue(DhOpenGlShaderPatch.patch(path, cir.getReturnValue()));
             DhOpenGlExactState.mark(path, true);

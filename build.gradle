@@ -64,6 +64,18 @@ dependencies {
         modRuntimeOnly "maven.modrinth:distanthorizons:${project.dh_mod_version}"
     }
 
+    // WynnIris (optional - compile only; mixin targets for the Iris shader-pack paths).
+    // Enable with -Piris=true for an isolated development run (any lodBackend).
+    modCompileOnly "maven.modrinth:wynniris:${project.wynniris_artifact_version}"
+    if (project.findProperty('iris') == 'true') {
+        modRuntimeOnly "maven.modrinth:wynniris:${project.wynniris_artifact_version}"
+        modRuntimeOnly "maven.modrinth:sodium:${project.sodium_version}"
+        // Loom does not load WynnIris's jar-in-jar libraries in a development run.
+        runtimeOnly "org.antlr:antlr4-runtime:4.13.1"
+        runtimeOnly "io.github.douira:glsl-transformer:3.0.0-pre3"
+        runtimeOnly "org.anarres:jcpp:1.4.14"
+    }
+
     // Voxy (optional - compile only; Sodium supplies types in Voxy's signatures).
     // Enable with -PlodBackend=voxy (or both) for an isolated development run.
     modCompileOnly "maven.modrinth:voxy:${project.voxy_artifact_version}"

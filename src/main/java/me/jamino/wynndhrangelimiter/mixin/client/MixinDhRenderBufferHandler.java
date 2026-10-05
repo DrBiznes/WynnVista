@@ -7,6 +7,7 @@ import com.seibel.distanthorizons.core.render.RenderParams;
 import com.seibel.distanthorizons.core.util.objects.SortedArraySet;
 import me.jamino.wynndhrangelimiter.compat.dh.DhBlazeExactState;
 import me.jamino.wynndhrangelimiter.compat.dh.DhOpenGlExactState;
+import me.jamino.wynndhrangelimiter.compat.dh.iris.DhIrisMaskState;
 import me.jamino.wynndhrangelimiter.WynnVistaMod;
 import me.jamino.wynndhrangelimiter.visibility.VisibilityMask;
 import me.jamino.wynndhrangelimiter.visibility.VisibilitySnapshot;
@@ -41,13 +42,14 @@ public abstract class MixinDhRenderBufferHandler {
     @Inject(method = "buildRenderList", at = @At("TAIL"))
     private void wynnvista$finishList(RenderParams params, CallbackInfo ci) {
         VisibilitySnapshot snapshot = wynnvista$snapshot;
-        boolean exact = DhBlazeExactState.canClip() || DhOpenGlExactState.canClip();
+        boolean exact = DhBlazeExactState.canClip() || DhOpenGlExactState.canClip() || DhIrisMaskState.canClip();
         if (snapshot != null && (snapshot.revision() != wynnvista$lastLoggedRevision
                 || exact != wynnvista$lastLoggedExact)
                 && wynnvista$inside + wynnvista$intersecting + wynnvista$outside > 0) {
             wynnvista$lastLoggedRevision = snapshot.revision();
             wynnvista$lastLoggedExact = exact;
-            String path = DhBlazeExactState.canClip() ? "exact Blaze3D"
+            String path = DhIrisMaskState.canClip() ? "exact Iris shader-pack"
+                    : DhBlazeExactState.canClip() ? "exact Blaze3D"
                     : DhOpenGlExactState.canClip() ? "exact OpenGL" : "conservative";
             WYNNVISTA_LOGGER.info("DH {} mask revision {}: mode={}, inside={}, mixed={}, outside={}",
                     path, snapshot.revision(), snapshot.mode(), wynnvista$inside,
@@ -69,7 +71,7 @@ public abstract class MixinDhRenderBufferHandler {
         VisibilityMask.Classification classification = snapshot.mask().classify(
                 DhSectionPos.getMinCornerBlockX(pos), DhSectionPos.getMinCornerBlockZ(pos),
                 Integer.toUnsignedLong(DhSectionPos.getBlockWidth(pos)));
-        boolean exact = DhBlazeExactState.canClip() || DhOpenGlExactState.canClip();
+        boolean exact = DhBlazeExactState.canClip() || DhOpenGlExactState.canClip() || DhIrisMaskState.canClip();
         switch (classification) {
             case INSIDE -> { wynnvista$inside++; list.add(section); }
             case INTERSECTING -> {

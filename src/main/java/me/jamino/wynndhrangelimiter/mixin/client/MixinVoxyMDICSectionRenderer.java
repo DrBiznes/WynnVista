@@ -43,6 +43,7 @@ public abstract class MixinVoxyMDICSectionRenderer {
     @Unique private long wynnvista$loggedOpaque = -1;
     @Unique private long wynnvista$loggedTemporal = -1;
     @Unique private long wynnvista$loggedTranslucent = -1;
+    @Unique private final java.util.Set<Integer> wynnvista$viewports = new java.util.HashSet<>();
 
     @Inject(method = "<init>", at = @At("TAIL"))
     private void wynnvista$resolveUniforms(CallbackInfo ci) {
@@ -51,8 +52,11 @@ public abstract class MixinVoxyMDICSectionRenderer {
         wynnvista$opaqueCount = GL20C.glGetUniformLocation(terrainShader.id(), VoxyShaderPatch.COUNT_UNIFORM);
         wynnvista$translucentRects = GL20C.glGetUniformLocation(translucentTerrainShader.id(), VoxyShaderPatch.RECTS_UNIFORM + "[0]");
         wynnvista$translucentCount = GL20C.glGetUniformLocation(translucentTerrainShader.id(), VoxyShaderPatch.COUNT_UNIFORM);
-        boolean stock = "NormalRenderPipeline".equals(pipelineName);
-        wynnvista$exact = stock && VoxyMaskState.shadersPatched()
+        // The stock pipeline and the Iris pipeline both compile the patched quads.frag: the Iris pipeline appends the
+        // shader pack's voxy_emitFragment implementation after it, so the mask runs in front of the pack's code.
+        boolean supportedPipeline = "NormalRenderPipeline".equals(pipelineName)
+                || "IrisVoxyRenderPipeline".equals(pipelineName);
+        wynnvista$exact = supportedPipeline && VoxyMaskState.shadersPatched()
                 && wynnvista$opaqueRects >= 0 && wynnvista$opaqueCount >= 0
                 && wynnvista$translucentRects >= 0 && wynnvista$translucentCount >= 0;
         if (wynnvista$exact) {
@@ -69,6 +73,11 @@ public abstract class MixinVoxyMDICSectionRenderer {
 
     @Inject(method = "renderOpaque", at = @At("HEAD"))
     private void wynnvista$beginFrame(MDICViewport viewport, CallbackInfo ci) {
+        if (wynnvista$exact && wynnvista$viewports.add(System.identityHashCode(viewport))) {
+            // Iris shadow passes render through their own viewport; each one is masked with its own origin.
+            WYNNVISTA_LOGGER.info("Voxy terrain mask now covers viewport #{} (base section {}, {})",
+                    wynnvista$viewports.size(), viewport.section.x, viewport.section.z);
+        }
         wynnvista$snapshot = WynnVistaMod.refreshForRender(MinecraftClient.getInstance());
         wynnvista$upload(viewport);
         if (wynnvista$exact && wynnvista$snapshot.revision() != wynnvista$loggedOpaque) {

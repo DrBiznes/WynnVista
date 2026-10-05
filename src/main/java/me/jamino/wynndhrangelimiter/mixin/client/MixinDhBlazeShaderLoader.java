@@ -3,7 +3,6 @@ package me.jamino.wynndhrangelimiter.mixin.client;
 import com.mojang.blaze3d.shaders.ShaderType;
 import me.jamino.wynndhrangelimiter.compat.dh.DhBlazeExactState;
 import me.jamino.wynndhrangelimiter.compat.dh.DhBlazeShaderPatch;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gl.ShaderLoader;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
@@ -31,7 +30,6 @@ public abstract class MixinDhBlazeShaderLoader {
                                               CallbackInfoReturnable<String> cir) {
         String name = id.toString();
         if (!DhBlazeShaderPatch.VERTEX.equals(name) && !DhBlazeShaderPatch.FRAGMENT.equals(name)) return;
-        if (FabricLoader.getInstance().isModLoaded("iris")) return;
         String source = cir.getReturnValue();
         if (source == null) {
             DhBlazeExactState.mark(name, false);

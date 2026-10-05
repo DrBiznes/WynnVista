@@ -13,7 +13,6 @@ import me.jamino.wynndhrangelimiter.visibility.BlockRect;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
 import me.jamino.wynndhrangelimiter.visibility.VisibilityService;
 import me.jamino.wynndhrangelimiter.visibility.VisibilitySnapshot;
-import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,7 +36,6 @@ public abstract class MixinDhBlazeTerrainRenderer {
     private void wynnvista$prepareMask(RenderParams params, boolean opaque,
                                        SortedArraySet<LodBufferContainer> buffers,
                                        IProfilerWrapper profiler, CallbackInfo ci) {
-        if (FabricLoader.getInstance().isModLoaded("iris")) return;
         wynnvista$opaque = opaque;
         // Blaze disallows buffer writes once RenderPassWrapper opens the pass.
         if (wynnvista$maskBuffer == null) wynnvista$maskBuffer = new BlazeUniformBufferWrapper("WynnVistaMask");
@@ -56,7 +54,7 @@ public abstract class MixinDhBlazeTerrainRenderer {
             target = "Lcom/seibel/distanthorizons/common/render/blaze/wrappers/RenderPipelineBuilderWrapper;withFragmentShader(Ljava/lang/String;)Lcom/seibel/distanthorizons/common/render/blaze/wrappers/RenderPipelineBuilderWrapper;"))
     private RenderPipelineBuilderWrapper wynnvista$registerMaskBlock(
             RenderPipelineBuilderWrapper builder, String path) {
-        if (!FabricLoader.getInstance().isModLoaded("iris")) builder.withUniformBuffer("WynnVistaMask");
+        builder.withUniformBuffer("WynnVistaMask");
         return builder.withFragmentShader(path);
     }
 

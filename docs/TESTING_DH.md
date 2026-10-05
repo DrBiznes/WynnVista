@@ -1,6 +1,6 @@
 # DH update and isolated fixture testing
 
-Date: 2026-10-04. Development baseline and selective terrain clipping implementation. The README now contains the [reproducible fixture setup](../README.md#build-and-isolated-dh-test). Release validation remains incomplete; OpenGL runtime testing is deferred to a PC.
+Date: 2026-10-04 (macOS results; Windows PC results for OpenGL and Iris are in [TESTING_IRIS.md](TESTING_IRIS.md)). Development baseline and selective terrain clipping implementation. The README now contains the [reproducible fixture setup](../README.md#build-and-isolated-dh-test). Release validation remains incomplete; OpenGL runtime testing is deferred to a PC.
 
 ## Installation and cache
 

@@ -1,6 +1,7 @@
 package me.jamino.wynndhrangelimiter.mixin;
 
 import me.jamino.wynndhrangelimiter.compat.dh.DhVersionSupport;
+import me.jamino.wynndhrangelimiter.compat.iris.IrisSupport;
 import me.jamino.wynndhrangelimiter.compat.voxy.VoxyVersionSupport;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
@@ -17,6 +18,9 @@ public final class WynnVistaMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if (mixinClassName.contains(".MixinVoxy")) return VoxyVersionSupport.supported();
+        if (mixinClassName.contains(".MixinDhIris")) {
+            return DhVersionSupport.supported() && IrisSupport.dhTerrainSupported();
+        }
         if (!mixinClassName.endsWith(".MixinDhRenderBufferHandler")
                 && !mixinClassName.endsWith(".MixinDhBlazeShaderLoader")
                 && !mixinClassName.endsWith(".MixinDhBlazeTerrainRenderer")

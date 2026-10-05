@@ -12,6 +12,8 @@
     "MixinDhBlazeTerrainRenderer",
     "MixinDhOpenGlShaderLoader",
     "MixinDhOpenGlTerrainShaderProgram",
+    "MixinDhIrisTransformPatcher",
+    "MixinDhIrisLodRenderProgram",
     "MixinVoxyShaderLoader",
     "MixinVoxyMDICSectionRenderer"
   ],

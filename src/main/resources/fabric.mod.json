@@ -3,7 +3,7 @@
   "id": "wynn-dh-range-limiter",
   "version": "${version}",
   "name": "WynnVista",
-  "description": "Development build for selective Wynncraft LOD visibility and DH fixture testing.",
+  "description": "Shows only the active Wynncraft region's Distant Horizons or Voxy LOD terrain (main map, Realm of Light, Void) without changing either mod's render distance. Works with WynnIris shader packs.",
   "authors": [
     "DrBiznes"
   ],
