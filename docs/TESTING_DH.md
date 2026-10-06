@@ -1,6 +1,6 @@
 # DH update and isolated fixture testing
 
-Date: 2026-10-04 (macOS results; Windows PC results for OpenGL and Iris are in [TESTING_IRIS.md](TESTING_IRIS.md)). Development baseline and selective terrain clipping implementation. The README now contains the [reproducible fixture setup](../README.md#build-and-isolated-dh-test). Release validation remains incomplete; OpenGL runtime testing is deferred to a PC.
+Date: 2026-10-04 (macOS results; Windows PC results for OpenGL and Iris are in [TESTING_IRIS.md](TESTING_IRIS.md)). Development baseline and selective terrain clipping implementation. The README now contains the [reproducible fixture setup](../README.md#build-and-isolated-dh-test). Release validation remains incomplete; the OpenGL matrix was run on 2026-10-06 and is recorded in [OpenGL backend (Windows PC)](#opengl-backend-windows-pc).
 
 ## Installation and cache
 
@@ -53,6 +53,26 @@ The subsequent `run-dh/pass-binding-launch.log` shows the stock Blaze3D mask buf
 
 The source DB uses schema 11; DH updates the disposable DB to schema 12. Nine coarse terrain rows change during the first launch. Checks allow this initialization but retain every terrain key and compare actual detail-0 data, column metadata and mapping blobs. The second launch must preserve all terrain and the complete SQLite file byte for byte against the first normal exit.
 
+## OpenGL backend (Windows PC)
+
+Date: 2026-10-06. Windows 11, RTX 4070 (driver 617.14, OpenGL 3.3 core), Java 21.0.4, Minecraft 1.21.11, DH 3.3.3, no Iris and no Voxy. Every launch forced `renderingEngine = "OPEN_GL"` and logged `DH Rendering successfully bound to: [OpenGL]`. The fixture is the same Wynncraft overworld cache (22,907 rows, 15,311 detail-0) used for the Iris tests, driven by `scripts/lod_fixture.py --backend dh run --dh-engine OPEN_GL`. Evidence is under the ignored `run-dh/test-results/opengl-matrix/` and `run-dh/screenshots/ogl-*.png`.
+
+| Check | Result |
+| --- | --- |
+| `gradlew cleanTest test`: 24 JUnit tests including `DhOpenGlShaderPatchTest` | PASS |
+| Baseline (masking off), launches 1 and 2 | PASS: both normal exits after 400 ticks; `PASSTHROUGH` mask bound in opaque and transparent passes; cache fingerprint unchanged after each |
+| Masked MAIN east edge, and with DH frustum culling disabled | PASS for startup, binding and exit (`mixed=2`; `inside=36 mixed=22 outside=131` without frustum culling). The screenshots differ from baseline by about 2.5% of pixels but show no obvious floating geometry in either view at this camera, so they do not demonstrate clipping on their own |
+| `NONE` override | PASS: `ogl-none.png` shows no LOD terrain |
+| Automatic LIGHT and VOID_OUTER views | PASS: only that realm's cached terrain visible (`ogl-light-auto.png`, `ogl-void-auto.png`) |
+| Exact clip: `FIXTURE_CUSTOM` allowed x ≤ −901, top-down at (−800, 300, −6200) | PASS: `ogl-cut-x900.png` shows a crisp planar cut through the island and tree canopy; `ogl-cut-baseline.png` is the same camera unmasked |
+| Realm transitions MAIN → LIGHT → VOID_OUTER → MAIN → LIGHT, 24 captures | PASS for sampled ticks: revisions 2–7; sheet `sheet-ogl-trans.png` shows only destination terrain, plus sky frames while DH loads |
+| Opaque and transparent pass binding | PASS: `WynnVista mask … bound for opaque pass` and `… transparent pass` logged at every revision in all twelve launches |
+| Repeated launches (twelve OpenGL launches, default JVM) | PASS: no native crash, no `hs_err` file, no `did not match pinned source`; `check` passed after every launch (cache keys and detail-0 payload hashes unchanged) |
+
+This shows the Mac OpenGL crashes do not reproduce on this PC, as recorded in [TESTING_IRIS.md](TESTING_IRIS.md). Still open for OpenGL: depth and translucent-pass landmark tests, third-person and other camera modes, continuous-frame capture, config reload, dimension changes, other GPUs and drivers (AMD, Intel, Linux), and performance.
+
+Environment note: `gradlew` can fail on Windows with `Unable to establish loopback connection` when `TEMP` is an 8.3 short path such as `C:\Users\JAMFEM~1\...`. Setting `TEMP`, `TMP` and `GRADLE_OPTS=-Djava.io.tmpdir=<plain path>` fixes it.
+
 ## Native crash investigation
 
 Hardware/runtime: macOS 15.6.1, Apple M4 arm64. OpenGL runs crashed with Temurin 21.0.10 and Zulu 21.0.7. Reducing DH workers from five to one did not resolve it. A successful standalone repeat was observed, but complete repeat tests subsequently failed, so that result is insufficient for a stability claim.
@@ -73,7 +93,7 @@ The complete Blaze3D test passed with the original five-worker setting and Temur
 
 - Extend visual comparison to every supplied edge and synthetic coarse sections; verify geometry and depth in opaque and translucent passes.
 - Complete continuous-frame realm-change capture; exercise dimension changes, config reloads, third-person cameras, and all required terrain passes.
-- Run the OpenGL edge, pass, transition, and repeated-launch matrix on a PC before claiming that backend works. One C1-only Mac exit does not establish stability.
+- The OpenGL edge, transition, cut and repeated-launch matrix now passes on one Windows PC (see above). Remaining OpenGL work: other GPUs and drivers, depth and translucent landmark tests, camera modes, continuous-frame capture, performance.
 - Verify cached legacy biome names/materials visually; DH emits obsolete/empty-biome warnings while reading this cache.
 - Voxy masking is now implemented and tested separately in [TESTING_VOXY.md](TESTING_VOXY.md) (the 0.2.16-beta jar targets Java 21, not 25). Explicit Iris support follows Voxy as the third project goal.
 
