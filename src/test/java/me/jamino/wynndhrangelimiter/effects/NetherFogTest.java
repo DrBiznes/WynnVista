@@ -13,6 +13,15 @@ class NetherFogTest {
     private static final String OVERWORLD = "minecraft:overworld";
 
     @Test
+    void everyStyleHasAShaderBuiltOnTheSharedLayer() {
+        for (NetherFog.Style style : NetherFog.Style.values()) {
+            String source = EffectProgram.source(style.shader());
+            assertTrue(source.contains("vec3 fogField(vec3 q, int octaves)"), style.name());
+            assertFalse(source.contains("#include"), style.name());
+        }
+    }
+
+    @Test
     void layerCoversTheCorruptedGroundAndNeverReachesBelowItsFloor() {
         WorldEffect.Bounds box = new NetherFog().bounds();
         assertEquals(NetherFog.FLOOR_Y, box.minY(), "the portal's pit below the floor stays clear");

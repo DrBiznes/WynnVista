@@ -1,5 +1,7 @@
 package me.jamino.wynndhrangelimiter.effects;
 
+import me.jamino.wynndhrangelimiter.ModConfig;
+
 /** The smoke column rising from Mount Wynn's crater: placement, shape and lighting rules. */
 public final class SmokePlume implements WorldEffect {
     public static final String ID = "smoke_plume";
@@ -21,6 +23,24 @@ public final class SmokePlume implements WorldEffect {
     public static final double RISE_SPEED = 4.8;
     public static final double SCROLL_PERIOD = 1280;
 
+    /** How the plume is drawn; both styles share its placement, shape and lighting. */
+    public enum Style {
+        REALISTIC("Realistic", "smoke_plume.fsh"),
+        /** Translucent cubes in the manner of the Better Clouds mod. */
+        BLOCKY("Blocky", "smoke_plume_blocky.fsh");
+
+        private final String label;
+        private final String shader;
+
+        Style(String label, String shader) {
+            this.label = label;
+            this.shader = shader;
+        }
+
+        public String label() { return label; }
+        public String shader() { return shader; }
+    }
+
     private static final Bounds BOUNDS = new Bounds(PEAK_X - TOP_RADIUS, VENT_Y, PEAK_Z - TOP_RADIUS,
             PEAK_X + DRIFT_X + TOP_RADIUS, VENT_Y + HEIGHT, PEAK_Z + DRIFT_Z + TOP_RADIUS);
 
@@ -33,7 +53,9 @@ public final class SmokePlume implements WorldEffect {
     @Override public String id() { return ID; }
     @Override public String name() { return "Mount Wynn Smoke Plume"; }
     @Override public String description() { return "Smoke rising from the crater of Mount Wynn"; }
-    @Override public String shader() { return "smoke_plume.fsh"; }
+    @Override public String shader() { return ModConfig.smokePlumeStyle().shader(); }
+    /** Half resolution would blur the cube edges the blocky style is made of. */
+    @Override public boolean halfResolution() { return ModConfig.smokePlumeStyle() != Style.BLOCKY; }
     @Override public double anchorX() { return PEAK_X; }
     @Override public double anchorZ() { return PEAK_Z; }
     @Override public Bounds bounds() { return BOUNDS; }

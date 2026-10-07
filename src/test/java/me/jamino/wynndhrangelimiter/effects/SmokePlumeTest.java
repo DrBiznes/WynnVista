@@ -16,6 +16,15 @@ class SmokePlumeTest {
     }
 
     @Test
+    void everyStyleHasAShaderBuiltOnTheSharedColumn() {
+        for (SmokePlume.Style style : SmokePlume.Style.values()) {
+            String source = EffectProgram.source(style.shader());
+            assertTrue(source.contains("float density(vec3 q, int octaves)"), style.name());
+            assertTrue(!source.contains("#include"), style.name());
+        }
+    }
+
+    @Test
     void sunRisesInTheEastAndTheMoonTakesOverAtNight() {
         SmokePlume.Lighting noon = SmokePlume.lighting(6000, 0);
         assertTrue(noon.dirY() > 0.9f, "noon light comes from above");

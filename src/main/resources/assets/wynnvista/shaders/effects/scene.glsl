@@ -71,7 +71,7 @@ float noise(vec3 p) {
     vec3 cell = floor(p);
     vec3 f = fract(p);
     f = f * f * (3.0 - 2.0 * f);
-    return texture(uNoise, (cell + f + 0.5) / NOISE_SIZE).r;
+    return textureLod(uNoise, (cell + f + 0.5) / NOISE_SIZE, 0.0).r;
 }
 
 float fbm(vec3 p, int octaves) {

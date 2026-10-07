@@ -13,8 +13,11 @@ public interface WorldEffect {
 
     String description();
 
-    /** Fragment shader file under {@code assets/wynnvista/shaders/effects/}. */
+    /** Fragment shader file under {@code assets/wynnvista/shaders/effects/}; may change with the config. */
     String shader();
+
+    /** Whether the effect may be marched at half resolution and upsampled when it covers much of the view. */
+    default boolean halfResolution() { return true; }
 
     /**
      * Block the effect stands on. It is shown exactly where LOD terrain at this block is shown, so it is

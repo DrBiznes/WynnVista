@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
+import me.jamino.wynndhrangelimiter.effects.NetherFog;
+import me.jamino.wynndhrangelimiter.effects.SmokePlume;
 import me.jamino.wynndhrangelimiter.effects.WorldEffect;
 import me.jamino.wynndhrangelimiter.effects.WorldEffects;
 import me.jamino.wynndhrangelimiter.visibility.BlockRect;
@@ -40,6 +42,8 @@ public final class ModConfig implements ModMenuApi {
         int effectSteps = 64;
         /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
         Map<String, Boolean> effects = new LinkedHashMap<>();
+        String smokePlumeStyle = "REALISTIC";
+        String netherFogStyle = "REALISTIC";
         boolean fixtureEnabled = false;
         String fixtureSavePath = "";
         String fixtureOverride = "AUTO";
@@ -63,6 +67,8 @@ public final class ModConfig implements ModMenuApi {
                     json.getAsJsonObject("effects").entrySet().forEach(entry ->
                             result.effects.put(entry.getKey(), entry.getValue().getAsBoolean()));
                 }
+                if (json.has("smokePlumeStyle")) result.smokePlumeStyle = json.get("smokePlumeStyle").getAsString();
+                if (json.has("netherFogStyle")) result.netherFogStyle = json.get("netherFogStyle").getAsString();
                 if (json.has("fixtureEnabled")) result.fixtureEnabled = json.get("fixtureEnabled").getAsBoolean();
                 if (json.has("fixtureSavePath")) result.fixtureSavePath = json.get("fixtureSavePath").getAsString();
                 if (json.has("fixtureOverride")) result.fixtureOverride = json.get("fixtureOverride").getAsString();
@@ -98,6 +104,24 @@ public final class ModConfig implements ModMenuApi {
     public static boolean effectEnabled(String id) { return config.effects.getOrDefault(id, true); }
     /** Ray-march samples per pixel for volumetric effects. */
     public static int effectSteps() { return Math.max(16, Math.min(128, config.effectSteps)); }
+    /** Rendering style of the Mount Wynn smoke plume; an unknown value means the default. */
+    public static SmokePlume.Style smokePlumeStyle() {
+        try {
+            return SmokePlume.Style.valueOf(config.smokePlumeStyle.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return SmokePlume.Style.REALISTIC;
+        }
+    }
+
+    /** Rendering style of the Roots of Corruption lava fog; an unknown value means the default. */
+    public static NetherFog.Style netherFogStyle() {
+        try {
+            return NetherFog.Style.valueOf(config.netherFogStyle.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return NetherFog.Style.REALISTIC;
+        }
+    }
+
     public static boolean fixtureEnabled() { return config.fixtureEnabled; }
     public static String fixtureSavePath() { return config.fixtureSavePath; }
 
@@ -165,6 +189,26 @@ public final class ModConfig implements ModMenuApi {
                             save();
                         }).build());
             }
+            effects.addEntry(entries.startEnumSelector(Text.literal("Smoke Plume Style"), SmokePlume.Style.class,
+                            smokePlumeStyle())
+                    .setDefaultValue(SmokePlume.Style.REALISTIC)
+                    .setEnumNameProvider(style -> Text.literal(((SmokePlume.Style) style).label()))
+                    .setTooltip(Text.literal("Realistic: soft volumetric smoke. Blocky: translucent cubes, "
+                            + "in the style of the Better Clouds mod"))
+                    .setSaveConsumer(value -> {
+                        config.smokePlumeStyle = value.name();
+                        save();
+                    }).build());
+            effects.addEntry(entries.startEnumSelector(Text.literal("Lava Fog Style"), NetherFog.Style.class,
+                            netherFogStyle())
+                    .setDefaultValue(NetherFog.Style.REALISTIC)
+                    .setEnumNameProvider(style -> Text.literal(((NetherFog.Style) style).label()))
+                    .setTooltip(Text.literal("Realistic: soft glowing fog. Blocky: translucent slabs, "
+                            + "in the style of the Better Clouds mod"))
+                    .setSaveConsumer(value -> {
+                        config.netherFogStyle = value.name();
+                        save();
+                    }).build());
             ConfigCategory fixture = builder.getOrCreateCategory(Text.literal("Local Fixture"));
             fixture.addEntry(entries.startBooleanToggle(Text.literal("Enable Fixture"), config.fixtureEnabled)
                     .setDefaultValue(false).setSaveConsumer(value -> {

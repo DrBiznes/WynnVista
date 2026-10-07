@@ -3,6 +3,8 @@
 ## Unreleased
 
 **Changed**
+- Config: "Smoke Plume Style" chooses how the Mount Wynn smoke plume is drawn. "Blocky" builds it from translucent cubes in the style of the Better Clouds mod; "Realistic" (the default) is the existing soft smoke.
+- Config: "Lava Fog Style" does the same for the Roots of Corruption lava fog, independently of the plume: "Blocky" draws its billows and wisps as translucent slabs.
 - World effects now sit behind the fog of the active shader pack, including WynnIris ambiance presets: the smoke plume fades into fog the same way the mountain under it does.
 
 ## 2.1.0

@@ -139,7 +139,7 @@ public final class WorldEffects {
         VisibilitySnapshot snapshot = WynnVistaMod.refreshForRender(client);
         String dimension = client.world.getRegistryKey().getValue().toString();
         for (WorldEffect effect : EFFECTS) {
-            if (!ModConfig.effectEnabled(effect.id()) || BROKEN.contains(effect.id())) continue;
+            if (!ModConfig.effectEnabled(effect.id()) || BROKEN.contains(effect.shader())) continue;
             if (!EffectRegion.shows(snapshot, true, dimension, client.player.getX(), client.player.getZ(),
                     effect.anchorX(), effect.anchorZ())) continue;
             double distance = Math.hypot(effect.anchorX() - cameraPos.x, effect.anchorZ() - cameraPos.z);
@@ -206,7 +206,7 @@ public final class WorldEffects {
                 int steps = EffectCulling.steps(ModConfig.effectSteps(), Math.max(x1 - x0, y1 - y0));
                 int octaves = EffectCulling.octaves(entry.distance(), projectionScaleY, height);
                 // A large effect is marched at half resolution and upsampled; a small one is drawn directly.
-                boolean half = (long) (x1 - x0) * (y1 - y0) > HALF_RESOLUTION_COVERAGE * width * height;
+                boolean half = effect.halfResolution() && (long) (x1 - x0) * (y1 - y0) > HALF_RESOLUTION_COVERAGE * width * height;
                 int targetWidth = half ? (width + 1) / 2 : width;
                 int targetHeight = half ? (height + 1) / 2 : height;
 
@@ -219,6 +219,7 @@ public final class WorldEffects {
                 program.set("uFogColor", fogColor.x, fogColor.y, fogColor.z);
                 program.set("uSteps", steps);
                 program.set("uOctaves", octaves);
+                program.set("uPixelSize", (float) (entry.distance() * 2 / (projectionScaleY * height)));
                 WorldEffect.Bounds box = effect.bounds();
                 program.set("uBoxMin", (float) (box.minX() - frame.cameraX()), (float) (box.minY() - frame.cameraY()),
                         (float) (box.minZ() - frame.cameraZ()));
@@ -398,18 +399,22 @@ public final class WorldEffects {
         lowSizeY = lowHeight;
     }
 
-    /** Compiles an effect's program on first use; a shader that fails disables only that effect. */
+    /**
+     * Compiles an effect's program on first use, per shader, as an effect may switch shaders with the config.
+     * A shader that fails disables only the effect using it.
+     */
     private static EffectProgram program(WorldEffect effect) {
-        EffectProgram program = PROGRAMS.get(effect.id());
+        String shader = effect.shader();
+        EffectProgram program = PROGRAMS.get(shader);
         if (program != null) return program;
         try {
-            program = EffectProgram.link(effect.shader());
-            PROGRAMS.put(effect.id(), program);
-            LOGGER.info("World effect '{}' compiled and linked", effect.id());
+            program = EffectProgram.link(shader);
+            PROGRAMS.put(shader, program);
+            LOGGER.info("World effect '{}' compiled and linked ({})", effect.id(), shader);
             return program;
         } catch (RuntimeException e) {
-            BROKEN.add(effect.id());
-            LOGGER.error("World effect '{}' disabled: its shader is unusable", effect.id(), e);
+            BROKEN.add(shader);
+            LOGGER.error("World effect '{}' disabled: its shader {} is unusable", effect.id(), shader, e);
             return null;
         }
     }

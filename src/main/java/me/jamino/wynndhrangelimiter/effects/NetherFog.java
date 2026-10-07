@@ -1,5 +1,7 @@
 package me.jamino.wynndhrangelimiter.effects;
 
+import me.jamino.wynndhrangelimiter.ModConfig;
+
 /**
  * The glowing lava fog over the Roots of Corruption: placement, shape and lighting rules. It is a layer
  * that starts a little below ground level and fills the spikes above it; the Nether portal's pit lies below its floor,
@@ -33,13 +35,33 @@ public final class NetherFog implements WorldEffect {
     public static final double DRIFT_SPEED = 1.2;
     public static final double NOISE_PERIOD = 640;
 
+    /** How the fog is drawn; both styles share its placement, shape, drift and glow. */
+    public enum Style {
+        REALISTIC("Realistic", "nether_fog.fsh"),
+        /** Translucent slabs in the manner of the Better Clouds mod. */
+        BLOCKY("Blocky", "nether_fog_blocky.fsh");
+
+        private final String label;
+        private final String shader;
+
+        Style(String label, String shader) {
+            this.label = label;
+            this.shader = shader;
+        }
+
+        public String label() { return label; }
+        public String shader() { return shader; }
+    }
+
     private static final Bounds BOUNDS = new Bounds(CENTER_X - RADIUS_X, FLOOR_Y, CENTER_Z - RADIUS_Z,
             CENTER_X + RADIUS_X, FLOOR_Y + THICKNESS, CENTER_Z + RADIUS_Z);
 
     @Override public String id() { return ID; }
     @Override public String name() { return "Roots of Corruption Lava Fog"; }
     @Override public String description() { return "Glowing lava fog over the Roots of Corruption, around the Nether portal"; }
-    @Override public String shader() { return "nether_fog.fsh"; }
+    @Override public String shader() { return ModConfig.netherFogStyle().shader(); }
+    /** Half resolution would blur the slab edges the blocky style is made of. */
+    @Override public boolean halfResolution() { return ModConfig.netherFogStyle() != Style.BLOCKY; }
     @Override public double anchorX() { return CENTER_X; }
     @Override public double anchorZ() { return CENTER_Z; }
     @Override public Bounds bounds() { return BOUNDS; }
