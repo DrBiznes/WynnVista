@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter.mixin;
 
+import me.jamino.wynndhrangelimiter.compat.betterclouds.BetterCloudsSupport;
 import me.jamino.wynndhrangelimiter.compat.dh.DhVersionSupport;
 import me.jamino.wynndhrangelimiter.compat.iris.IrisSupport;
 import me.jamino.wynndhrangelimiter.compat.voxy.VoxyVersionSupport;
@@ -10,7 +11,7 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 import java.util.List;
 import java.util.Set;
 
-/** Keeps optional DH and Voxy targets out of a client without the exact verified binary. */
+/** Keeps optional DH, Voxy and Better Clouds targets out of a client without the exact verified binary. */
 public final class WynnVistaMixinPlugin implements IMixinConfigPlugin {
     @Override public void onLoad(String mixinPackage) {}
     @Override public String getRefMapperConfig() { return null; }
@@ -18,6 +19,7 @@ public final class WynnVistaMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         if (mixinClassName.contains(".MixinVoxy")) return VoxyVersionSupport.supported();
+        if (mixinClassName.contains(".MixinBetterClouds")) return BetterCloudsSupport.supported();
         if (mixinClassName.contains(".MixinDhIris")) {
             return DhVersionSupport.supported() && IrisSupport.dhTerrainSupported();
         }

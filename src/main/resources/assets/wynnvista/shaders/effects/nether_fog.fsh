@@ -62,8 +62,13 @@ void main() {
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;
+    // What the march had gathered when it reached the cloud layer; negative until then.
+    vec4 cloud;
+    float cloudAt = cloudDistance(uv, ndc, dir, cloud);
+    vec4 front = vec4(-1.0);
     for (int i = 0; i < steps; i++) {
         if (t >= span.y || transmittance < 0.03) break;
+        if (front.a < 0.0 && t >= cloudAt) front = vec4(colour, 1.0 - transmittance);
         vec3 q = dir * t - uOrigin;
         float d = density(q, octaves) * mix(NEAR_CLEAR, 1.0, smoothstep(4.0, NEAR_RANGE, t));
         if (d > 0.003) {
@@ -82,13 +87,14 @@ void main() {
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
+    if (front.a < 0.0) front = vec4(colour, alpha);
     if (alpha > MAX_OPACITY) {
+        front *= MAX_OPACITY / alpha;
         colour *= MAX_OPACITY / alpha;
         alpha = MAX_OPACITY;
     }
     // Aerial perspective: distant fog sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
-    colour = mix(colour, uFogColor * alpha, haze);
-    // Fog from a shader pack that has swallowed the canyon swallows this too.
-    fragColor = vec4(throughFog(colour, alpha), alpha);
+    // That, a shader pack's fog that has swallowed the canyon, and any cloud the fog is behind.
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud);
 }

@@ -5,11 +5,15 @@ uniform sampler2D uSceneDepth;
 uniform sampler2D uLodDepth;
 uniform sampler3D uNoise;
 uniform sampler2D uFogProbe;  // 1x1, written by fog_probe.fsh
+uniform sampler2D uTerrainDepth;  // vanilla depth as it was before a cloud mod drew its clouds into it
+uniform sampler2D uCloudDepth;    // depth of that cloud layer alone, 1 where it wrote none
+uniform sampler2D uCloudColor;    // the cloud layer alone: premultiplied colour, opacity in alpha
 
 uniform mat4 uSceneInverse;   // vanilla NDC -> camera-relative world
 uniform mat4 uLodInverse;     // LOD NDC -> camera-relative world
 uniform vec3 uLodParams;      // x: 1 when a LOD depth is bound, y: its clear value, z: 1 when depth is NDC z directly
-uniform vec2 uViewSize;      // size of the target being drawn, which may be smaller than the depth textures
+uniform vec3 uCloudParams;    // x: 1 when a cloud layer is bound, y: 1 when the image holds its colour unchanged, z: its height above the camera
+uniform vec2 uViewSize;     // size of the target being drawn, which may be smaller than the depth textures
 uniform vec3 uBoxMin;         // the effect's bounding box, camera-relative
 uniform vec3 uBoxMax;
 uniform vec3 uFogColor;
@@ -41,6 +45,11 @@ vec2 boxSpan(vec3 dir) {
 float sceneDistance(vec2 uv, vec2 ndc) {
     float nearest = INF;
     float depth = texelFetch(uSceneDepth, ivec2(uv * vec2(textureSize(uSceneDepth, 0))), 0).r;
+    if (uCloudParams.x > 0.5) {
+        // Where the vanilla depth is a cloud's, the terrain behind it is in the copy made before the clouds.
+        ivec2 texel = ivec2(uv * vec2(textureSize(uCloudDepth, 0)));
+        if (depth >= texelFetch(uCloudDepth, texel, 0).r - 1.0e-6) depth = texelFetch(uTerrainDepth, texel, 0).r;
+    }
     // Sky, and LOD depth that Voxy clamps onto the vanilla far plane, are not real vanilla hits.
     if (depth < 0.9999998) {
         nearest = length(unproject(uSceneInverse, vec3(ndc, depth * 2.0 - 1.0)));
@@ -62,6 +71,39 @@ float sceneDistance(vec2 uv, vec2 ndc) {
 vec3 throughFog(vec3 colour, float alpha) {
     vec4 fog = texelFetch(uFogProbe, ivec2(0), 0);
     return mix(fog.rgb * alpha, colour, fog.a);
+}
+
+/**
+ * Distance along this pixel's ray to the cloud layer, INF where it has no cloud, and the cloud itself:
+ * premultiplied colour, opacity in alpha.
+ */
+float cloudDistance(vec2 uv, vec2 ndc, vec3 dir, out vec4 cloud) {
+    cloud = vec4(0.0);
+    if (uCloudParams.x < 0.5) return INF;
+    ivec2 texel = ivec2(uv * vec2(textureSize(uCloudColor, 0)));
+    cloud = texelFetch(uCloudColor, texel, 0);
+    if (cloud.a <= 0.0) return INF;
+    float depth = texelFetch(uCloudDepth, texel, 0).r;
+    if (depth < 0.9999998) return length(unproject(uSceneInverse, vec3(ndc, depth * 2.0 - 1.0)));
+    // Clouds past the far plane have no depth of their own: they are where the ray meets the layer's height.
+    float t = uCloudParams.z / dir.y;
+    return t > 0.0 ? t : length(unproject(uSceneInverse, vec3(ndc, 1.0)));
+}
+
+/**
+ * The finished pixel of an effect: `whole` is the march's premultiplied colour and opacity, `front` the same
+ * for the part of it nearer than the clouds. Both get the haze and fog, then the cloud goes between them, so
+ * the part behind is seen through the cloud.
+ */
+vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud) {
+    whole.rgb = throughFog(mix(whole.rgb, uFogColor * whole.a, haze), whole.a);
+    front.rgb = throughFog(mix(front.rgb, uFogColor * front.a, haze), front.a);
+    vec3 colour = front.rgb + (whole.rgb - front.rgb) * (1.0 - cloud.a);
+    float behind = whole.a - front.a;
+    // Blending the effect over the image also covers the cloud that is in front of it. With the cloud's
+    // colour known that share is put back exactly; otherwise the effect covers less where the cloud is.
+    if (uCloudParams.y > 0.5) return vec4(colour + behind * cloud.rgb, whole.a);
+    return vec4(colour, front.a + behind * (1.0 - cloud.a));
 }
 
 const float NOISE_SIZE = 32.0;

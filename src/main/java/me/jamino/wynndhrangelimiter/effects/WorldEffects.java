@@ -10,6 +10,7 @@ import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.texture.GlTexture;
 import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.attribute.EnvironmentAttributes;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 import org.lwjgl.opengl.GL11C;
@@ -79,8 +80,14 @@ public final class WorldEffects {
     private static int profiledFrames;
     private static String profiledDetail = "";
     private static float profiledFog = 1;
+    private static boolean active;
 
     private WorldEffects() {}
+
+    /** Whether an effect was in view last frame, for work during the world pass that only effects need. */
+    public static boolean active() {
+        return active;
+    }
 
     /** Every effect, in draw order; the config screen builds one toggle from each. */
     public static List<WorldEffect> all() {
@@ -90,9 +97,16 @@ public final class WorldEffects {
     /** Called before the world is rendered, so LOD backends start the frame with no stale depth. */
     public static void beginFrame() {
         LodDepth.beginFrame();
+        CloudLayer.beginFrame();
     }
 
     private record Visible(WorldEffect effect, EffectCulling.ScreenRect rect, double distance) {}
+
+    /**
+     * What every program needs to place a pixel in the world: the vanilla projection, the LOD depth and the
+     * cloud layer of this frame, either of which may be null, and the cloud height relative to the camera.
+     */
+    private record Scene(Matrix4f inverse, LodDepth.Layer lod, CloudLayer.Layer clouds, float cloudHeight) {}
 
     /**
      * One effect's 1x1 fog measurement. It is smoothed over time, so each frame reads the previous result
@@ -108,6 +122,7 @@ public final class WorldEffects {
     /** Called once the world image is complete. The matrices are the ones vanilla terrain was drawn with. */
     public static void render(MinecraftClient client, Camera camera, Matrix4f view, Matrix4f projection,
                               Vector4f fogColor, float tickProgress) {
+        active = false;
         if (failed || !ModConfig.effectsEnabled() || client.world == null || client.player == null) return;
         Vec3d cameraPos = camera.getCameraPos();
         Matrix4f viewProjection = new Matrix4f(projection).mul(view);
@@ -116,14 +131,18 @@ public final class WorldEffects {
             logState("none visible");
             return;
         }
+        active = true;
         Framebuffer main = client.getFramebuffer();
         if (!(main.getColorAttachment() instanceof GlTexture color)
                 || !(main.getDepthAttachment() instanceof GlTexture depth)) return;
         EffectFrame frame = new EffectFrame(cameraPos.x, cameraPos.y, cameraPos.z, client.world.getTime(),
                 client.world.getTimeOfDay(), tickProgress, client.world.getRainGradient(tickProgress));
+        float cloudHeight = client.world.getEnvironmentAttributes()
+                .getAttributeValue(EnvironmentAttributes.CLOUD_HEIGHT_VISUAL, cameraPos) - (float) cameraPos.y;
         try {
             if (!created) create();
-            draw(visible, frame, viewProjection, projection.m11(), fogColor, main, color.getGlId(), depth.getGlId());
+            draw(visible, frame, viewProjection, projection.m11(), cloudHeight, fogColor, main, color.getGlId(),
+                    depth.getGlId());
         } catch (RuntimeException e) {
             failed = true;
             LOGGER.error("World effects disabled after a rendering error", e);
@@ -155,12 +174,14 @@ public final class WorldEffects {
     }
 
     private static void draw(List<Visible> visible, EffectFrame frame, Matrix4f viewProjection, float projectionScaleY,
-                             Vector4f fogColor, Framebuffer main, int color, int depth) {
+                             float cloudHeight, Vector4f fogColor, Framebuffer main, int color, int depth) {
         LodDepth.Layer lod = LodDepth.resolve();
-        logState(visible.size() + " drawn with " + (lod == null ? "vanilla depth only" : "vanilla + LOD depth"));
+        CloudLayer.Layer clouds = CloudLayer.resolve();
+        logState(visible.size() + " drawn with " + (lod == null ? "vanilla depth only" : "vanilla + LOD depth")
+                + (clouds == null ? "" : ", under a cloud layer"));
         int width = main.textureWidth;
         int height = main.textureHeight;
-        Matrix4f sceneInverse = new Matrix4f(viewProjection).invert();
+        Scene scene = new Scene(new Matrix4f(viewProjection).invert(), lod, clouds, cloudHeight);
 
         GlState saved = GlState.capture();
         try {
@@ -174,13 +195,16 @@ public final class WorldEffects {
             bind(0, GL11C.GL_TEXTURE_2D, depth);
             bind(1, GL11C.GL_TEXTURE_2D, lod == null ? depth : lod.textureId());
             bind(2, GL12C.GL_TEXTURE_3D, noiseTexture);
+            bind(7, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.terrainDepthTexture());
+            bind(8, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.depthTexture());
+            bind(9, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.colorTexture());
             GL30C.glBindVertexArray(vertexArray);
 
             beginProfile();
             // The fog already in the image is measured before anything is drawn over it.
             GL11C.glDisable(GL11C.GL_BLEND);
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
-            for (Visible entry : visible) measureFog(entry, sceneInverse, lod, color);
+            for (Visible entry : visible) measureFog(entry, scene, color);
             GL11C.glEnable(GL11C.GL_BLEND);
 
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
@@ -211,7 +235,7 @@ public final class WorldEffects {
                 int targetHeight = half ? (height + 1) / 2 : height;
 
                 program.use();
-                setScene(program, sceneInverse, lod, targetWidth, targetHeight);
+                setScene(program, scene, targetWidth, targetHeight);
                 program.set("uNoise", 2);
                 FogProbe fog = FOG_PROBES.get(effect.id());
                 bind(6, GL11C.GL_TEXTURE_2D, fog.textures[fog.current]);
@@ -227,7 +251,7 @@ public final class WorldEffects {
                         (float) (box.maxZ() - frame.cameraZ()));
                 effect.upload(program, frame);
                 if (half) {
-                    drawHalfResolution(sceneInverse, lod, width, height, x0, y0, x1, y1);
+                    drawHalfResolution(scene, width, height, x0, y0, x1, y1);
                 } else {
                     GL11C.glScissor(x0, y0, x1 - x0, y1 - y0);
                     GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
@@ -244,14 +268,20 @@ public final class WorldEffects {
         }
     }
 
-    private static void setScene(EffectProgram program, Matrix4f sceneInverse, LodDepth.Layer lod,
-                                 int targetWidth, int targetHeight) {
+    private static void setScene(EffectProgram program, Scene scene, int targetWidth, int targetHeight) {
+        LodDepth.Layer lod = scene.lod();
+        CloudLayer.Layer clouds = scene.clouds();
         program.set("uSceneDepth", 0);
         program.set("uLodDepth", 1);
-        program.set("uSceneInverse", sceneInverse);
-        program.set("uLodInverse", lod == null ? sceneInverse : lod.inverseViewProjection());
+        program.set("uTerrainDepth", 7);
+        program.set("uCloudDepth", 8);
+        program.set("uCloudColor", 9);
+        program.set("uSceneInverse", scene.inverse());
+        program.set("uLodInverse", lod == null ? scene.inverse() : lod.inverseViewProjection());
         program.set("uLodParams", lod == null ? 0 : 1, lod == null ? 1 : lod.clearDepth(),
                 lod != null && lod.zeroToOne() ? 1 : 0);
+        program.set("uCloudParams", clouds == null ? 0 : 1, clouds != null && clouds.colorInImage() ? 1 : 0,
+                scene.cloudHeight());
         program.set("uViewSize", (float) targetWidth, (float) targetHeight);
     }
 
@@ -260,7 +290,7 @@ public final class WorldEffects {
      * effect's distance still has, and its colour. If the probe shader is unusable the probe keeps its
      * initial "clear".
      */
-    private static void measureFog(Visible entry, Matrix4f sceneInverse, LodDepth.Layer lod, int color) {
+    private static void measureFog(Visible entry, Scene scene, int color) {
         FogProbe probe = FOG_PROBES.computeIfAbsent(entry.effect().id(), id -> createFogProbe());
         if (fogBroken) return;
         if (fogProgram == null) {
@@ -285,7 +315,7 @@ public final class WorldEffects {
         bind(5, GL11C.GL_TEXTURE_2D, color);
         bind(6, GL11C.GL_TEXTURE_2D, probe.textures[previous]);
         fogProgram.use();
-        setScene(fogProgram, sceneInverse, lod, 1, 1);
+        setScene(fogProgram, scene, 1, 1);
         fogProgram.set("uSceneColor", 5);
         fogProgram.set("uPrevious", 6);
         fogProgram.set("uColumns", columns.min(), columns.max());
@@ -342,8 +372,7 @@ public final class WorldEffects {
      * Marches the bound effect into a half-size buffer, then composites it over the world image with
      * {@code upsample.fsh}. Called with the effect's program bound and its uniforms set for the half-size target.
      */
-    private static void drawHalfResolution(Matrix4f sceneInverse, LodDepth.Layer lod, int width, int height,
-                                           int x0, int y0, int x1, int y1) {
+    private static void drawHalfResolution(Scene scene, int width, int height, int x0, int y0, int x1, int y1) {
         int lowWidth = (width + 1) / 2;
         int lowHeight = (height + 1) / 2;
         if (lowFramebuffer == 0 || lowWidth != lowSizeX || lowHeight != lowSizeY) createLowResolution(lowWidth, lowHeight);
@@ -365,7 +394,7 @@ public final class WorldEffects {
         bind(3, GL11C.GL_TEXTURE_2D, lowColor);
         bind(4, GL11C.GL_TEXTURE_2D, lowDistance);
         upsample.use();
-        setScene(upsample, sceneInverse, lod, width, height);
+        setScene(upsample, scene, width, height);
         upsample.set("uLowColor", 3);
         upsample.set("uLowDistance", 4);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
@@ -503,9 +532,11 @@ public final class WorldEffects {
                            boolean[] colorMask, int[] blendFunc, int[] blendEquation, int unpackBuffer,
                            int[] pixelStore) {
         private static final int[] TARGETS = {GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_3D,
-                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
         private static final int[] BINDINGS = {GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
+                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
         private static final int[] PIXEL_STORE = {GL11C.GL_UNPACK_ALIGNMENT, GL11C.GL_UNPACK_ROW_LENGTH,
                 GL11C.GL_UNPACK_SKIP_PIXELS, GL11C.GL_UNPACK_SKIP_ROWS, GL12C.GL_UNPACK_IMAGE_HEIGHT,

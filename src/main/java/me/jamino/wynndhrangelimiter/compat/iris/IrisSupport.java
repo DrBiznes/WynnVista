@@ -1,6 +1,7 @@
 package me.jamino.wynndhrangelimiter.compat.iris;
 
 import net.fabricmc.loader.api.FabricLoader;
+import net.irisshaders.iris.api.v0.IrisApi;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -22,6 +23,16 @@ public final class IrisSupport {
 
     public static boolean loaded() {
         return FabricLoader.getInstance().isModLoaded("iris");
+    }
+
+    /** Whether a shader pack is rendering the world right now. */
+    public static boolean shaderPackInUse() {
+        if (!loaded()) return false;
+        try {
+            return IrisApi.getInstance().isShaderPackInUse();
+        } catch (LinkageError | RuntimeException e) {
+            return false;
+        }
     }
 
     /** Whether Iris's DH terrain program pipeline has the expected shape for {@code compat.dh.iris}. */

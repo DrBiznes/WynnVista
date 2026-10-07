@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+**Added**
+- Better Clouds support (optional): world effects are now seen through its translucent clouds. Before, a cloud in front of the smoke plume showed the sky behind the plume instead of the smoke.
+
 **Changed**
 - Config: "Smoke Plume Style" chooses how the Mount Wynn smoke plume is drawn. "Blocky" builds it from translucent cubes in the style of the Better Clouds mod; "Realistic" (the default) is the existing soft smoke.
 - Config: "Lava Fog Style" does the same for the Roots of Corruption lava fog, independently of the plume: "Blocky" draws its billows and wisps as translucent slabs.

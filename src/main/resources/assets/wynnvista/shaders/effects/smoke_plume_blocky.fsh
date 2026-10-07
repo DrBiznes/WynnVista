@@ -37,9 +37,11 @@ vec3 hash3(vec3 p) {
 /**
  * Walks one level's lattice front to back along the ray and composites its cubes. The level draws cubes whose
  * centres are between bottom and top (heights above the vent); a negative fade means that end is not faded.
+ * front receives what had been gathered at the first cube behind the cloud layer; it is negative until then.
  */
 void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, float bottomFade, float top,
-                float topFade, inout vec3 colour, inout float transmittance, inout float firstHit) {
+                float topFade, float cloudAt, inout vec3 colour, inout float transmittance, inout float firstHit,
+                inout vec4 front) {
     float size = CELL[level];
     // The part of the column this level can occupy, relative to the vent, a cell wider for cubes on its edge.
     float y0 = max(bottom - max(bottomFade, 0.0), 0.0);
@@ -93,6 +95,7 @@ void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, fl
             float leave = min(min(hi.x, hi.y), hi.z);
             if (leave > enter && enter < limit) {
                 if (firstHit < 0.0) firstHit = enter;
+                if (front.a < 0.0 && enter >= cloudAt) front = vec4(colour, 1.0 - transmittance);
                 vec4 c = column(q);
                 float u = c.y;
                 // One flat colour per cube: brighter on the side of the column that faces the light,
@@ -141,6 +144,9 @@ void main() {
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;
+    vec4 cloud;
+    float cloudAt = cloudDistance(uv, ndc, dir, cloud);
+    vec4 front = vec4(-1.0);
     // Levels are stacked by height, so the order the ray meets them in is the order of its climb or descent.
     for (int k = 0; k < LEVELS; k++) {
         int level = dir.y >= 0.0 ? k : LEVELS - 1 - k;
@@ -150,14 +156,14 @@ void main() {
         marchLevel(level, dir, limit, ambient,
                 lowest ? 0.0 : BAND[level], lowest ? -1.0 : CELL[level] * BLEND,
                 highest ? uShape.x : BAND[level + 1], highest ? -1.0 : CELL[level + 1] * BLEND,
-                colour, transmittance, firstHit);
+                cloudAt, colour, transmittance, firstHit, front);
     }
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
+    if (front.a < 0.0) front = vec4(colour, alpha);
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
-    colour = mix(colour, uFogColor * alpha, haze);
-    // Fog that has swallowed the mountain swallows its smoke too.
-    fragColor = vec4(throughFog(colour, alpha), alpha);
+    // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud);
 }

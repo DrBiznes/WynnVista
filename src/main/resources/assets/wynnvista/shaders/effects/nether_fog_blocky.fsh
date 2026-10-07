@@ -40,9 +40,12 @@ vec3 hash3(vec3 p) {
     return fract((p.xxy + p.yxx) * p.zyx);
 }
 
-/** Walks one level's lattice front to back between two distances along the ray and composites its fog. */
-void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 scattered,
-                inout vec3 colour, inout float transmittance, inout float firstHit) {
+/**
+ * Walks one level's lattice front to back between two distances along the ray and composites its fog. front
+ * receives what had been gathered at the first cell behind the cloud layer; it is negative until then.
+ */
+void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 scattered, float cloudAt,
+                inout vec3 colour, inout float transmittance, inout float firstHit, inout vec4 front) {
     vec3 size = CELL[level];
     vec3 safe = mix(dir, vec3(1.0e-7), lessThan(abs(dir), vec3(1.0e-7)));
     // The ray inside this level's band of heights.
@@ -67,6 +70,7 @@ void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 
     float t = from;
     for (int i = 0; i < MAX_CELLS; i++) {
         float exit = min(min(next.x, min(next.y, next.z)), to);
+        if (front.a < 0.0 && t >= cloudAt) front = vec4(colour, 1.0 - transmittance);
         vec3 q = (cell + 0.5) * size;
         vec3 field = fogField(q, octaves);
         if (field.x > 0.0) {
@@ -133,23 +137,27 @@ void main() {
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;
+    vec4 cloud;
+    float cloudAt = cloudDistance(uv, ndc, dir, cloud);
+    vec4 front = vec4(-1.0);
     // Levels are stacked by height, so the order the ray meets them in is the order of its climb or descent.
     for (int k = 0; k < LEVELS; k++) {
         int level = dir.y >= 0.0 ? k : LEVELS - 1 - k;
         if (level < first || transmittance < 0.03) continue;
         marchLevel(level, dir, span.x, span.y, vec3(level == first ? 0.0 : BAND[level], BAND[level + 1], 0.0),
-                scattered, colour, transmittance, firstHit);
+                scattered, cloudAt, colour, transmittance, firstHit, front);
     }
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
+    if (front.a < 0.0) front = vec4(colour, alpha);
     if (alpha > MAX_OPACITY) {
+        front *= MAX_OPACITY / alpha;
         colour *= MAX_OPACITY / alpha;
         alpha = MAX_OPACITY;
     }
     // Aerial perspective: distant fog sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
-    colour = mix(colour, uFogColor * alpha, haze);
-    // Fog from a shader pack that has swallowed the canyon swallows this too.
-    fragColor = vec4(throughFog(colour, alpha), alpha);
+    // That, a shader pack's fog that has swallowed the canyon, and any cloud the fog is behind.
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud);
 }

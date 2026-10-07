@@ -110,9 +110,10 @@ def patch_dh_config(toml: Path, engine: str = None) -> None:
     toml.write_text(text)
 
 
-def gradle_command(iris: bool = False) -> list:
+def gradle_command(iris: bool = False, better_clouds: bool = False) -> list:
     base = [str(ROOT / "gradlew.bat")] if WIN else ["bash", "gradlew"]
-    return base + ["runClient", f"-PlodBackend={BACKEND}", "--no-daemon"] + (["-Piris=true"] if iris else [])
+    return (base + ["runClient", f"-PlodBackend={BACKEND}", "--no-daemon"] + (["-Piris=true"] if iris else [])
+            + (["-PbetterClouds=true"] if better_clouds else []))
 
 
 def write_iris(pack: str, source: Path = None) -> None:
@@ -144,11 +145,11 @@ def kill_tree(process: subprocess.Popen) -> None:
             pass
 
 
-def run_client(extra_env: dict, timeout: int, iris: bool = False) -> int:
+def run_client(extra_env: dict, timeout: int, iris: bool = False, better_clouds: bool = False) -> int:
     env = dict(os.environ)
     env.update({k: v for k, v in extra_env.items() if v is not None})
     runtime = env.get("WYNNVISTA_TEST_JAVA")
-    command = gradle_command(iris)
+    command = gradle_command(iris, better_clouds)
     if runtime:
         if not Path(runtime).is_file():
             raise SystemExit(f"Test Java executable does not exist: {runtime}")
@@ -298,7 +299,7 @@ def cmd_run(args) -> None:
            "WYNNVISTA_FIXTURE_AUTOSTOP_TICKS": str(args.ticks)}
     if args.iris:
         write_iris(args.shaderpack or "off", Path(args.shaderpack_source) if args.shaderpack_source else None)
-    code = run_client(env, args.timeout, args.iris)
+    code = run_client(env, args.timeout, args.iris, args.better_clouds)
     out = Path(args.results) if args.results else RUN / "test-results" / time.strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True, exist_ok=True)
     shutil.copy2(log_path(), out / "client.log")
@@ -374,6 +375,7 @@ def main() -> None:
             p.add_argument("--capture-prefix")
             p.add_argument("--ticks", type=int, default=400)
             p.add_argument("--iris", action="store_true", help="run with WynnIris (shaders stay off unless --shaderpack)")
+            p.add_argument("--better-clouds", action="store_true", help="run with the Better Clouds mod")
             p.add_argument("--shaderpack", help="pack folder/zip name inside <run dir>/shaderpacks, or 'off'")
             p.add_argument("--shaderpack-source", help="local pack folder or zip copied into shaderpacks once")
             p.add_argument("--results")

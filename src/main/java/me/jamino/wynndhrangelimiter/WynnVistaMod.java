@@ -2,6 +2,8 @@ package me.jamino.wynndhrangelimiter;
 
 import me.jamino.wynndhrangelimiter.debug.FixtureController;
 import me.jamino.wynndhrangelimiter.debug.VoxyFixtureController;
+import me.jamino.wynndhrangelimiter.compat.betterclouds.BetterCloudsLayer;
+import me.jamino.wynndhrangelimiter.compat.betterclouds.BetterCloudsSupport;
 import me.jamino.wynndhrangelimiter.compat.dh.DhEffectDepth;
 import me.jamino.wynndhrangelimiter.compat.dh.DhVersionSupport;
 import me.jamino.wynndhrangelimiter.compat.voxy.VoxyEffectDepth;
@@ -44,6 +46,7 @@ public final class WynnVistaMod {
         // World effects only need each backend's depth, not the pinned terrain shaders, so DH is fed through its API.
         if (dh) DhEffectDepth.register();
         if (voxySupported) VoxyEffectDepth.register();
+        if (BetterCloudsSupport.supported()) BetterCloudsLayer.register();
         if (dhSupported && voxySupported) {
             LOGGER.warn("Distant Horizons and Voxy are both present; simultaneous operation is untested");
         }

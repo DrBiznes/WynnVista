@@ -17,6 +17,8 @@ World effects are drawn over the **finished world image**, after every world pas
 | LOD depth registry (one optional layer per frame) | `effects/LodDepth` |
 | DH depth and projection, through the public DH API (`DhApiBeforeRenderEvent`, `IDhApiRenderProxy`) | `compat/dh/DhEffectDepth` |
 | Voxy depth and projection | `compat/voxy/VoxyEffectDepth`, `MixinVoxyRenderPipelineDepth` |
+| Cloud layer registry (one optional layer per frame) | `effects/CloudLayer` |
+| Better Clouds layer: its clouds alone and the depth from before them | `compat/betterclouds/BetterCloudsLayer`, `BetterCloudsSupport`, `MixinBetterCloudsRenderer` |
 | Fog probe rules: where it looks, which distances it trusts, smoothing (pure, unit-tested) | `effects/EffectFog` |
 | The plume: placement, shape, sun/moon lighting, rendering style (pure, unit-tested) | `effects/SmokePlume` |
 | The Roots of Corruption lava fog: placement, shape, drift, glow, rendering style (pure, unit-tested) | `effects/NetherFog` |
@@ -43,6 +45,24 @@ This works the same for any pack, for stock Iris, and without a shader pack. Lim
 
 - It needs terrain at about the effect's distance in view. Without a LOD mod and with the effect beyond vanilla render distance there is nothing to measure and the effect is drawn unfogged; the same holds while looking only at sky (the last value is kept, and dropped after the effect has been out of view for a second).
 - The thresholds were set from Complementary Reimagined in the Voxy fixture (below). Photon with the WynnIris ambiance pack was checked by eye on the live server, not measured.
+
+## Better Clouds
+
+[Better Clouds](https://github.com/Qendolin/better-clouds) is optional; nothing here runs without it. It blends its translucent clouds into the world image and writes their depth into Minecraft's depth buffer. To the effect pass a cloud was therefore terrain: the plume stopped at it, and the cloud showed the sky it had been blended with instead of the smoke behind it.
+
+`MixinBetterCloudsRenderer` wraps the one draw that shades the clouds into the image (the first `glDrawArrays` of `Renderer.drawShading`), and only in frames after one in which an effect was in view:
+
+1. Before the draw, the depth of the framebuffer being drawn to is copied (`glBlitFramebuffer`). This is the terrain behind the clouds.
+2. The draw runs as Better Clouds intended.
+3. The same draw is repeated into an empty buffer. Better Clouds' own blending leaves premultiplied colour and the opacity there, and its shader writes the clouds' depth.
+
+In `scene.glsl`, `sceneDistance()` uses the copied depth wherever the vanilla depth is the cloud's, so anything drawn nearer after the clouds still counts. Each effect records what its march had gathered when it reached the cloud's distance (`cloudDistance()`), and `underClouds()` puts the cloud between that part and the rest: the part behind is weakened by the cloud's opacity, and the cloud's own colour, which blending the effect over the image would cover, is added back. Without a shader pack the result is exactly what drawing smoke, cloud, smoke in order would give.
+
+- **Far clouds.** Better Clouds clamps clouds beyond the vanilla far plane onto it, so they have no usable depth. Their distance is taken as where the ray meets the dimension's cloud height.
+- **Shader packs.** With a pack active Better Clouds draws into the pack's buffers and the pack processes the image afterwards, so the cloud colour in the image is not the captured one. The smoke behind a cloud is then only weakened by the cloud's opacity, which lets up to a quarter of the cloud's contrast against the sky through where the smoke is dense.
+- **Other versions.** `BetterCloudsSupport` reads the renderer's bytecode for that draw call before the mixin is applied. A Better Clouds build without it is left alone and logs `Better Clouds world effect integration unavailable`; its clouds then hide effects as before.
+- **Cost.** One depth copy and one more full-view cloud shading draw per frame while an effect is in view. Not measured.
+- No Better Clouds code or assets are included, and the mod is not compiled against it.
 
 ## Smoke plume styles
 
@@ -120,7 +140,7 @@ GPU time of the whole effect pass (`GL_TIME_ELAPSED`, 100-frame averages, 1920x1
 
 ## Results
 
-Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking --override MAIN --commands '...' --timeline '...' --capture-prefix <name>`, optionally with `--iris --shaderpack ComplementaryReimagined`, `--no-effects` or `--disable-effects smoke_plume,nether_fog`. Screenshots are under the ignored `run-*/screenshots/`.
+Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking --override MAIN --commands '...' --timeline '...' --capture-prefix <name>`, optionally with `--iris --shaderpack ComplementaryReimagined`, `--better-clouds`, `--no-effects` or `--disable-effects smoke_plume,nether_fog`. Screenshots are under the ignored `run-*/screenshots/`.
 
 | Check | Result |
 | --- | --- |
@@ -143,18 +163,23 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Blocky plume GPU time, 854x480, Voxy, RTX 4070, lava fog switched off | 0.31–0.38 ms from 580 blocks (plume 302x396 px); 0.64–0.67 ms covering the whole view, 70 blocks from the vent and from above it, at full resolution. Not measured at 1920x1080 |
 | Blocky lava fog (`--fog-style BLOCKY`), Voxy, no shader pack, 854x480 (2026-10-07): 350 blocks away from above, inside the layer at two places; midnight and noon | PASS by eye: slabs over the corrupted ground, spikes and terrain hide them, the view from inside stays open (`f1-*`). The realistic fog was run through the same views after its shape code moved to `nether_fog_shape.glsl` and looks as before (`r1-*`) |
 | Blocky lava fog GPU time, 854x480, Voxy, RTX 4070, plume switched off, full resolution | 0.59–0.68 ms from 350 blocks (fog 854x331 px), 0.62–0.82 ms inside the layer. The realistic fog measured 0.65 ms in the first view. Not measured at 1920x1080 |
+| Better Clouds 1.13.11 (`--better-clouds`), Voxy, no shader pack, 854x480, noon (2026-10-07): 300 and 570 blocks from the peak with clouds in front of the plume; the same views with the mixin switched off | PASS by eye: with the mixin off the clouds cut sky-coloured holes into the plume (`bc0-*`); with it on the plume shows through them and they stay in front (`bc1-*`). Better Clouds' synchronous GL debug output reported no errors |
+| Better Clouds with both blocky styles: the plume from 300 blocks and from under the column, the lava fog from above the clouds | PASS by eye: both shaders compile, clouds stay in front of the cubes (`bc2-*`). No cloud lay over the lava fog in that view |
+| Better Clouds + Complementary Reimagined (WynnIris), the two plume views | PASS by eye: no errors, the plume shows through Better Clouds' clouds (`bc3-*`) |
+| Without Better Clouds installed, after the change: the plume view from 300 blocks | PASS: both effects compile and draw, no cloud layer is registered (`bc4-*`) |
 | LOD caches after all runs | PASS: `lod_fixture.py check` for both backends (not repeated after the fog runs) |
 
 ## Open
 
 - **DH fixture height.** In the DH fixture the imported LOD terrain sits roughly 40–50 blocks lower than the same terrain in the Voxy fixture, so the plume floats above the cone there. In the Voxy fixture the supplied peak coordinates land exactly in the crater. This looks like a vertical shift of the copied DH database in the superflat save, not an effect error, but it must be confirmed with DH on the live server.
 - **Up close in real chunks.** The fixture has no real Wynncraft blocks, so the view from inside vanilla render distance (standing on the mountain, in the crater, inside the smoke) is only covered by the pillar test. Half-resolution edges against real foliage have not been seen.
-- **Shader packs.** The plume is composited after the pack's final pass with its own lighting (sun/moon direction from the time of day, sky colour from the fog colour). The pack's fog is matched by measurement (see Fog); it does not receive the pack's bloom or tonemapping, and pack clouds do not hide it. Only Complementary Reimagined was run.
+- **Shader packs.** The plume is composited after the pack's final pass with its own lighting (sun/moon direction from the time of day, sky colour from the fog colour). The pack's fog is matched by measurement (see Fog); it does not receive the pack's bloom or tonemapping, and pack clouds do not hide it (Better Clouds' clouds are handled, see Better Clouds). Only Complementary Reimagined was run.
 - **Fog probe.** Not run with DH or without a shader pack. Photon with the WynnIris ambiance pack has only the manual check above; no probe readings were recorded for it. A view whose in-range terrain is all flat (open sea, snow) reads as fog.
 - **Lava fog.** Run only in the Voxy fixture, which has LOD terrain and no real blocks; not run with DH, in rain, with Photon or on the live server. Its extent comes from a screenshot, so the rim may need adjusting against the real area. Density and colour were set by eye. Pack and vanilla clouds in front of the fog are drawn under it (see Translucents).
 - **Blocky plume style.** Run only in the Voxy fixture without a shader pack; not run with DH, with a shader pack, at 1920x1080 or on the live server. Beyond about 3,000 blocks a cube is only a few pixels and may shimmer as it rises, and the change of lattice with distance is a visible switch; neither was looked at in motion. Band heights, cube sizes, opacity and shading were set by eye.
 - **Blocky lava fog.** Run only in the Voxy fixture without a shader pack, at 854x480; not seen in motion, in rain, in the pit, near the portal's purple glow, or at the distance where the fine lattice is dropped. From inside it is brighter and more opaque than the realistic fog. Slab size, opacity and band height were set by eye.
-- **Translucents.** Water, particles and clouds that do not write depth are not sorted against the plume.
+- **Translucents.** Water, particles and clouds that do not write depth are not sorted against the plume. Vanilla clouds and a shader pack's own clouds are not handled the way Better Clouds' are.
+- **Better Clouds.** Run only in the Voxy fixture at 854x480, with Better Clouds 1.13.11 and its default settings; not run with DH, in Fabulous graphics, on the live server, or in motion. The half-resolution path (plume filling the view) was not looked at with clouds in front: there the cloud's outline inside the smoke is at half resolution. On hardware where Better Clouds uses its depth fallback the clouds get no depth and all use the cloud-height estimate. The added GPU time was not measured.
 - **Performance** was measured on one GPU with Voxy only; nothing was measured on integrated or older graphics. The switch between the direct and half-resolution paths at 12% coverage has no hysteresis.
 - DH's Blaze3D renderer and vanilla with no LOD mod were not run. The fixture-only `FIXTURE_CUSTOM` mask rule is covered by unit tests, not by a run.
 

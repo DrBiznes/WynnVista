@@ -17,7 +17,8 @@
     "MixinDhIrisLodRenderProgram",
     "MixinVoxyShaderLoader",
     "MixinVoxyMDICSectionRenderer",
-    "MixinVoxyRenderPipelineDepth"
+    "MixinVoxyRenderPipelineDepth",
+    "MixinBetterCloudsRenderer"
   ],
   "injectors": {
     "defaultRequire": 1

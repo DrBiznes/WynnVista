@@ -54,8 +54,13 @@ void main() {
     float transmittance = 1.0;
     float firstHit = -1.0;
     float shade = 1.0;
+    // What the march had gathered when it reached the cloud layer; negative until then.
+    vec4 cloud;
+    float cloudAt = cloudDistance(uv, ndc, dir, cloud);
+    vec4 front = vec4(-1.0);
     for (int i = 0; i < uSteps; i++) {
         if (t >= t1 || transmittance < 0.03) break;
+        if (front.a < 0.0 && t >= cloudAt) front = vec4(colour, 1.0 - transmittance);
         vec3 q = dir * t - uVent;
         float d = density(q, uOctaves);
         if (d > 0.003) {
@@ -79,9 +84,9 @@ void main() {
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
+    if (front.a < 0.0) front = vec4(colour, alpha);
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
-    colour = mix(colour, uFogColor * alpha, haze);
-    // Fog that has swallowed the mountain swallows its smoke too.
-    fragColor = vec4(throughFog(colour, alpha), alpha);
+    // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud);
 }

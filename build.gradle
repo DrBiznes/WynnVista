@@ -43,6 +43,11 @@ repositories {
     }
     maven { url "https://maven.terraformersmc.com/releases/" }
     maven { url "https://maven.shedaniel.me/" }
+    if (project.findProperty('betterClouds') == 'true') {
+        // Libraries Better Clouds and YACL bundle, for a development run only.
+        maven { url "https://maven.bawnorton.com/releases" }
+        maven { url "https://maven.quiltmc.org/repository/release" }
+    }
 }
 
 dependencies {
@@ -94,6 +99,19 @@ dependencies {
         runtimeOnly "org.lwjgl:lwjgl-lmdb:3.3.3:${lwjglNatives}"
         runtimeOnly "org.lwjgl:lwjgl-zstd:3.3.3"
         runtimeOnly "org.lwjgl:lwjgl-zstd:3.3.3:${lwjglNatives}"
+    }
+
+    // Better Clouds (optional - not compiled against; its renderer is hooked by name).
+    // Enable with -PbetterClouds=true for an isolated development run (any lodBackend).
+    if (project.findProperty('betterClouds') == 'true') {
+        modRuntimeOnly "maven.modrinth:better-clouds:${project.betterclouds_artifact_version}"
+        modRuntimeOnly "maven.modrinth:yacl:${project.yacl_artifact_version}"
+        // Loom does not load their jar-in-jar libraries in a development run; supply them (same versions they bundle).
+        modRuntimeOnly "com.github.bawnorton.mixinsquared:mixinsquared-fabric:0.2.0"
+        runtimeOnly "gs.mclo:api:5.0.0"
+        runtimeOnly "org.quiltmc.parsers:json:0.2.1"
+        runtimeOnly "org.quiltmc.parsers:gson:0.2.1"
+        runtimeOnly "com.twelvemonkeys.imageio:imageio-webp:3.12.0"
     }
 
     // ModMenu
