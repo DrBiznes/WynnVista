@@ -52,7 +52,7 @@ public final class WorldEffects {
     /** Share of the view an effect must cover before it is marched at half resolution. */
     private static final double HALF_RESOLUTION_COVERAGE = 0.12;
 
-    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume());
+    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog());
 
     private static boolean failed;
     private static boolean created;

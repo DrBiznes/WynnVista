@@ -1,6 +1,6 @@
 # World effects
 
-Date: 2026-10-06. Branch `feature/world-effects`. First effect: the smoke plume rising from Mount Wynn (peak at `-183 205 -1964`). Tested on Windows 11, RTX 4070, Minecraft 1.21.11, DH 3.3.3, Voxy 0.2.16-beta, WynnIris 1.2.2.
+Date: 2026-10-06. Branch `feature/world-effects`. Effects: the smoke plume rising from Mount Wynn (peak at `-183 205 -1964`) and the lava fog over the Roots of Corruption, around the Nether portal. Tested on Windows 11, RTX 4070, Minecraft 1.21.11, DH 3.3.3, Voxy 0.2.16-beta, WynnIris 1.2.2.
 
 ## How it works
 
@@ -19,7 +19,8 @@ World effects are drawn over the **finished world image**, after every world pas
 | Voxy depth and projection | `compat/voxy/VoxyEffectDepth`, `MixinVoxyRenderPipelineDepth` |
 | Fog probe rules: where it looks, which distances it trusts, smoothing (pure, unit-tested) | `effects/EffectFog` |
 | The plume: placement, shape, sun/moon lighting (pure, unit-tested) | `effects/SmokePlume` |
-| Shaders: shared scene code, the plume, the half-resolution composite, the fog probe | `assets/wynnvista/shaders/effects/{scene.glsl,smoke_plume.fsh,upsample.fsh,fog_probe.fsh}` |
+| The Roots of Corruption lava fog: placement, shape, drift, glow (pure, unit-tested) | `effects/NetherFog` |
+| Shaders: shared scene code, the plume, the lava fog, the half-resolution composite, the fog probe | `assets/wynnvista/shaders/effects/{scene.glsl,smoke_plume.fsh,nether_fog.fsh,upsample.fsh,fog_probe.fsh}` |
 
 Occlusion uses two depth sources, each unprojected with the projection it was rendered with, and takes the nearer hit:
 
@@ -42,6 +43,20 @@ This works the same for any pack, for stock Iris, and without a shader pack. Lim
 
 - It needs terrain at about the effect's distance in view. Without a LOD mod and with the effect beyond vanilla render distance there is nothing to measure and the effect is drawn unfogged; the same holds while looking only at sky (the last value is kept, and dropped after the effect has been out of view for a second).
 - The thresholds were set from Complementary Reimagined in the Voxy fixture (below). Photon with the WynnIris ambiance pack was checked by eye on the live server, not measured.
+
+## Roots of Corruption lava fog
+
+`nether_fog` is a layer of glowing fog over the corrupted ground around the Nether portal: an ellipse centred on `254 -1300` with radii of 180 blocks along x and 130 along z, from y 67, below ground level (about y 85), up to y 165. The ellipse was fitted to a top-down fixture screenshot of the area, not to exact map data.
+
+- **The pit stays clear.** The floor is a hard limit: the bounding box starts at y 67 and the density is zero below it, so the portal's pit (floor near y 50), where the world event is fought, is not fogged. From down there the fog is a glowing ceiling.
+- **It thins around the player.** Within 48 blocks of the camera the density falls to 30%, so a player walking on the surface inside the layer can still see.
+- **No straight edges.** The rim fades over 40 blocks and the underside is lifted by up to 14 blocks in places, both by the coarsest noise octave.
+
+The look follows the Nether of Complementary Reimagined (`shaders/lib/atmospherics/netherStorm.glsl`), used as a reference for the technique only; no code of that pack is included, as its licence does not allow redistribution. The density is the sum of an even haze, soft billows, and wisps made by sampling stretched noise per octave with the wind reversed and doubled and raising each octave to the eighth power. It is thickest just above the floor and thins linearly to nothing at the top. Columns of brighter fog (one extra 2D noise sample) read as light shafts between the spikes. Opacity is capped at 93%.
+
+Lighting uses the plume's sun and moon model (`SmokePlume.lighting`): the fog's own lava glow is full at night and 65% by day, with sky and sun light scattered on top by day. Distance haze and `throughFog()` are applied as for the plume. It is drawn up to 2,000 blocks away.
+
+Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever the quality setting, at most 260 blocks marched, the shaft sample skipped once little light gets through, and the march stops when the fog is opaque. Standing inside it covers the whole view and takes the half-resolution path.
 
 ## Where an effect is shown
 
@@ -73,11 +88,11 @@ GPU time of the whole effect pass (`GL_TIME_ELAPSED`, 100-frame averages, 1920x1
 
 ## Results
 
-Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking --override MAIN --commands '...' --timeline '...' --capture-prefix <name>`, optionally with `--iris --shaderpack ComplementaryReimagined`, `--no-effects` or `--disable-effects smoke_plume`. Screenshots are under the ignored `run-*/screenshots/`.
+Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking --override MAIN --commands '...' --timeline '...' --capture-prefix <name>`, optionally with `--iris --shaderpack ComplementaryReimagined`, `--no-effects` or `--disable-effects smoke_plume,nether_fog`. Screenshots are under the ignored `run-*/screenshots/`.
 
 | Check | Result |
 | --- | --- |
-| `gradlew build`: 42 JUnit tests including `SmokePlumeTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest` | PASS |
+| `gradlew build`: 46 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest` | PASS |
 | Voxy, no shader pack: Ragni view, crater close-ups, far view from the east, noon / sunset / night | PASS: the plume rises out of the crater, the crater rim and nearer LOD terrain hide it, lava glow at night (`pw-*`, `final-*`, `half-*`) |
 | Voxy + Complementary Reimagined | PASS (`iv-*`), run before the culling and half-resolution work |
 | DH (OpenGL), no shader pack | PASS for drawing and LOD occlusion (`pv-*`), run before the culling and half-resolution work |
@@ -90,6 +105,8 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Fog probe, Voxy + Complementary Reimagined, default options, clear weather: 520, 240 and 1,400 blocks from the peak, noon and midnight | PASS: probe reads 1.00 at all three, plume unchanged (`fogoff-*`). Raw terrain detail 0.155 / 0.30 / 0.064–0.070 |
 | Same with `ATM_FOG_DISTANCE=10`, `ATM_FOG_ALTITUDE=300` and rain | PASS: probe reads 0.00 at 520 and 1,400 blocks (0.19 at night), 0.44 at 240 blocks where the mountain is still faintly visible; the plume has the mountain's fogged colour (`fogon-*`). Raw detail 0.014 / 0.030 / 0.012–0.021 |
 | Photon with the WynnIris ambiance pack on the live server (manual, by the maintainer, 2026-10-07) | PASS by eye: the plume is hidden by the presets' fog. No screenshots or probe readings recorded |
+| Lava fog, Voxy, no shader pack and Complementary Reimagined (2026-10-07), 854x480 and 1920x1080: on the surface at the rim, in the pit looking up, inside the layer, 300 blocks away from above, straight down from y 520; midnight, noon, dusk | PASS: drawn with vanilla + LOD depth in both, spikes and terrain hide it, nothing below the floor (y 85 in these runs; lowered to y 67 afterwards and re-checked from the pit, `nx-*`), covers the corrupted ground (`nv-*`, `nw-*`) |
+| Lava fog GPU time, 1920x1080, Voxy, RTX 4070, plume switched off, fog covering the whole view at half resolution | 0.86 ms average with Complementary Reimagined (31 logged 100-frame averages, highest 1.57 ms) |
 | LOD caches after all runs | PASS: `lod_fixture.py check` for both backends (not repeated after the fog runs) |
 
 ## Open
@@ -98,6 +115,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **Up close in real chunks.** The fixture has no real Wynncraft blocks, so the view from inside vanilla render distance (standing on the mountain, in the crater, inside the smoke) is only covered by the pillar test. Half-resolution edges against real foliage have not been seen.
 - **Shader packs.** The plume is composited after the pack's final pass with its own lighting (sun/moon direction from the time of day, sky colour from the fog colour). The pack's fog is matched by measurement (see Fog); it does not receive the pack's bloom or tonemapping, and pack clouds do not hide it. Only Complementary Reimagined was run.
 - **Fog probe.** Not run with DH or without a shader pack. Photon with the WynnIris ambiance pack has only the manual check above; no probe readings were recorded for it. A view whose in-range terrain is all flat (open sea, snow) reads as fog.
+- **Lava fog.** Run only in the Voxy fixture, which has LOD terrain and no real blocks; not run with DH, in rain, with Photon or on the live server. Its extent comes from a screenshot, so the rim may need adjusting against the real area. Density and colour were set by eye. Pack and vanilla clouds in front of the fog are drawn under it (see Translucents).
 - **Translucents.** Water, particles and clouds that do not write depth are not sorted against the plume.
 - **Performance** was measured on one GPU with Voxy only; nothing was measured on integrated or older graphics. The switch between the direct and half-resolution paths at 12% coverage has no hysteresis.
 - DH's Blaze3D renderer and vanilla with no LOD mod were not run. The fixture-only `FIXTURE_CUSTOM` mask rule is covered by unit tests, not by a run.
