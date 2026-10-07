@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
+import me.jamino.wynndhrangelimiter.effects.WorldEffect;
+import me.jamino.wynndhrangelimiter.effects.WorldEffects;
 import me.jamino.wynndhrangelimiter.visibility.BlockRect;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
 import me.shedaniel.clothconfig2.api.ConfigBuilder;
@@ -20,7 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 public final class ModConfig implements ModMenuApi {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
@@ -32,6 +36,10 @@ public final class ModConfig implements ModMenuApi {
         int schemaVersion = 2;
         boolean showMessage = true;
         boolean maskingEnabled = true;
+        boolean effectsEnabled = true;
+        int effectSteps = 64;
+        /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
+        Map<String, Boolean> effects = new LinkedHashMap<>();
         boolean fixtureEnabled = false;
         String fixtureSavePath = "";
         String fixtureOverride = "AUTO";
@@ -49,6 +57,12 @@ public final class ModConfig implements ModMenuApi {
             if (json != null) {
                 if (json.has("showMessage")) result.showMessage = json.get("showMessage").getAsBoolean();
                 if (json.has("maskingEnabled")) result.maskingEnabled = json.get("maskingEnabled").getAsBoolean();
+                if (json.has("effectsEnabled")) result.effectsEnabled = json.get("effectsEnabled").getAsBoolean();
+                if (json.has("effectSteps")) result.effectSteps = json.get("effectSteps").getAsInt();
+                if (json.has("effects") && json.get("effects").isJsonObject()) {
+                    json.getAsJsonObject("effects").entrySet().forEach(entry ->
+                            result.effects.put(entry.getKey(), entry.getValue().getAsBoolean()));
+                }
                 if (json.has("fixtureEnabled")) result.fixtureEnabled = json.get("fixtureEnabled").getAsBoolean();
                 if (json.has("fixtureSavePath")) result.fixtureSavePath = json.get("fixtureSavePath").getAsString();
                 if (json.has("fixtureOverride")) result.fixtureOverride = json.get("fixtureOverride").getAsString();
@@ -78,6 +92,12 @@ public final class ModConfig implements ModMenuApi {
 
     public static boolean shouldShowMessage() { return config.showMessage; }
     public static boolean maskingEnabled() { return config.maskingEnabled; }
+    /** Master switch for every world effect. */
+    public static boolean effectsEnabled() { return config.effectsEnabled; }
+    /** Whether one effect is on; the master switch still applies. */
+    public static boolean effectEnabled(String id) { return config.effects.getOrDefault(id, true); }
+    /** Ray-march samples per pixel for volumetric effects. */
+    public static int effectSteps() { return Math.max(16, Math.min(128, config.effectSteps)); }
     public static boolean fixtureEnabled() { return config.fixtureEnabled; }
     public static String fixtureSavePath() { return config.fixtureSavePath; }
 
@@ -121,6 +141,30 @@ public final class ModConfig implements ModMenuApi {
                         config.maskingEnabled = value;
                         save();
                     }).build());
+            ConfigCategory effects = builder.getOrCreateCategory(Text.literal("World Effects"));
+            effects.addEntry(entries.startBooleanToggle(Text.literal("Enable World Effects"), config.effectsEnabled)
+                    .setDefaultValue(true)
+                    .setTooltip(Text.literal("Master switch for every effect below"))
+                    .setSaveConsumer(value -> {
+                        config.effectsEnabled = value;
+                        save();
+                    }).build());
+            effects.addEntry(entries.startIntSlider(Text.literal("World Effect Quality"), effectSteps(), 16, 128)
+                    .setDefaultValue(64)
+                    .setTooltip(Text.literal("Samples per pixel for volumetric effects; lower is faster"))
+                    .setSaveConsumer(value -> {
+                        config.effectSteps = value;
+                        save();
+                    }).build());
+            for (WorldEffect effect : WorldEffects.all()) {
+                effects.addEntry(entries.startBooleanToggle(Text.literal(effect.name()), effectEnabled(effect.id()))
+                        .setDefaultValue(true)
+                        .setTooltip(Text.literal(effect.description()))
+                        .setSaveConsumer(value -> {
+                            config.effects.put(effect.id(), value);
+                            save();
+                        }).build());
+            }
             ConfigCategory fixture = builder.getOrCreateCategory(Text.literal("Local Fixture"));
             fixture.addEntry(entries.startBooleanToggle(Text.literal("Enable Fixture"), config.fixtureEnabled)
                     .setDefaultValue(false).setSaveConsumer(value -> {

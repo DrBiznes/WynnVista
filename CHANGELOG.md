@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0
+
+**Added**
+- World effects: custom shader effects drawn over both LOD terrain and the normal game world. Works with Distant Horizons, Voxy, neither, and under shader packs.
+- First effect: a smoke plume rising from Mount Wynn, visible across the main map, lit by the time of day, with a lava glow at night.
+- Effects follow the LOD region mask: the plume is hidden whenever main-map terrain is (Realm of Light, Void, unknown areas), and skipped when out of view.
+- Config: a "World Effects" page with a master switch, a quality slider and one toggle per effect.
+
 ## 2.0.0
 
 WynnVista no longer changes DH or Voxy render distance. It now hides LOD terrain outside the active Wynncraft region.

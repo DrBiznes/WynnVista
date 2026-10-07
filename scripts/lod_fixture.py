@@ -58,7 +58,7 @@ def write_state(update: dict) -> None:
 
 
 def write_configs(masking: bool, override: str, render_distance: float, custom_rect: str = "",
-                  dh_engine: str = None) -> None:
+                  dh_engine: str = None, effects: bool = True, disabled_effects: str = "") -> None:
     config = RUN / "config"
     config.mkdir(parents=True, exist_ok=True)
     (config / "WynnVista.json").write_text(json.dumps({
@@ -69,6 +69,8 @@ def write_configs(masking: bool, override: str, render_distance: float, custom_r
         "fixtureSavePath": str(WORLD.resolve()),
         "fixtureOverride": override,
         "fixtureCustomRect": custom_rect,
+        "effectsEnabled": effects,
+        "effects": {name: False for name in disabled_effects.split(",") if name},
     }, indent=2) + "\n")
     if BACKEND == "voxy":
         # ingest_enabled=false is a second layer of protection; the mod also freezes it in memory.
@@ -286,7 +288,8 @@ def cmd_install(args) -> None:
 def cmd_run(args) -> None:
     if not WORLD.exists() or not read_state().get("installedStorage"):
         raise SystemExit("Fixture is not installed; run create-world and install first")
-    write_configs(args.masking, args.override, args.render_distance, args.custom_rect, args.dh_engine)
+    write_configs(args.masking, args.override, args.render_distance, args.custom_rect, args.dh_engine,
+                  not args.no_effects, args.disable_effects)
     env = {"WYNNVISTA_FIXTURE_COMMANDS": args.commands, "WYNNVISTA_FIXTURE_SCREENSHOT": args.screenshot,
            "WYNNVISTA_FIXTURE_TIMELINE": args.timeline, "WYNNVISTA_FIXTURE_CAPTURE_PREFIX": args.capture_prefix,
            "WYNNVISTA_FIXTURE_AUTOSTOP_TICKS": str(args.ticks)}
@@ -356,6 +359,8 @@ def main() -> None:
                            help="AUTO, MAIN, LIGHT, VOID_OUTER, NONE, PASSTHROUGH or FIXTURE_CUSTOM")
             p.add_argument("--custom-rect", default="",
                            help='inclusive block corners "x1,z1,x2,z2" used by --override FIXTURE_CUSTOM')
+            p.add_argument("--no-effects", action="store_true", help="turn the world-effects master switch off")
+            p.add_argument("--disable-effects", default="", help="comma-separated effect ids to switch off")
             p.add_argument("--commands")
             p.add_argument("--screenshot")
             p.add_argument("--timeline")

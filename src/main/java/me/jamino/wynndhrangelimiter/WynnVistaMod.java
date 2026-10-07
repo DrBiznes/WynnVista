@@ -2,7 +2,9 @@ package me.jamino.wynndhrangelimiter;
 
 import me.jamino.wynndhrangelimiter.debug.FixtureController;
 import me.jamino.wynndhrangelimiter.debug.VoxyFixtureController;
+import me.jamino.wynndhrangelimiter.compat.dh.DhEffectDepth;
 import me.jamino.wynndhrangelimiter.compat.dh.DhVersionSupport;
+import me.jamino.wynndhrangelimiter.compat.voxy.VoxyEffectDepth;
 import me.jamino.wynndhrangelimiter.compat.voxy.VoxyVersionSupport;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
 import me.jamino.wynndhrangelimiter.visibility.VisibilityService;
@@ -39,6 +41,9 @@ public final class WynnVistaMod {
         } else if (voxy) {
             LOGGER.warn("Voxy binary is unsupported for spatial masking; its renderer remains unchanged");
         }
+        // World effects only need each backend's depth, not the pinned terrain shaders, so DH is fed through its API.
+        if (dh) DhEffectDepth.register();
+        if (voxySupported) VoxyEffectDepth.register();
         if (dhSupported && voxySupported) {
             LOGGER.warn("Distant Horizons and Voxy are both present; simultaneous operation is untested");
         }
