@@ -46,17 +46,19 @@ This works the same for any pack, for stock Iris, and without a shader pack. Lim
 
 ## Roots of Corruption lava fog
 
-`nether_fog` is a layer of glowing fog over the corrupted ground around the Nether portal: an ellipse centred on `254 -1300` with radii of 180 blocks along x and 130 along z, from y 67, below ground level (about y 85), up to y 165. The ellipse was fitted to a top-down fixture screenshot of the area, not to exact map data.
+`nether_fog` is a layer of glowing fog over the corrupted ground around the Nether portal: an ellipse centred on `254 -1300`, from y 67, below ground level (about y 85), up to y 197. Inside radii of 140 blocks along x and 90 along z it has its full density and height; it then disperses over a further 160 blocks. The ellipse was fitted to a top-down fixture screenshot of the area, not to exact map data.
 
 - **The pit stays clear.** The floor is a hard limit: the bounding box starts at y 67 and the density is zero below it, so the portal's pit (floor near y 50), where the world event is fought, is not fogged. From down there the fog is a glowing ceiling.
 - **It thins around the player.** Within 48 blocks of the camera the density falls to 30%, so a player walking on the surface inside the layer can still see.
-- **No straight edges.** The rim fades over 40 blocks and the underside is lifted by up to 14 blocks in places, both by the coarsest noise octave.
+- **No visible border.** Outside the core the density falls with the cube of a smooth fade and the top sinks to 40% of its height, so from outside the fog is a haze that gathers towards the middle. Upward it thins with the square of the height. The coarsest noise octave shifts the fade and lifts the underside by up to 14 blocks in places.
 
 The look follows the Nether of Complementary Reimagined (`shaders/lib/atmospherics/netherStorm.glsl`), used as a reference for the technique only; no code of that pack is included, as its licence does not allow redistribution. The density is the sum of an even haze, soft billows, and wisps made by sampling stretched noise per octave with the wind reversed and doubled and raising each octave to the eighth power. It is thickest just above the floor and thins linearly to nothing at the top. Columns of brighter fog (one extra 2D noise sample) read as light shafts between the spikes. Opacity is capped at 93%.
 
+The fog glows ember red near the ground and a dark blood red higher up. Within 75 blocks of the Nether portal (`342 -1292`) the glow turns to the portal's purple, strongest low down; this is a colour mix in the same march and adds no samples.
+
 Lighting uses the plume's sun and moon model (`SmokePlume.lighting`): the fog's own lava glow is full at night and 65% by day, with sky and sun light scattered on top by day. Distance haze and `throughFog()` are applied as for the plume. It is drawn up to 2,000 blocks away.
 
-Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever the quality setting, at most 260 blocks marched, the shaft sample skipped once little light gets through, and the march stops when the fog is opaque. Standing inside it covers the whole view and takes the half-resolution path.
+Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever the quality setting, at most 380 blocks marched, the shaft sample skipped once little light gets through, and the march stops when the fog is opaque. Standing inside it covers the whole view and takes the half-resolution path.
 
 ## Where an effect is shown
 
@@ -92,7 +94,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 
 | Check | Result |
 | --- | --- |
-| `gradlew build`: 46 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest` | PASS |
+| `gradlew build`: 47 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest` | PASS |
 | Voxy, no shader pack: Ragni view, crater close-ups, far view from the east, noon / sunset / night | PASS: the plume rises out of the crater, the crater rim and nearer LOD terrain hide it, lava glow at night (`pw-*`, `final-*`, `half-*`) |
 | Voxy + Complementary Reimagined | PASS (`iv-*`), run before the culling and half-resolution work |
 | DH (OpenGL), no shader pack | PASS for drawing and LOD occlusion (`pv-*`), run before the culling and half-resolution work |
@@ -106,7 +108,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Same with `ATM_FOG_DISTANCE=10`, `ATM_FOG_ALTITUDE=300` and rain | PASS: probe reads 0.00 at 520 and 1,400 blocks (0.19 at night), 0.44 at 240 blocks where the mountain is still faintly visible; the plume has the mountain's fogged colour (`fogon-*`). Raw detail 0.014 / 0.030 / 0.012–0.021 |
 | Photon with the WynnIris ambiance pack on the live server (manual, by the maintainer, 2026-10-07) | PASS by eye: the plume is hidden by the presets' fog. No screenshots or probe readings recorded |
 | Lava fog, Voxy, no shader pack and Complementary Reimagined (2026-10-07), 854x480 and 1920x1080: on the surface at the rim, in the pit looking up, inside the layer, 300 blocks away from above, straight down from y 520; midnight, noon, dusk | PASS: drawn with vanilla + LOD depth in both, spikes and terrain hide it, nothing below the floor (y 85 in these runs; lowered to y 67 afterwards and re-checked from the pit, `nx-*`), covers the corrupted ground (`nv-*`, `nw-*`) |
-| Lava fog GPU time, 1920x1080, Voxy, RTX 4070, plume switched off, fog covering the whole view at half resolution | 0.86 ms average with Complementary Reimagined (31 logged 100-frame averages, highest 1.57 ms) |
+| Lava fog GPU time, 1920x1080, Voxy, RTX 4070, plume switched off, fog covering the whole view at half resolution | 1.05 ms average with Complementary Reimagined after the rim was dispersed (30 logged 100-frame averages, highest 2.05 ms); 0.86 ms before |
 | LOD caches after all runs | PASS: `lod_fixture.py check` for both backends (not repeated after the fog runs) |
 
 ## Open

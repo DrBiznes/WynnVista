@@ -9,18 +9,25 @@ public final class NetherFog implements WorldEffect {
     public static final String ID = "nether_fog";
 
     /**
-     * The corrupted ground around the portal is roughly an ellipse; the fog fills it, fade included. The
-     * layer's floor is below ground level (about y 85) and above the pit's floor (near y 50); nothing is drawn below it.
+     * The corrupted ground around the portal is roughly an ellipse. Inside the core radii the fog has its
+     * full density and height; over the next {@link #SPREAD} blocks it thins out and sinks, so it has no
+     * visible border. The layer's floor is below ground level (about y 85) and above the pit's floor
+     * (near y 50); nothing is drawn below it.
      */
     public static final double CENTER_X = 254;
     public static final double CENTER_Z = -1300;
-    public static final float RADIUS_X = 180;
-    public static final float RADIUS_Z = 130;
+    public static final float CORE_X = 140;
+    public static final float CORE_Z = 90;
+    public static final float SPREAD = 160;
+    public static final float RADIUS_X = CORE_X + SPREAD;
+    public static final float RADIUS_Z = CORE_Z + SPREAD;
     public static final double FLOOR_Y = 67;
+    public static final float THICKNESS = 130;
 
-    /** Layer thickness, and the width of the ragged fade at its rim. */
-    public static final float THICKNESS = 98;
-    public static final float FEATHER = 40;
+    /** The Nether portal, and the distance from it at which its purple glow in the fog has faded out. */
+    public static final double PORTAL_X = 342;
+    public static final double PORTAL_Z = -1292;
+    public static final float PORTAL_GLOW_RADIUS = 75;
 
     /** Blocks the noise pattern drifts per second along each axis, and the distance after which it repeats. */
     public static final double DRIFT_SPEED = 1.2;
@@ -46,7 +53,9 @@ public final class NetherFog implements WorldEffect {
         program.set("uOrigin", (float) (CENTER_X - frame.cameraX()), (float) (FLOOR_Y - frame.cameraY()),
                 (float) (CENTER_Z - frame.cameraZ()));
         program.set("uExtent", RADIUS_X, RADIUS_Z);
-        program.set("uLayer", THICKNESS, FEATHER);
+        program.set("uCore", CORE_X, CORE_Z);
+        program.set("uThickness", THICKNESS);
+        program.set("uPortal", (float) (PORTAL_X - CENTER_X), (float) (PORTAL_Z - CENTER_Z), PORTAL_GLOW_RADIUS);
         program.set("uDrift", drift(frame.worldTime(), frame.tickProgress()));
         program.set("uLightColor", light.red(), light.green(), light.blue());
         program.set("uAmbient", light.ambientRed(), light.ambientGreen(), light.ambientBlue());

@@ -21,8 +21,19 @@ class NetherFogTest {
         assertEquals(NetherFog.CENTER_X + NetherFog.RADIUS_X, box.maxX());
         assertEquals(NetherFog.CENTER_Z - NetherFog.RADIUS_Z, box.minZ());
         assertEquals(NetherFog.CENTER_Z + NetherFog.RADIUS_Z, box.maxZ());
+        // The fog spreads out from its full-density core by the same distance on every side.
+        assertEquals(NetherFog.RADIUS_X - NetherFog.CORE_X, NetherFog.RADIUS_Z - NetherFog.CORE_Z);
+        assertTrue(NetherFog.CORE_X >= 140 && NetherFog.CORE_Z >= 90, "dispersing the rim does not shrink the core");
         // The Roots of Corruption territory's Nether portal side lies well inside.
         assertTrue(box.minX() < 171 && box.maxX() > 353 && box.minZ() < -1345 && box.maxZ() > -1254);
+    }
+
+    @Test
+    void portalGlowLiesInsideTheFog() {
+        double x = (NetherFog.PORTAL_X - NetherFog.CENTER_X) / NetherFog.RADIUS_X;
+        double z = (NetherFog.PORTAL_Z - NetherFog.CENTER_Z) / NetherFog.RADIUS_Z;
+        assertTrue(Math.hypot(x, z) < 1, "the portal is under the fog");
+        assertTrue(NetherFog.PORTAL_GLOW_RADIUS < NetherFog.RADIUS_Z, "most of the fog keeps its own colour");
     }
 
     @Test
