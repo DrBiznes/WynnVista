@@ -120,5 +120,6 @@ void main() {
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     colour = mix(colour, uFogColor * alpha, haze);
-    fragColor = vec4(colour, alpha);
+    // Fog that has swallowed the mountain swallows its smoke too.
+    fragColor = vec4(throughFog(colour, alpha), alpha);
 }

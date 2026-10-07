@@ -68,6 +68,9 @@ public final class WorldEffects {
     private static int lowSizeX;
     private static int lowSizeY;
     private static final Map<String, EffectProgram> PROGRAMS = new HashMap<>();
+    private static final Map<String, FogProbe> FOG_PROBES = new HashMap<>();
+    private static EffectProgram fogProgram;
+    private static boolean fogBroken;
     private static final Set<String> BROKEN = new HashSet<>();
     private static String loggedState = "";
     private static int timerQuery;
@@ -75,6 +78,7 @@ public final class WorldEffects {
     private static long profiledNanos;
     private static int profiledFrames;
     private static String profiledDetail = "";
+    private static float profiledFog = 1;
 
     private WorldEffects() {}
 
@@ -89,6 +93,17 @@ public final class WorldEffects {
     }
 
     private record Visible(WorldEffect effect, EffectCulling.ScreenRect rect, double distance) {}
+
+    /**
+     * One effect's 1x1 fog measurement. It is smoothed over time, so each frame reads the previous result
+     * from one texture and writes the new one to the other.
+     */
+    private static final class FogProbe {
+        final int[] textures = new int[2];
+        final int[] framebuffers = new int[2];
+        int current;
+        long measuredNanos;
+    }
 
     /** Called once the world image is complete. The matrices are the ones vanilla terrain was drawn with. */
     public static void render(MinecraftClient client, Camera camera, Matrix4f view, Matrix4f projection,
@@ -149,6 +164,25 @@ public final class WorldEffects {
 
         GlState saved = GlState.capture();
         try {
+            GL11C.glDisable(GL11C.GL_DEPTH_TEST);
+            GL11C.glDisable(GL11C.GL_CULL_FACE);
+            GL11C.glDisable(GL11C.GL_STENCIL_TEST);
+            GL11C.glDepthMask(false);
+            GL11C.glColorMask(true, true, true, true);
+            GL11C.glEnable(GL11C.GL_BLEND);
+            GL20C.glBlendEquationSeparate(GL14C.GL_FUNC_ADD, GL14C.GL_FUNC_ADD);
+            bind(0, GL11C.GL_TEXTURE_2D, depth);
+            bind(1, GL11C.GL_TEXTURE_2D, lod == null ? depth : lod.textureId());
+            bind(2, GL12C.GL_TEXTURE_3D, noiseTexture);
+            GL30C.glBindVertexArray(vertexArray);
+
+            beginProfile();
+            // The fog already in the image is measured before anything is drawn over it.
+            GL11C.glDisable(GL11C.GL_BLEND);
+            GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
+            for (Visible entry : visible) measureFog(entry, sceneInverse, lod, color);
+            GL11C.glEnable(GL11C.GL_BLEND);
+
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
             if (attachedColor != color) {
                 GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0,
@@ -156,22 +190,9 @@ public final class WorldEffects {
                 attachedColor = color;
             }
             GL11C.glViewport(0, 0, width, height);
-            GL11C.glDisable(GL11C.GL_DEPTH_TEST);
-            GL11C.glDisable(GL11C.GL_CULL_FACE);
-            GL11C.glDisable(GL11C.GL_STENCIL_TEST);
             GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
-            GL11C.glDepthMask(false);
-            GL11C.glColorMask(true, true, true, true);
-            GL11C.glEnable(GL11C.GL_BLEND);
-            GL20C.glBlendEquationSeparate(GL14C.GL_FUNC_ADD, GL14C.GL_FUNC_ADD);
             // Premultiplied colour over the world image; the target's alpha is left alone.
             GL14C.glBlendFuncSeparate(GL11C.GL_ONE, GL11C.GL_ONE_MINUS_SRC_ALPHA, GL11C.GL_ZERO, GL11C.GL_ONE);
-            bind(0, GL11C.GL_TEXTURE_2D, depth);
-            bind(1, GL11C.GL_TEXTURE_2D, lod == null ? depth : lod.textureId());
-            bind(2, GL12C.GL_TEXTURE_3D, noiseTexture);
-            GL30C.glBindVertexArray(vertexArray);
-
-            beginProfile();
             for (Visible entry : visible) {
                 WorldEffect effect = entry.effect();
                 EffectProgram program = program(effect);
@@ -192,6 +213,9 @@ public final class WorldEffects {
                 program.use();
                 setScene(program, sceneInverse, lod, targetWidth, targetHeight);
                 program.set("uNoise", 2);
+                FogProbe fog = FOG_PROBES.get(effect.id());
+                bind(6, GL11C.GL_TEXTURE_2D, fog.textures[fog.current]);
+                program.set("uFogProbe", 6);
                 program.set("uFogColor", fogColor.x, fogColor.y, fogColor.z);
                 program.set("uSteps", steps);
                 program.set("uOctaves", octaves);
@@ -209,7 +233,8 @@ public final class WorldEffects {
                 }
                 if (PROFILE) {
                     profiledDetail = effect.id() + " " + (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
-                            + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves";
+                            + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
+                            + String.format(", fog visibility %.2f", profiledFog);
                 }
             }
             endProfile();
@@ -227,6 +252,89 @@ public final class WorldEffects {
         program.set("uLodParams", lod == null ? 0 : 1, lod == null ? 1 : lod.clearDepth(),
                 lod != null && lod.zeroToOne() ? 1 : 0);
         program.set("uViewSize", (float) targetWidth, (float) targetHeight);
+    }
+
+    /**
+     * Updates an effect's fog probe from the finished world image: how much detail the terrain at the
+     * effect's distance still has, and its colour. If the probe shader is unusable the probe keeps its
+     * initial "clear".
+     */
+    private static void measureFog(Visible entry, Matrix4f sceneInverse, LodDepth.Layer lod, int color) {
+        FogProbe probe = FOG_PROBES.computeIfAbsent(entry.effect().id(), id -> createFogProbe());
+        if (fogBroken) return;
+        if (fogProgram == null) {
+            try {
+                fogProgram = EffectProgram.link("fog_probe.fsh");
+            } catch (RuntimeException e) {
+                fogBroken = true;
+                LOGGER.error("World effects will ignore fog: the fog probe shader is unusable", e);
+                return;
+            }
+        }
+        long now = System.nanoTime();
+        float rate = probe.measuredNanos == 0 ? 1 : EffectFog.rate((now - probe.measuredNanos) / 1.0e9);
+        probe.measuredNanos = now;
+        EffectFog.Band band = EffectFog.band(entry.distance());
+        EffectFog.Columns columns = EffectFog.columns(entry.rect());
+
+        int previous = probe.current;
+        probe.current = 1 - previous;
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[probe.current]);
+        GL11C.glViewport(0, 0, 1, 1);
+        bind(5, GL11C.GL_TEXTURE_2D, color);
+        bind(6, GL11C.GL_TEXTURE_2D, probe.textures[previous]);
+        fogProgram.use();
+        setScene(fogProgram, sceneInverse, lod, 1, 1);
+        fogProgram.set("uSceneColor", 5);
+        fogProgram.set("uPrevious", 6);
+        fogProgram.set("uColumns", columns.min(), columns.max());
+        fogProgram.set("uBand", band.near(), band.far());
+        fogProgram.set("uContrast", EffectFog.CONTRAST_GONE, EffectFog.CONTRAST_CLEAR);
+        fogProgram.set("uRate", rate);
+        GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+
+        if (PROFILE && profiledFrames == 0) {
+            int packBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
+            GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, 0);
+            float[] value = new float[4];
+            GL11C.glReadPixels(0, 0, 1, 1, GL11C.GL_RGBA, GL11C.GL_FLOAT, value);
+            GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, packBuffer);
+            profiledFog = value[3];
+        }
+    }
+
+    private static FogProbe createFogProbe() {
+        FogProbe probe = new FogProbe();
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE6);
+        resetUnpack();
+        for (int i = 0; i < 2; i++) {
+            probe.textures[i] = GL11C.glGenTextures();
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, probe.textures[i]);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+            // No fog colour, full visibility. Full floats: at high frame rates each step of the smoothing
+            // is smaller than a half float can hold near 1.
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, 1, 1, 0, GL11C.GL_RGBA, GL11C.GL_FLOAT,
+                    new float[] {0, 0, 0, 1});
+            probe.framebuffers[i] = GL30C.glGenFramebuffers();
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[i]);
+            GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                    probe.textures[i], 0);
+            if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+                throw new IllegalStateException("Fog probe buffer is incomplete");
+            }
+        }
+        return probe;
+    }
+
+    /** Client memory, tightly packed: Minecraft leaves its own unpack state behind. */
+    private static void resetUnpack() {
+        GL21C.glBindBuffer(GL21C.GL_PIXEL_UNPACK_BUFFER, 0);
+        GL11C.glPixelStorei(GL11C.GL_UNPACK_ALIGNMENT, 1);
+        GL11C.glPixelStorei(GL11C.GL_UNPACK_ROW_LENGTH, 0);
+        GL11C.glPixelStorei(GL11C.GL_UNPACK_SKIP_PIXELS, 0);
+        GL11C.glPixelStorei(GL11C.GL_UNPACK_SKIP_ROWS, 0);
+        GL11C.glPixelStorei(GL12C.GL_UNPACK_IMAGE_HEIGHT, 0);
+        GL11C.glPixelStorei(GL12C.GL_UNPACK_SKIP_IMAGES, 0);
     }
 
     /**
@@ -371,13 +479,7 @@ public final class WorldEffects {
             GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
             GL11C.glBindTexture(GL12C.GL_TEXTURE_3D, texture);
             GL11C.glTexParameteri(GL12C.GL_TEXTURE_3D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
-            GL21C.glBindBuffer(GL21C.GL_PIXEL_UNPACK_BUFFER, 0);
-            GL11C.glPixelStorei(GL11C.GL_UNPACK_ALIGNMENT, 1);
-            GL11C.glPixelStorei(GL11C.GL_UNPACK_ROW_LENGTH, 0);
-            GL11C.glPixelStorei(GL11C.GL_UNPACK_SKIP_PIXELS, 0);
-            GL11C.glPixelStorei(GL11C.GL_UNPACK_SKIP_ROWS, 0);
-            GL11C.glPixelStorei(GL12C.GL_UNPACK_IMAGE_HEIGHT, 0);
-            GL11C.glPixelStorei(GL12C.GL_UNPACK_SKIP_IMAGES, 0);
+            resetUnpack();
             GL12C.glTexImage3D(GL12C.GL_TEXTURE_3D, 0, GL30C.GL_R8, NOISE_SIZE, NOISE_SIZE, NOISE_SIZE, 0,
                     GL11C.GL_RED, GL11C.GL_UNSIGNED_BYTE, pixels);
             return texture;
@@ -396,9 +498,10 @@ public final class WorldEffects {
                            boolean[] colorMask, int[] blendFunc, int[] blendEquation, int unpackBuffer,
                            int[] pixelStore) {
         private static final int[] TARGETS = {GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_3D,
-                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
         private static final int[] BINDINGS = {GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
-                GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
+                GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
+                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
         private static final int[] PIXEL_STORE = {GL11C.GL_UNPACK_ALIGNMENT, GL11C.GL_UNPACK_ROW_LENGTH,
                 GL11C.GL_UNPACK_SKIP_PIXELS, GL11C.GL_UNPACK_SKIP_ROWS, GL12C.GL_UNPACK_IMAGE_HEIGHT,
                 GL12C.GL_UNPACK_SKIP_IMAGES};

@@ -4,6 +4,7 @@
 uniform sampler2D uSceneDepth;
 uniform sampler2D uLodDepth;
 uniform sampler3D uNoise;
+uniform sampler2D uFogProbe;  // 1x1, written by fog_probe.fsh
 
 uniform mat4 uSceneInverse;   // vanilla NDC -> camera-relative world
 uniform mat4 uLodInverse;     // LOD NDC -> camera-relative world
@@ -52,6 +53,15 @@ float sceneDistance(vec2 uv, vec2 ndc) {
         }
     }
     return nearest;
+}
+
+/**
+ * Puts an effect's premultiplied colour behind the fog already in the world image: as terrain at the
+ * effect's distance loses its detail to fog, the effect takes on that terrain's colour.
+ */
+vec3 throughFog(vec3 colour, float alpha) {
+    vec4 fog = texelFetch(uFogProbe, ivec2(0), 0);
+    return mix(fog.rgb * alpha, colour, fog.a);
 }
 
 const float NOISE_SIZE = 32.0;
