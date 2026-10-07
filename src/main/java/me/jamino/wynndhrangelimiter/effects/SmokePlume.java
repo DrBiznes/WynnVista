@@ -12,13 +12,13 @@ public final class SmokePlume implements WorldEffect {
 
     /** Column height, radius at the vent and at the top, and how far the top has blown downwind (east, slightly south). */
     public static final float HEIGHT = 520;
-    public static final float VENT_RADIUS = 16;
+    public static final float VENT_RADIUS = 14;
     public static final float TOP_RADIUS = 170;
     public static final float DRIFT_X = 150;
     public static final float DRIFT_Z = 70;
 
     /** Blocks the noise pattern climbs per second, and the distance after which it repeats exactly. */
-    public static final double RISE_SPEED = 8;
+    public static final double RISE_SPEED = 4.8;
     public static final double SCROLL_PERIOD = 1280;
 
     private static final Bounds BOUNDS = new Bounds(PEAK_X - TOP_RADIUS, VENT_Y, PEAK_Z - TOP_RADIUS,

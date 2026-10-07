@@ -42,7 +42,7 @@ class SmokePlumeTest {
 
     @Test
     void risingPatternWrapsWithoutAJump() {
-        // 32000 ticks at 8 blocks/s is exactly ten repeats of the noise pattern.
+        // 32000 ticks at 4.8 blocks/s is exactly six repeats of the noise pattern.
         assertEquals(0.0, 32000 / 20.0 * SmokePlume.RISE_SPEED % SmokePlume.SCROLL_PERIOD, 1e-9);
         assertEquals(SmokePlume.scroll(0, 0.5f), SmokePlume.scroll(32000, 0.5f), 1e-4);
         assertEquals(SmokePlume.scroll(100, 0), SmokePlume.scroll(-31900, 0), 1e-4);

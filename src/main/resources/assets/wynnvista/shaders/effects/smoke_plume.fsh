@@ -101,9 +101,12 @@ void main() {
             float u = q.y / uShape.x;
             // Self-shadowing from one sample towards the light. Deep inside, where little of this sample
             // reaches the eye, the previous sample's shadow is reused.
-            if (transmittance > 0.3) shade = exp(-density(q + uLightDir * 36.0, lightOctaves) * 2.4);
-            vec3 albedo = mix(vec3(0.30, 0.28, 0.27), vec3(0.80, 0.80, 0.82), smoothstep(0.0, 0.55, u));
-            vec3 lit = albedo * (ambient * mix(0.7, 1.0, u) * (0.6 + 0.4 * shade) + uLightColor * shade);
+            if (transmittance > 0.3) shade = exp(-density(q + uLightDir * 36.0, lightOctaves) * 1.6);
+            // Pale ash scatters light many times over, so the shaded side stays a light grey-blue rather
+            // than going dark: the sun term keeps a floor and the sky fills in the rest.
+            vec3 albedo = mix(vec3(0.66, 0.65, 0.64), vec3(0.97, 0.97, 0.98), smoothstep(0.0, 0.4, u));
+            vec3 lit = albedo * (ambient * mix(0.85, 1.0, u) * (0.55 + 0.2 * shade)
+                    + uLightColor * mix(0.22, 0.6, shade));
             lit += vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
             float alpha = 1.0 - exp(-d * EXTINCTION * dt);
             colour += transmittance * alpha * lit;
