@@ -41,7 +41,7 @@ So the fog is measured from the finished image instead (`fog_probe.fsh`, one 1x1
 This works the same for any pack, for stock Iris, and without a shader pack. Limits:
 
 - It needs terrain at about the effect's distance in view. Without a LOD mod and with the effect beyond vanilla render distance there is nothing to measure and the effect is drawn unfogged; the same holds while looking only at sky (the last value is kept, and dropped after the effect has been out of view for a second).
-- The thresholds were set from Complementary Reimagined in the Voxy fixture (below). Photon and the real ambiance pack were not run.
+- The thresholds were set from Complementary Reimagined in the Voxy fixture (below). Photon with the WynnIris ambiance pack was checked by eye on the live server, not measured.
 
 ## Where an effect is shown
 
@@ -89,6 +89,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Facing away from the mountain | PASS: `none visible`, then drawn again from the next viewpoint |
 | Fog probe, Voxy + Complementary Reimagined, default options, clear weather: 520, 240 and 1,400 blocks from the peak, noon and midnight | PASS: probe reads 1.00 at all three, plume unchanged (`fogoff-*`). Raw terrain detail 0.155 / 0.30 / 0.064–0.070 |
 | Same with `ATM_FOG_DISTANCE=10`, `ATM_FOG_ALTITUDE=300` and rain | PASS: probe reads 0.00 at 520 and 1,400 blocks (0.19 at night), 0.44 at 240 blocks where the mountain is still faintly visible; the plume has the mountain's fogged colour (`fogon-*`). Raw detail 0.014 / 0.030 / 0.012–0.021 |
+| Photon with the WynnIris ambiance pack on the live server (manual, by the maintainer, 2026-10-07) | PASS by eye: the plume is hidden by the presets' fog. No screenshots or probe readings recorded |
 | LOD caches after all runs | PASS: `lod_fixture.py check` for both backends (not repeated after the fog runs) |
 
 ## Open
@@ -96,7 +97,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **DH fixture height.** In the DH fixture the imported LOD terrain sits roughly 40–50 blocks lower than the same terrain in the Voxy fixture, so the plume floats above the cone there. In the Voxy fixture the supplied peak coordinates land exactly in the crater. This looks like a vertical shift of the copied DH database in the superflat save, not an effect error, but it must be confirmed with DH on the live server.
 - **Up close in real chunks.** The fixture has no real Wynncraft blocks, so the view from inside vanilla render distance (standing on the mountain, in the crater, inside the smoke) is only covered by the pillar test. Half-resolution edges against real foliage have not been seen.
 - **Shader packs.** The plume is composited after the pack's final pass with its own lighting (sun/moon direction from the time of day, sky colour from the fog colour). The pack's fog is matched by measurement (see Fog); it does not receive the pack's bloom or tonemapping, and pack clouds do not hide it. Only Complementary Reimagined was run.
-- **Fog probe.** Not run with Photon, with a WynnIris ambiance pack on the live server, with DH, or without a shader pack. A view whose in-range terrain is all flat (open sea, snow) reads as fog.
+- **Fog probe.** Not run with DH or without a shader pack. Photon with the WynnIris ambiance pack has only the manual check above; no probe readings were recorded for it. A view whose in-range terrain is all flat (open sea, snow) reads as fog.
 - **Translucents.** Water, particles and clouds that do not write depth are not sorted against the plume.
 - **Performance** was measured on one GPU with Voxy only; nothing was measured on integrated or older graphics. The switch between the direct and half-resolution paths at 12% coverage has no hysteresis.
 - DH's Blaze3D renderer and vanilla with no LOD mod were not run. The fixture-only `FIXTURE_CUSTOM` mask rule is covered by unit tests, not by a run.
