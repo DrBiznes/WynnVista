@@ -96,5 +96,5 @@ void main() {
     // Aerial perspective: distant fog sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     // That, a shader pack's fog that has swallowed the canyon, and any cloud the fog is behind.
-    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud);
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, dir * max(firstHit, 0.0));
 }

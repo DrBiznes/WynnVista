@@ -19,7 +19,7 @@ World effects are drawn over the **finished world image**, after every world pas
 | Voxy depth and projection | `compat/voxy/VoxyEffectDepth`, `MixinVoxyRenderPipelineDepth` |
 | Cloud layer registry (one optional layer per frame) | `effects/CloudLayer` |
 | Better Clouds layer: its clouds alone and the depth from before them | `compat/betterclouds/BetterCloudsLayer`, `BetterCloudsSupport`, `MixinBetterCloudsRenderer` |
-| Fog probe rules: where it looks, which distances it trusts, smoothing (pure, unit-tested) | `effects/EffectFog` |
+| Fog rules: where the probe looks, which distances it trusts, smoothing, the LOD border fade (pure, unit-tested) | `effects/EffectFog` |
 | The plume: placement, shape, sun/moon lighting, rendering style (pure, unit-tested) | `effects/SmokePlume` |
 | The Roots of Corruption lava fog: placement, shape, drift, glow, rendering style (pure, unit-tested) | `effects/NetherFog` |
 | Shaders: shared scene code, the plume's shape and its two styles, the lava fog's shape and its two styles, the half-resolution composite, the fog probe | `assets/wynnvista/shaders/effects/{scene.glsl,plume_shape.glsl,smoke_plume.fsh,smoke_plume_blocky.fsh,nether_fog_shape.glsl,nether_fog.fsh,nether_fog_blocky.fsh,upsample.fsh,fog_probe.fsh}` |
@@ -31,20 +31,62 @@ Occlusion uses two depth sources, each unprojected with the projection it was re
 
 The DH side uses only the DH API, so it is not tied to the pinned 3.3.3 terrain shaders (it is registered whenever DH is loaded). The Voxy side is a mixin and follows the existing Voxy version gate.
 
-## Fog (shader packs, WynnIris ambiance packs)
+## Fog
 
-Effects are drawn after the shader pack's final pass, so the pack's fog is already in the image and does not reach them. That fog cannot be read as a value:
+Effects are drawn after everything else, so whatever fog is in the image (a shader pack's, WynnIris' post-process fog, Distant Horizons' or Voxy's own) does not reach them. It is put on them afterwards, in one of two ways:
 
-- A pack's fog is computed in the pack's own GLSL from the pack's own options. Iris only hands packs the vanilla `fogColor` / `fogStart` / `fogEnd`, which do not describe it.
-- A WynnIris ambiance profile is a shader pack name plus a map of that pack's option overrides (`AmbienceProfile`), swapped in as a cached pipeline when the player crosses a region. It adds no fog of its own; the fog is still the pack's (Photon, for the one ambiance pack available now), with option names that differ per pack.
-- WynnIris' own post-process passes (Mist Woods fog, skybox scene effects, transitions) also run inside `WorldRenderer.render`, before the effect pass.
+1. **Modelled**, when the fog's source is known: a supported shader pack, or DH / Voxy drawing their own fog without a pack. The amount of fog is worked out from that pack's or mod's own formula and settings. This is the default wherever it is available.
+2. **Measured** by the fog probe, when nothing is known: an unrecognised pack, vanilla with no LOD mod, or "Follow Fog Settings" switched off.
 
-So the fog is measured from the finished image instead (`fog_probe.fsh`, one 1x1 target per effect). Each frame, before anything is drawn, the probe samples a 32x24 grid over the effect's part of the view, keeps the terrain whose distance is within 0.5x–1.5x of the effect's (vanilla or LOD depth), and records two things: how much pixel-to-pixel detail that terrain still has, and its average colour. Terrain swallowed by fog is flat and fog-coloured. The result is smoothed over about 0.4 s and applied by `throughFog()` in `scene.glsl`: as the detail goes from `CONTRAST_CLEAR` (0.05) to `CONTRAST_GONE` (0.015), the effect's colour goes from its own to the colour of that terrain, keeping its opacity. The plume therefore always looks like the mountain under it: invisible where the fog has the sky's colour, a pale shape where the pack's fog is lighter than its sky.
+| Piece | Location |
+| --- | --- |
+| Contract: fog between the camera and a point, as haze and fade; the frame's environment | `effects/FogModel` |
+| One model per pack and per LOD mod, with the options each reads (pure, unit-tested) | `effects/FogModels` |
+| Which model applies; border-fade curve; probe rules (pure, unit-tested) | `effects/EffectFog` |
+| The model sampled into a 96x32 table over ground distance and height (pure, unit-tested) | `effects/FogTable` |
+| The active pack's name and option values, from Iris | `compat/iris/IrisPackOptions`, `IrisSupport.packOptions()` |
+| DH's fog settings of the frame, through `DhApiBeforeFogRenderEvent`; Voxy's from its viewport | `compat/dh/DhEffectDepth`, `MixinVoxyRenderPipelineDepth` |
+| Where LOD terrain ends, as a pack is told it | `LodDepth.Layer.renderDistance`: DH `chunkRenderDistance` x 16 (`dhRenderDistance`), Voxy `sectionRenderDistance` x 512 (`vxRenderDistance` x 16) |
+| Table lookup and its use | `tableFog()`, `underClouds()` in `scene.glsl`; uniforms `uFogTable`, `uFogTableRange`, `uFogTableColor` |
+| The probe: horizon colour, or the measurement | `fog_probe.fsh` (`uProbeMode`) |
 
-This works the same for any pack, for stock Iris, and without a shader pack. Limits:
+### How a model is applied
 
-- It needs terrain at about the effect's distance in view. Without a LOD mod and with the effect beyond vanilla render distance there is nothing to measure and the effect is drawn unfogged; the same holds while looking only at sky (the last value is kept, and dropped after the effect has been out of view for a second).
-- The thresholds were set from Complementary Reimagined in the Voxy fixture (below). Photon with the WynnIris ambiance pack was checked by eye on the live server, not measured.
+A model answers one question: for a point this far along the ground and at this world height, how much of an effect there is **haze** (replaced by the fog's colour) and how much is **fade** (gone into whatever is behind it, as LOD terrain goes into the sky at its border). All of that maths is Java. Each frame the model is sampled into a small float texture; the effect shaders look up the point where the effect begins on the pixel's ray and need no per-pack code. The table is rebuilt only when the model, the frame's environment (camera height to half a block, rain, sun position, LOD distance) or the range it covers changes.
+
+The fog's **colour** is known for DH and Voxy (their fog colour is a setting or the game's own). For a shader pack it is the pack's sky, which is not modelled: the probe runs in a second mode and returns the average colour of the sky up to about 6 degrees above the horizon in the effect's direction, smoothed over 0.4 s. Until a sky pixel has been seen there, the game's fog colour is used.
+
+A model replaces both the probe's measurement and the effects' own distance haze. "Follow Fog Settings" on the World Effects config page (`effectFogModels`, on by default) switches modelling off.
+
+### Sources
+
+Overworld and outdoors only: cave, underwater and blindness fog, and the packs' per-biome variations, are not modelled. Each pack model is that pack's formula written out again from the version named; no pack code is included.
+
+| Source | Recognised by | Haze | Fade at the LOD border | Its settings that are followed |
+| --- | --- | --- | --- | --- |
+| **Complementary Reimagined / Unbound** r5.x (+ Euphoria Patches), `lib/atmospherics/fog/mainFog.glsl` | options `BORDER_FOG_DISTANCE_OVERWORLD` and `ATM_FOG_DISTANCE` | Atmospheric fog `1 - 2^(-(d - 40)(0.4 + 0.4 rain) / distance)`, scaled by density x multiplier less 0.25 (0.1 in rain); thins over 90 blocks above its altitude, but not for far terrain | `1 - exp(-K (d / R)^4)` x density, `d` = larger of ground distance and height difference, `R` less 256 blocks with Voxy | `ATMOSPHERIC_FOG`, `ATM_FOG_DISTANCE`, `ATM_FOG_ALTITUDE`, `ATM_FOG_MULT`, `ATMOSPHERIC_FOG_DENSITY`, `BORDER_FOG`, `BORDER_FOG_OVERWORLD`, `BORDER_FOG_DISTANCE_OVERWORLD`, `BORDER_FOG_DENSITY_OVERWORLD` |
+| **BSL** v10.1.8, `lib/atmospherics/fog.glsl` | options `FOG_DENSITY_NIGHT` and `FAR_VANILLA_FOG`, or "bsl" in the name | Grows with distance (`d` x density / 1024, eased past 0.5), up to four times denser at night and 1.5 times in rain, halving every 128 blocks above y 62 | A linear ramp over the last 40% of the LOD distance, only when the pack's "far vanilla fog" covers the overworld, which it does not by default | `FOG_DENSITY`, `FOG_DENSITY_LOD`, `FOG_DENSITY_NIGHT`, `FOG_DENSITY_WEATHER`, `FOG_HEIGHT`, `FOG_HEIGHT_Y`, `FOG_HEIGHT_FALLOFF`, `FAR_VANILLA_FOG`, `FAR_VANILLA_FOG_STYLE`, `FOG_DENSITY_VANILLA` |
+| **Photon** v1.3b, `include/fog/overworld/raymarched.glsl`, `include/weather/fog.glsl`, `include/fog/simple_fog.glsl` | option `AIR_FOG_MIE_DENSITY_NOON`, or "photon" in the name | Air integrated along the view ray in 8 steps: a blue haze halving every 30 blocks above y 93 and a mist halving every 7 blocks above y 70, thick at sunrise, sunset and night, almost absent at noon, thickest in rain | `1 - 2^(-2.4 (d / R)^2)` along the ground, three quarters of it lifted between the horizon and about 11.5 degrees above it | `OVERWORLD_FOG_INTENSITY`, `SEA_LEVEL`, the `AIR_FOG_RAYLEIGH_*` and `AIR_FOG_MIE_*` falloff, density and colour options (clear and rain), `BORDER_FOG` |
+| **Distant Horizons** 3.3.3, no pack, `shaders/fog/gl/fog.frag` | DH drawing its fog this frame | Far fog over a share of the LOD distance (linear, exponential or exponential squared, with minimum and maximum thickness) and the height fog in each of DH's mix modes | none | Everything DH hands its fog shader, read each frame, including the fog colour |
+| **Voxy** 0.2.16, no pack, `shaders/post/blit_texture_depth_cutout.frag` | Voxy's normal pipeline with "environmental fog" on | The game's own distance fog along the view ray, no thicker than at the far corner of the vanilla render distance | none | The game's fog start, end, colour and strength for the frame |
+| Unrecognised shader pack | | measured by the probe | Complementary's default, as a guess | none |
+
+Approximations worth knowing:
+
+- **Photon** marches its fog with a cloud-like noise, per-colour extinction, biome densities and a slow random humidity and temperature. The model is one density in temperate air of average humidity, so it is the loosest of the three.
+- **BSL** and **Complementary** vary their fog with biome weather and with how much sky light reaches the camera; the model assumes open sky and the neutral biome.
+- A pack update can change a formula. Models are tied to the versions above.
+- Option values are read once per loaded pack; changing an option reloads the pack in Iris. `Iris.getCurrentPack()`, `ShaderPack.getShaderPackOptions()`, `OptionValues` and `OptionSet` are Iris internals, not `IrisApi`; they are used from one class, and on a build without them the linkage error is caught once, logged (`Shader pack options are not readable`) and the pack treated as unrecognised.
+
+**Adding a pack.** Install it into a fixture (`--shaderpack-source`), read how it fogs LOD terrain and from which uniform it takes the LOD distance, add a record to `FogModels` and a branch to `forPack` with unit tests of its numbers, then run the views in Results. A pack option is set for a run with a `<pack name>.txt` of `OPTION=value` lines beside the pack in `shaderpacks/`. `-Dwynnvista.effects.profile=true` logs the probe's colour and the modelled haze and fade at the foot and top of each effect.
+
+### The probe's measurement
+
+Used only without a model. Each frame, before anything is drawn, the probe samples a 32x24 grid over the effect's part of the view, keeps the terrain whose distance is within 0.5x–1.5x of the effect's (vanilla or LOD depth), and records how much pixel-to-pixel detail that terrain still has and its average colour. Terrain swallowed by fog is flat and fog-coloured. The result is smoothed over about 0.4 s and applied by `throughFog()` in `scene.glsl`: as the detail goes from `CONTRAST_CLEAR` (0.05) to `CONTRAST_GONE` (0.015), the effect's colour goes from its own to the colour of that terrain, keeping its opacity.
+
+Its limits are why it is no longer the first choice: it needs terrain at about the effect's distance in view (none: the effect is drawn unfogged), a view whose in-range terrain is all flat (open sea, snow) reads as fog, and partial haze goes unseen while nearer terrain in the band keeps its detail. The thresholds were set from Complementary Reimagined in the Voxy fixture.
+
+WynnIris' own post-process fog (Mist Woods, skybox scene effects) is not part of any pack's formula. With a recognised pack it is therefore no longer followed, where the probe used to catch it once it had swallowed the terrain.
 
 ## Better Clouds
 
@@ -144,7 +186,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 
 | Check | Result |
 | --- | --- |
-| `gradlew build`: 49 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest` | PASS |
+| `gradlew build`: 61 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
 | Voxy, no shader pack: Ragni view, crater close-ups, far view from the east, noon / sunset / night | PASS: the plume rises out of the crater, the crater rim and nearer LOD terrain hide it, lava glow at night (`pw-*`, `final-*`, `half-*`) |
 | Voxy + Complementary Reimagined | PASS (`iv-*`), run before the culling and half-resolution work |
 | DH (OpenGL), no shader pack | PASS for drawing and LOD occlusion (`pv-*`), run before the culling and half-resolution work |
@@ -156,6 +198,14 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Facing away from the mountain | PASS: `none visible`, then drawn again from the next viewpoint |
 | Fog probe, Voxy + Complementary Reimagined, default options, clear weather: 520, 240 and 1,400 blocks from the peak, noon and midnight | PASS: probe reads 1.00 at all three, plume unchanged (`fogoff-*`). Raw terrain detail 0.155 / 0.30 / 0.064–0.070 |
 | Same with `ATM_FOG_DISTANCE=10`, `ATM_FOG_ALTITUDE=300` and rain | PASS: probe reads 0.00 at 520 and 1,400 blocks (0.19 at night), 0.44 at 240 blocks where the mountain is still faintly visible; the plume has the mountain's fogged colour (`fogon-*`). Raw detail 0.014 / 0.030 / 0.012–0.021 |
+| Fog models, 854x480, noon then as stated (2026-10-07). Views: 2,000 blocks from the peak at y 140 and 2,900 at y 420. Log line `fog: <model>` in each run | |
+| Voxy, no pack: clear, then rain | PASS by eye: the plume has the terrain's light haze in clear weather and sinks into the grey fog with it in rain (`fm-voxy-*`) |
+| DH (256 chunks), no pack: clear, then rain | PASS by eye: clear at 2,000; at 2,900 the plume and its mountain are both nearly lost in DH's far fog; gone in rain (`fm-dh-*`) |
+| Voxy + Complementary Reimagined, defaults: noon, then sunrise | PASS by eye at noon: the plume has its mountain's pale haze at 2,000 and is all but gone at 2,900, where the earlier border-only version left it standing out (`fm-comp-*` against `border2-*`). At sunrise it is a little darker than the pink fog around it |
+| Voxy + Complementary with `BORDER_FOG_DISTANCE_OVERWORLD=10` (run with the border-only version) | PASS: the option was read (`strength 10.0` in that version's log); the plume is half faded at 2,000 and gone at 2,900 with the terrain (`border3-*`) |
+| Voxy + BSL v10.1.8, defaults: noon, then midnight | Recognised and applied. By eye the plume is brighter than BSL's dim, blue scene by day and a dark shape at night: its own lighting does not follow the pack's exposure, which no fog amount corrects. From y 420 BSL's cloud layer lies between the camera and the terrain and does not cover the plume (`fm-bsl-*`) |
+| Voxy + Photon v1.3b, defaults: noon, sunrise, midnight | Recognised and applied (profile log: haze 0.01–0.04, fade 0.57 at the foot and 0.25 at the top at 2,900 blocks; horizon colour read as about 0.65 0.69 0.74). From y 140 the plume sits in the scene's haze. From y 420 Photon's cloud sea covers the terrain but not the plume (`fm-photon-*`) |
+| Fog models not run: DH with any pack, the lava fog, a WynnIris ambiance preset, changed BSL or Photon options, rain under a pack, DH's height fog modes, the config toggle, an Iris build without the option classes, the live server | |
 | Photon with the WynnIris ambiance pack on the live server (manual, by the maintainer, 2026-10-07) | PASS by eye: the plume is hidden by the presets' fog. No screenshots or probe readings recorded |
 | Lava fog, Voxy, no shader pack and Complementary Reimagined (2026-10-07), 854x480 and 1920x1080: on the surface at the rim, in the pit looking up, inside the layer, 300 blocks away from above, straight down from y 520; midnight, noon, dusk | PASS: drawn with vanilla + LOD depth in both, spikes and terrain hide it, nothing below the floor (y 85 in these runs; lowered to y 67 afterwards and re-checked from the pit, `nx-*`), covers the corrupted ground (`nv-*`, `nw-*`) |
 | Lava fog GPU time, 1920x1080, Voxy, RTX 4070, plume switched off, fog covering the whole view at half resolution | 1.05 ms average with Complementary Reimagined after the rim was dispersed (30 logged 100-frame averages, highest 2.05 ms); 0.86 ms before |
@@ -174,7 +224,8 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **DH fixture height.** In the DH fixture the imported LOD terrain sits roughly 40–50 blocks lower than the same terrain in the Voxy fixture, so the plume floats above the cone there. In the Voxy fixture the supplied peak coordinates land exactly in the crater. This looks like a vertical shift of the copied DH database in the superflat save, not an effect error, but it must be confirmed with DH on the live server.
 - **Up close in real chunks.** The fixture has no real Wynncraft blocks, so the view from inside vanilla render distance (standing on the mountain, in the crater, inside the smoke) is only covered by the pillar test. Half-resolution edges against real foliage have not been seen.
 - **Shader packs.** The plume is composited after the pack's final pass with its own lighting (sun/moon direction from the time of day, sky colour from the fog colour). The pack's fog is matched by measurement (see Fog); it does not receive the pack's bloom or tonemapping, and pack clouds do not hide it (Better Clouds' clouds are handled, see Better Clouds). Only Complementary Reimagined was run.
-- **Fog probe.** Not run with DH or without a shader pack. Photon with the WynnIris ambiance pack has only the manual check above; no probe readings were recorded for it. A view whose in-range terrain is all flat (open sea, snow) reads as fog.
+- **Fog models.** See the approximations and the runs not made under Fog and Results. A pack's clouds lying between the camera and an effect, and the effects' own lighting against a pack's exposure (BSL by day, every pack at night), are the visible mismatches left; neither is fog.
+- **Fog probe.** Now the fallback only. Not run with DH or without a shader pack; its horizon-colour mode was run with the three packs on Voxy only. Photon with the WynnIris ambiance pack has only the manual check of the measuring version; with the Photon model that view has not been looked at again.
 - **Lava fog.** Run only in the Voxy fixture, which has LOD terrain and no real blocks; not run with DH, in rain, with Photon or on the live server. Its extent comes from a screenshot, so the rim may need adjusting against the real area. Density and colour were set by eye. Pack and vanilla clouds in front of the fog are drawn under it (see Translucents).
 - **Blocky plume style.** Run only in the Voxy fixture without a shader pack; not run with DH, with a shader pack, at 1920x1080 or on the live server. Beyond about 3,000 blocks a cube is only a few pixels and may shimmer as it rises, and the change of lattice with distance is a visible switch; neither was looked at in motion. Band heights, cube sizes, opacity and shading were set by eye.
 - **Blocky lava fog.** Run only in the Voxy fixture without a shader pack, at 854x480; not seen in motion, in rain, in the pit, near the portal's purple glow, or at the distance where the fine lattice is dropped. From inside it is brighter and more opaque than the realistic fog. Slab size, opacity and band height were set by eye.
@@ -186,5 +237,5 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 ## Adding an effect
 
 1. Implement `WorldEffect`: an id, a config label, an anchor block, world-space bounds, a view distance and an `upload` that sets its uniforms.
-2. Write its fragment shader beside `smoke_plume.fsh`. Start with `#include "scene.glsl"` for the view ray, `boxSpan`, `sceneDistance`, noise and the `uSteps` / `uOctaves` budget. Write `fragColor` (premultiplied, colour passed through `throughFog`) and `fragDistance` for every pixel instead of discarding, so the half-resolution path works.
-3. Add it to `EFFECTS` in `WorldEffects`. The config toggle, region masking, culling, scissor, fog probe and resolution choice then apply without further code.
+2. Write its fragment shader beside `smoke_plume.fsh`. Start with `#include "scene.glsl"` for the view ray, `boxSpan`, `sceneDistance`, noise and the `uSteps` / `uOctaves` budget. Write `fragColor` (premultiplied, finished by `underClouds`, which applies the fog) and `fragDistance` for every pixel instead of discarding, so the half-resolution path works.
+3. Add it to `EFFECTS` in `WorldEffects`. The config toggle, region masking, culling, scissor, fog and resolution choice then apply without further code.

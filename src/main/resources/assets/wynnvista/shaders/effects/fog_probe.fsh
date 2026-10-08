@@ -1,9 +1,13 @@
 #version 330 core
 
-// Measures the fog already in the world image (a shader pack's own fog, WynnIris' post-process fog, a LOD
-// mod's fog) at an effect's distance. No renderer exposes that fog as a value, so it is read from the result:
-// terrain that fog has swallowed has lost its detail and has the fog's colour. Drawn into a 1x1 target and
-// smoothed over time; effects apply it with throughFog().
+// Reads what the fog in the world image looks like, into a 1x1 target that is smoothed over time.
+//
+// Mode 0, when nothing is known about the fog (an unrecognised shader pack, WynnIris' post-process fog, no LOD
+// fog model): measures it at an effect's distance. Terrain that fog has swallowed has lost its detail and has
+// the fog's colour. Effects apply the result with throughFog().
+//
+// Mode 1, when a FogModel says how much fog there is: only the fog's colour is wanted, and it is taken from
+// the sky just above the horizon in the effect's direction, which is what distant terrain fades into.
 
 #include "scene.glsl"
 
@@ -13,8 +17,10 @@ uniform vec2 uColumns;        // horizontal part of the view to search, 0..1
 uniform vec2 uBand;           // terrain distances that say something about the effect's distance
 uniform vec2 uContrast;       // terrain detail at which it counts as swallowed, and as fully visible
 uniform float uRate;          // share of this frame's measurement blended in; 1 replaces the old value
+uniform int uProbeMode;       // 0: terrain detail and colour, 1: colour of the sky at the horizon
 
-out vec4 fragColor;           // rgb: colour of terrain at the effect's distance, a: how much detail it keeps
+out vec4 fragColor;           // mode 0: rgb colour of terrain at the effect's distance, a: how much detail it keeps
+                              // mode 1: rgb colour of the horizon sky, negative while none was seen, a: 1
 
 const int COLUMNS = 32;
 const int ROWS = 24;
@@ -33,7 +39,45 @@ float contrast(vec3 a, vec3 b) {
             / (max(brightest.r, max(brightest.g, brightest.b)) + 0.04);
 }
 
+const int ELEVATIONS = 8;
+const float HIGHEST = 0.1;    // sine of the highest elevation sampled, about 6 degrees
+
+/** Average colour of the sky just above the horizon across the searched columns. */
+void horizon() {
+    vec3 colour = vec3(0.0);
+    float count = 0.0;
+    for (int x = 0; x < COLUMNS; x++) {
+        float ndcX = mix(uColumns.x, uColumns.y, (float(x) + 0.5) / float(COLUMNS)) * 2.0 - 1.0;
+        vec2 heading = viewRay(vec2(ndcX, 0.0)).xz;
+        if (dot(heading, heading) < 1.0e-4) continue;
+        heading = normalize(heading);
+        for (int e = 0; e < ELEVATIONS; e++) {
+            float up = (float(e) + 0.5) / float(ELEVATIONS) * HIGHEST;
+            vec4 clip = uSceneForward * vec4(vec3(heading.x, 0.0, heading.y) * sqrt(1.0 - up * up) + vec3(0.0, up, 0.0), 0.0);
+            if (clip.w <= 0.0) continue;
+            vec2 ndc = clip.xy / clip.w;
+            if (abs(ndc.x) >= 1.0 || abs(ndc.y) >= 1.0) continue;
+            vec2 uv = ndc * 0.5 + 0.5;
+            // Terrain standing above the horizon is not sky.
+            if (sceneDistance(uv, ndc) < 0.5 * INF) continue;
+            colour += texture(uSceneColor, uv).rgb;
+            count += 1.0;
+        }
+    }
+    vec4 previous = texelFetch(uPrevious, ivec2(0), 0);
+    bool fresh = uRate >= 1.0 || previous.r < 0.0;
+    if (count < 0.5) {
+        fragColor = uRate >= 1.0 ? vec4(-1.0, -1.0, -1.0, 1.0) : vec4(previous.rgb, 1.0);
+        return;
+    }
+    fragColor = vec4(fresh ? colour / count : mix(previous.rgb, colour / count, uRate), 1.0);
+}
+
 void main() {
+    if (uProbeMode == 1) {
+        horizon();
+        return;
+    }
     vec2 size = vec2(textureSize(uSceneColor, 0));
     // Far enough apart to step over anti-aliasing, near enough to stay on the same hillside.
     vec2 offset = max(3.0, size.y / 180.0) / size;
@@ -59,6 +103,8 @@ void main() {
         }
     }
     vec4 previous = texelFetch(uPrevious, ivec2(0), 0);
+    // A value left by the other mode may hold no colour.
+    previous.rgb = max(previous.rgb, 0.0);
     // Without terrain at the right distance the previous value stands (or, on a fresh start, "clear").
     if (count < 0.5) {
         fragColor = uRate >= 1.0 ? vec4(0.0, 0.0, 0.0, 1.0) : previous;

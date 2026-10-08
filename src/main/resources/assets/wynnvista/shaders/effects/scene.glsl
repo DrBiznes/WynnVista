@@ -17,6 +17,10 @@ uniform vec2 uViewSize;     // size of the target being drawn, which may be smal
 uniform vec3 uBoxMin;         // the effect's bounding box, camera-relative
 uniform vec3 uBoxMax;
 uniform vec3 uFogColor;
+uniform sampler2D uFogTable;  // a pack's or LOD mod's fog (FogTable): x over ground distance, y over height; r: haze, g: fade
+uniform vec4 uFogTableRange;  // x: 1 / ground distance covered, 0 without a table, y: lowest height, camera-relative, z: 1 / height covered, w: 1 when the probe's measurement still applies
+uniform vec4 uFogTableColor;  // rgb: the fog's colour, a: 1 when it is known, 0 to take it from the probe
+uniform mat4 uSceneForward;   // camera-relative world -> vanilla clip space
 uniform int uSteps;           // ray-march samples, already reduced for small or distant effects
 uniform int uOctaves;         // noise octaves worth sampling at this distance
 
@@ -66,11 +70,22 @@ float sceneDistance(vec2 uv, vec2 ndc) {
 
 /**
  * Puts an effect's premultiplied colour behind the fog already in the world image: as terrain at the
- * effect's distance loses its detail to fog, the effect takes on that terrain's colour.
+ * effect's distance loses its detail to fog, the effect takes on that terrain's colour. While a fog model
+ * replaces the measurement the probe's visibility is 1 and this changes nothing.
  */
 vec3 throughFog(vec3 colour, float alpha) {
     vec4 fog = texelFetch(uFogProbe, ivec2(0), 0);
     return mix(fog.rgb * alpha, colour, fog.a);
+}
+
+/**
+ * The modelled fog between the camera and a camera-relative position: x is the share of an effect there that
+ * takes the fog's colour, y the share that fades into what is behind it. Zero without a table.
+ */
+vec2 tableFog(vec3 position) {
+    vec2 uv = vec2(length(position.xz) * uFogTableRange.x, (position.y - uFogTableRange.y) * uFogTableRange.z);
+    vec2 edge = 0.5 / vec2(textureSize(uFogTable, 0));
+    return textureLod(uFogTable, clamp(uv, edge, 1.0 - edge), 0.0).rg;
 }
 
 /**
@@ -93,11 +108,25 @@ float cloudDistance(vec2 uv, vec2 ndc, vec3 dir, out vec4 cloud) {
 /**
  * The finished pixel of an effect: `whole` is the march's premultiplied colour and opacity, `front` the same
  * for the part of it nearer than the clouds. Both get the haze and fog, then the cloud goes between them, so
- * the part behind is seen through the cloud.
+ * the part behind is seen through the cloud. `position` is where the effect begins on this pixel's ray, and
+ * `haze` the effect's own guess at the haze there, used when no pack's or LOD mod's fog is modelled.
  */
-vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud) {
-    whole.rgb = throughFog(mix(whole.rgb, uFogColor * whole.a, haze), whole.a);
-    front.rgb = throughFog(mix(front.rgb, uFogColor * front.a, haze), front.a);
+vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud, vec3 position) {
+    vec3 hazeColour = uFogColor;
+    if (uFogTableRange.x > 0.0) {
+        vec2 fog = tableFog(position);
+        // Towards the LOD border the effect thins out into the sky behind it, as the terrain does.
+        whole *= 1.0 - fog.y;
+        front *= 1.0 - fog.y;
+        if (uFogTableRange.w < 0.5) {
+            haze = fog.x;
+            // In this mode the probe holds the sky's colour at the horizon, or nothing yet.
+            vec3 seen = texelFetch(uFogProbe, ivec2(0), 0).rgb;
+            hazeColour = uFogTableColor.a > 0.5 ? uFogTableColor.rgb : (seen.r < 0.0 ? uFogColor : seen);
+        }
+    }
+    whole.rgb = throughFog(mix(whole.rgb, hazeColour * whole.a, haze), whole.a);
+    front.rgb = throughFog(mix(front.rgb, hazeColour * front.a, haze), front.a);
     vec3 colour = front.rgb + (whole.rgb - front.rgb) * (1.0 - cloud.a);
     float behind = whole.a - front.a;
     // Blending the effect over the image also covers the cloud that is in front of it. With the cloud's

@@ -40,6 +40,7 @@ public final class ModConfig implements ModMenuApi {
         boolean maskingEnabled = true;
         boolean effectsEnabled = true;
         int effectSteps = 64;
+        boolean effectFogModels = true;
         /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
         Map<String, Boolean> effects = new LinkedHashMap<>();
         String smokePlumeStyle = "REALISTIC";
@@ -63,6 +64,7 @@ public final class ModConfig implements ModMenuApi {
                 if (json.has("maskingEnabled")) result.maskingEnabled = json.get("maskingEnabled").getAsBoolean();
                 if (json.has("effectsEnabled")) result.effectsEnabled = json.get("effectsEnabled").getAsBoolean();
                 if (json.has("effectSteps")) result.effectSteps = json.get("effectSteps").getAsInt();
+                if (json.has("effectFogModels")) result.effectFogModels = json.get("effectFogModels").getAsBoolean();
                 if (json.has("effects") && json.get("effects").isJsonObject()) {
                     json.getAsJsonObject("effects").entrySet().forEach(entry ->
                             result.effects.put(entry.getKey(), entry.getValue().getAsBoolean()));
@@ -104,6 +106,8 @@ public final class ModConfig implements ModMenuApi {
     public static boolean effectEnabled(String id) { return config.effects.getOrDefault(id, true); }
     /** Ray-march samples per pixel for volumetric effects. */
     public static int effectSteps() { return Math.max(16, Math.min(128, config.effectSteps)); }
+    /** Whether a shader pack's or LOD mod's fog is worked out from its settings instead of measured. */
+    public static boolean effectFogModels() { return config.effectFogModels; }
     /** Rendering style of the Mount Wynn smoke plume; an unknown value means the default. */
     public static SmokePlume.Style smokePlumeStyle() {
         try {
@@ -178,6 +182,15 @@ public final class ModConfig implements ModMenuApi {
                     .setTooltip(Text.literal("Samples per pixel for volumetric effects; lower is faster"))
                     .setSaveConsumer(value -> {
                         config.effectSteps = value;
+                        save();
+                    }).build());
+            effects.addEntry(entries.startBooleanToggle(Text.literal("Follow Fog Settings"), config.effectFogModels)
+                    .setDefaultValue(true)
+                    .setTooltip(Text.literal("Put effects in the same fog as distant terrain, worked out from the "
+                            + "settings of the shader pack (Complementary, BSL, Photon) or of Distant Horizons / "
+                            + "Voxy. Off: the fog is only measured from the picture"))
+                    .setSaveConsumer(value -> {
+                        config.effectFogModels = value;
                         save();
                     }).build());
             for (WorldEffect effect : WorldEffects.all()) {

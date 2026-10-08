@@ -2,6 +2,7 @@ package me.jamino.wynndhrangelimiter.effects;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
 import me.jamino.wynndhrangelimiter.WynnVistaMod;
+import me.jamino.wynndhrangelimiter.compat.iris.IrisSupport;
 import me.jamino.wynndhrangelimiter.visibility.RegionPolicy;
 import me.jamino.wynndhrangelimiter.visibility.VisibilitySnapshot;
 import me.jamino.wynndhrangelimiter.visibility.WorldContextResolver;
@@ -62,6 +63,10 @@ public final class WorldEffects {
     private static int attachedColor;
     private static int sampler;
     private static int noiseTexture;
+    private static int fogTable;
+    private static FogModel tableModel;
+    private static FogModel.Env tableEnv;
+    private static FogTable.Range tableRange;
     private static EffectProgram upsample;
     private static int lowFramebuffer;
     private static int lowColor;
@@ -79,7 +84,7 @@ public final class WorldEffects {
     private static long profiledNanos;
     private static int profiledFrames;
     private static String profiledDetail = "";
-    private static float profiledFog = 1;
+    private static final float[] profiledProbe = {0, 0, 0, 1};
     private static boolean active;
 
     private WorldEffects() {}
@@ -104,9 +109,11 @@ public final class WorldEffects {
 
     /**
      * What every program needs to place a pixel in the world: the vanilla projection, the LOD depth and the
-     * cloud layer of this frame, either of which may be null, and the cloud height relative to the camera.
+     * cloud layer of this frame, either of which may be null, the cloud height relative to the camera, and
+     * the modelled fog with the part of the world its table covers (see {@link EffectFog#model}), or null.
      */
-    private record Scene(Matrix4f inverse, LodDepth.Layer lod, CloudLayer.Layer clouds, float cloudHeight) {}
+    private record Scene(Matrix4f forward, Matrix4f inverse, LodDepth.Layer lod, CloudLayer.Layer clouds,
+                         float cloudHeight, float cameraY, FogModel fog, FogTable.Range fogRange) {}
 
     /**
      * One effect's 1x1 fog measurement. It is smoothed over time, so each frame reads the previous result
@@ -177,11 +184,19 @@ public final class WorldEffects {
                              float cloudHeight, Vector4f fogColor, Framebuffer main, int color, int depth) {
         LodDepth.Layer lod = LodDepth.resolve();
         CloudLayer.Layer clouds = CloudLayer.resolve();
+        FogModel fog = ModConfig.effectFogModels() ? EffectFog.model(IrisSupport.packOptions(), lod) : null;
         logState(visible.size() + " drawn with " + (lod == null ? "vanilla depth only" : "vanilla + LOD depth")
-                + (clouds == null ? "" : ", under a cloud layer"));
+                + (clouds == null ? "" : ", under a cloud layer")
+                + ", fog: " + (fog == null ? "measured" : fog.name()));
         int width = main.textureWidth;
         int height = main.textureHeight;
-        Scene scene = new Scene(new Matrix4f(viewProjection).invert(), lod, clouds, cloudHeight);
+        List<WorldEffect.Bounds> boxes = new ArrayList<>(visible.size());
+        for (Visible entry : visible) boxes.add(entry.effect().bounds());
+        Scene scene = new Scene(viewProjection, new Matrix4f(viewProjection).invert(), lod, clouds, cloudHeight,
+                (float) frame.cameraY(), fog,
+                FogTable.range(frame.cameraX(), frame.cameraZ(), boxes));
+        FogModel.Env env = FogModel.Env.of(frame.cameraY(), frame.rain(), frame.timeOfDay(),
+                lod == null ? null : lod.backend(), lod == null ? 0 : lod.renderDistance());
 
         GlState saved = GlState.capture();
         try {
@@ -198,6 +213,8 @@ public final class WorldEffects {
             bind(7, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.terrainDepthTexture());
             bind(8, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.depthTexture());
             bind(9, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.colorTexture());
+            bind(10, GL11C.GL_TEXTURE_2D, fogTable);
+            if (fog != null) uploadFogTable(fog, env, scene.fogRange());
             GL30C.glBindVertexArray(vertexArray);
 
             beginProfile();
@@ -237,8 +254,8 @@ public final class WorldEffects {
                 program.use();
                 setScene(program, scene, targetWidth, targetHeight);
                 program.set("uNoise", 2);
-                FogProbe fog = FOG_PROBES.get(effect.id());
-                bind(6, GL11C.GL_TEXTURE_2D, fog.textures[fog.current]);
+                FogProbe probe = FOG_PROBES.get(effect.id());
+                bind(6, GL11C.GL_TEXTURE_2D, probe.textures[probe.current]);
                 program.set("uFogProbe", 6);
                 program.set("uFogColor", fogColor.x, fogColor.y, fogColor.z);
                 program.set("uSteps", steps);
@@ -259,7 +276,9 @@ public final class WorldEffects {
                 if (PROFILE) {
                     profiledDetail = effect.id() + " " + (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
                             + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
-                            + String.format(", fog visibility %.2f", profiledFog);
+                            + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f", profiledProbe[0],
+                            profiledProbe[1], profiledProbe[2], profiledProbe[3])
+                            + modelledAt(scene.fog(), env, entry.distance(), box);
                 }
             }
             endProfile();
@@ -282,6 +301,19 @@ public final class WorldEffects {
                 lod != null && lod.zeroToOne() ? 1 : 0);
         program.set("uCloudParams", clouds == null ? 0 : 1, clouds != null && clouds.colorInImage() ? 1 : 0,
                 scene.cloudHeight());
+        program.set("uSceneForward", scene.forward());
+        FogModel fog = scene.fog();
+        FogTable.Range range = scene.fogRange();
+        program.set("uFogTable", 10);
+        float[] fogColour = fog == null ? null : fog.colour();
+        if (fog == null) {
+            program.set("uFogTableRange", 0, 0, 0, 0);
+        } else {
+            program.set("uFogTableRange", 1 / range.maxAlong(), range.minY() - scene.cameraY(),
+                    1 / (range.maxY() - range.minY()), fog.measured() ? 1 : 0);
+        }
+        if (fogColour == null) program.set("uFogTableColor", 0, 0, 0, 0);
+        else program.set("uFogTableColor", fogColour[0], fogColour[1], fogColour[2], 1);
         program.set("uViewSize", (float) targetWidth, (float) targetHeight);
     }
 
@@ -322,6 +354,8 @@ public final class WorldEffects {
         fogProgram.set("uBand", band.near(), band.far());
         fogProgram.set("uContrast", EffectFog.CONTRAST_GONE, EffectFog.CONTRAST_CLEAR);
         fogProgram.set("uRate", rate);
+        // With a model the amount of fog is known; the probe then only fetches the colour of the horizon.
+        fogProgram.set("uProbeMode", scene.fog() != null && !scene.fog().measured() ? 1 : 0);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
 
         if (PROFILE && profiledFrames == 0) {
@@ -330,7 +364,7 @@ public final class WorldEffects {
             float[] value = new float[4];
             GL11C.glReadPixels(0, 0, 1, 1, GL11C.GL_RGBA, GL11C.GL_FLOAT, value);
             GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, packBuffer);
-            profiledFog = value[3];
+            System.arraycopy(value, 0, profiledProbe, 0, 4);
         }
     }
 
@@ -342,10 +376,10 @@ public final class WorldEffects {
             probe.textures[i] = GL11C.glGenTextures();
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, probe.textures[i]);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
-            // No fog colour, full visibility. Full floats: at high frame rates each step of the smoothing
-            // is smaller than a half float can hold near 1.
+            // No colour seen yet, full visibility. Full floats: at high frame rates each step of the
+            // smoothing is smaller than a half float can hold near 1.
             GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, 1, 1, 0, GL11C.GL_RGBA, GL11C.GL_FLOAT,
-                    new float[] {0, 0, 0, 1});
+                    new float[] {-1, -1, -1, 1});
             probe.framebuffers[i] = GL30C.glGenFramebuffers();
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[i]);
             GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
@@ -355,6 +389,31 @@ public final class WorldEffects {
             }
         }
         return probe;
+    }
+
+    /** For the profile log: the modelled fog at the effect's distance, at the foot and the top of its box. */
+    private static String modelledAt(FogModel fog, FogModel.Env env, double distance, WorldEffect.Bounds box) {
+        if (fog == null) return "";
+        float[] foot = new float[2];
+        float[] top = new float[2];
+        fog.sample(env, distance, box.minY(), foot);
+        fog.sample(env, distance, box.maxY(), top);
+        return String.format(", %s haze %.2f-%.2f fade %.2f-%.2f", fog.name(), foot[0], top[0], foot[1], top[1]);
+    }
+
+    /**
+     * Samples the fog model into its texture, on unit 10. The table is kept while the model, the frame's
+     * environment and the range are the ones it was built from.
+     */
+    private static void uploadFogTable(FogModel fog, FogModel.Env env, FogTable.Range range) {
+        if (fog.equals(tableModel) && env.equals(tableEnv) && range.equals(tableRange)) return;
+        tableModel = fog;
+        tableEnv = env;
+        tableRange = range;
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE10);
+        resetUnpack();
+        GL11C.glTexSubImage2D(GL11C.GL_TEXTURE_2D, 0, 0, 0, FogTable.WIDTH, FogTable.HEIGHT, GL30C.GL_RG,
+                GL11C.GL_FLOAT, FogTable.build(fog, env, range));
     }
 
     /** Client memory, tightly packed: Minecraft leaves its own unpack state behind. */
@@ -497,6 +556,13 @@ public final class WorldEffects {
             GL33C.glSamplerParameteri(sampler, GL12C.GL_TEXTURE_WRAP_R, GL11C.GL_REPEAT);
             GL33C.glSamplerParameteri(sampler, GL14C.GL_TEXTURE_COMPARE_MODE, GL11C.GL_NONE);
             noiseTexture = createNoise();
+            fogTable = GL11C.glGenTextures();
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE10);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, fogTable);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+            resetUnpack();
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RG32F, FogTable.WIDTH, FogTable.HEIGHT, 0, GL30C.GL_RG,
+                    GL11C.GL_FLOAT, new float[FogTable.WIDTH * FogTable.HEIGHT * 2]);
             created = true;
         } finally {
             saved.restore();
@@ -533,11 +599,11 @@ public final class WorldEffects {
                            int[] pixelStore) {
         private static final int[] TARGETS = {GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_3D,
                 GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
-                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
         private static final int[] BINDINGS = {GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
-                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
+                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
         private static final int[] PIXEL_STORE = {GL11C.GL_UNPACK_ALIGNMENT, GL11C.GL_UNPACK_ROW_LENGTH,
                 GL11C.GL_UNPACK_SKIP_PIXELS, GL11C.GL_UNPACK_SKIP_ROWS, GL12C.GL_UNPACK_IMAGE_HEIGHT,
                 GL12C.GL_UNPACK_SKIP_IMAGES};

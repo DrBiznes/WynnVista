@@ -165,5 +165,5 @@ void main() {
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.
-    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud);
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, dir * max(firstHit, 0.0));
 }

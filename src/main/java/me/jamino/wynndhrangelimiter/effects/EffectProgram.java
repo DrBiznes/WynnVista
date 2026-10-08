@@ -62,6 +62,10 @@ public final class EffectProgram {
         GL20C.glUniform3f(location(name), x, y, z);
     }
 
+    public void set(String name, float x, float y, float z, float w) {
+        GL20C.glUniform4f(location(name), x, y, z, w);
+    }
+
     public void set(String name, Matrix4fc matrix) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             GL20C.glUniformMatrix4fv(location(name), false, matrix.get(stack.mallocFloat(16)));

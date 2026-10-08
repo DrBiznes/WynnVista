@@ -16,8 +16,14 @@ public final class LodDepth {
      * @param inverseViewProjection maps that texture's NDC to camera-relative world space
      * @param clearDepth            stored value of a texel no LOD was drawn to
      * @param zeroToOne             true when stored depth is NDC z directly, false when NDC z is {@code 2d - 1}
+     * @param backend               the LOD mod that drew it
+     * @param renderDistance        the LOD render distance in blocks as a shader pack is told it, 0 when unknown
+     * @param fog                   the fog the backend itself drew over its terrain this frame, or null
      */
-    public record Layer(int textureId, Matrix4f inverseViewProjection, float clearDepth, boolean zeroToOne) {}
+    public record Layer(int textureId, Matrix4f inverseViewProjection, float clearDepth, boolean zeroToOne,
+                        Backend backend, float renderDistance, FogModel fog) {}
+
+    public enum Backend { DISTANT_HORIZONS, VOXY }
 
     /** Implemented by each LOD backend; called on the render thread only. */
     public interface Provider {

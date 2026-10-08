@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter.compat.voxy;
 
+import me.jamino.wynndhrangelimiter.effects.FogModel;
 import me.jamino.wynndhrangelimiter.effects.LodDepth;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
@@ -18,6 +19,8 @@ public final class VoxyEffectDepth implements LodDepth.Provider {
     private int texture;
     private float clearDepth;
     private boolean zeroToOne;
+    private float renderDistance;
+    private FogModel fog;
     private boolean rendered;
 
     private VoxyEffectDepth() {}
@@ -28,11 +31,14 @@ public final class VoxyEffectDepth implements LodDepth.Provider {
     }
 
     /** Called from the pipeline mixin once Voxy has drawn a viewport. */
-    public static void publish(int texture, Matrix4fc viewProjection, float clearDepth, boolean zeroToOne) {
+    public static void publish(int texture, Matrix4fc viewProjection, float clearDepth, boolean zeroToOne,
+                               float renderDistance, FogModel fog) {
         viewProjection.invert(INSTANCE.inverseViewProjection);
         INSTANCE.texture = texture;
         INSTANCE.clearDepth = clearDepth;
         INSTANCE.zeroToOne = zeroToOne;
+        INSTANCE.renderDistance = renderDistance;
+        INSTANCE.fog = fog;
         INSTANCE.rendered = true;
     }
 
@@ -43,6 +49,7 @@ public final class VoxyEffectDepth implements LodDepth.Provider {
 
     @Override
     public LodDepth.Layer resolve() {
-        return rendered ? new LodDepth.Layer(texture, inverseViewProjection, clearDepth, zeroToOne) : null;
+        return rendered ? new LodDepth.Layer(texture, inverseViewProjection, clearDepth, zeroToOne,
+                LodDepth.Backend.VOXY, renderDistance, fog) : null;
     }
 }

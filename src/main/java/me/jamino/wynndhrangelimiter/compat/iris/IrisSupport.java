@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter.compat.iris;
 
+import me.jamino.wynndhrangelimiter.effects.EffectFog;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.api.v0.IrisApi;
 import org.objectweb.asm.ClassReader;
@@ -18,6 +19,7 @@ import java.io.InputStream;
 public final class IrisSupport {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
     private static Boolean dhTerrain;
+    private static boolean packOptionsBroken;
 
     private IrisSupport() {}
 
@@ -34,6 +36,32 @@ public final class IrisSupport {
             return false;
         }
     }
+
+    /**
+     * The active shader pack's options, or null when no pack is rendering. If this Iris build does not expose
+     * them the pack is reported as one that defines no options.
+     */
+    public static EffectFog.PackOptions packOptions() {
+        if (!shaderPackInUse()) return null;
+        if (!packOptionsBroken) {
+            try {
+                EffectFog.PackOptions options = IrisPackOptions.current();
+                if (options != null) return options;
+            } catch (LinkageError | RuntimeException e) {
+                packOptionsBroken = true;
+                LOGGER.warn("Shader pack options are not readable from this Iris build; world effects will "
+                        + "assume default fog settings", e);
+            }
+        }
+        return UNKNOWN_PACK;
+    }
+
+    private static final EffectFog.PackOptions UNKNOWN_PACK = new EffectFog.PackOptions() {
+        @Override public String name() { return ""; }
+        @Override public boolean defines(String option) { return false; }
+        @Override public String value(String option) { return null; }
+        @Override public boolean enabled(String option, boolean fallback) { return fallback; }
+    };
 
     /** Whether Iris's DH terrain program pipeline has the expected shape for {@code compat.dh.iris}. */
     public static synchronized boolean dhTerrainSupported() {
