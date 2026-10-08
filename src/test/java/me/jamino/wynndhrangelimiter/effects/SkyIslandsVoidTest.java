@@ -23,7 +23,7 @@ class SkyIslandsVoidTest {
         SkyIslandsVoid effect = new SkyIslandsVoid();
         String source = EffectProgram.source(effect.shader());
         assertTrue(source.contains("void cloudSea(vec3 dir, float from, float to, vec3 lit)"));
-        assertTrue(source.contains("vec3 depths(vec3 dir, float t)"));
+        assertTrue(source.contains("vec3 depths(vec3 dir, float t, vec3 lit)"));
         assertFalse(source.contains("#include"));
         assertFalse(effect.halfResolution(), "the cloud cubes keep their edges");
     }

@@ -1,7 +1,7 @@
 #version 330 core
 
 // The void under the Sky Islands: clumps of cloud built from whole cubes, after the cloud models that launch
-// the player between the islands, a thin haze around them, and below them a dark void with a rare nebula.
+// the player between the islands, a thin haze around them, and below them a dark void with a few fallen islands and a rare nebula.
 // The cubes sit on a lattice the view ray walks cell by cell, as in the blocky smoke plume, so every edge is
 // exact; the haze is worked out exactly along the ray.
 
@@ -48,6 +48,12 @@ const float NEBULA_STARS = 0.03;        // share of a nebula's squares that hold
 const float NEBULA_WARP = 0.02;         // how far a nebula's pattern is bent, in noise repeats
 const float NEBULA_STRENGTH = 0.9;      // its brightness at night, before the dark in front of it
 const float MURK = 0.0035;              // extinction per block of that dark
+const int ISLES = 3;                    // layers of fallen islands
+const float ISLE_DEPTH[ISLES] = float[](60.0, 130.0, 210.0);    // blocks below where the void begins, all above the nebulae
+const float ISLE_CELL[ISLES] = float[](4.0, 4.0, 8.0);          // side of one square of a layer's islands
+const float ISLE_SHOWS[ISLES] = float[](1.0, 0.7, 0.45);        // how much of a layer shows, before the dark in front of it
+const float ISLE_COVER = 0.70;          // noise above which a layer holds land; higher is fewer islands
+const float ISLE_THICK = 0.3;           // an island's thickness as a share of its layer's depth
 const float CRYSTAL_CELL = 4.0;         // side of one square that may hold a crystal's glint
 const float CRYSTAL_SHARE = 0.004;      // share of them that do
 
@@ -201,6 +207,37 @@ void cloudSea(vec3 dir, float from, float to, vec3 lit) {
     }
 }
 
+/** The noise value of one square of a layer of fallen islands; land where it is above ISLE_COVER. */
+float isle(vec2 xz, int layer) {
+    float size = ISLE_CELL[layer];
+    vec2 p = (floor(xz / size) + 0.5) * size / PERIOD;
+    float seed = 0.11 + 0.19 * float(layer);
+    return 0.7 * noise(vec3(p * 2.0, seed)) + 0.3 * noise(vec3(p * 6.0, seed + 0.31));
+}
+
+/**
+ * The few islands that fell, t along the ray where it leaves the box: xyz is an island's colour and w how
+ * much of it shows, 0 where the ray meets none. They lie in layers ever further down, so they slide against
+ * each other as the camera moves, and a deeper layer shows less through the dark, the last one barely. A layer
+ * is land where its noise is high, which is seldom; the same noise read further down the ray with a higher
+ * threshold is the island's darker side, so it narrows downward.
+ */
+vec4 fallenIsles(vec3 dir, float t, vec3 lit) {
+    float slope = -1.0 / dir.y;
+    vec2 at = dir.xz * t + uNoiseOrigin;
+    vec2 run = dir.xz * slope;
+    for (int k = 0; k < ISLES; k++) {
+        float depth = ISLE_DEPTH[k];
+        float shows = ISLE_SHOWS[k] * exp(-MURK * depth * slope);
+        // Daylight reaches less far down than the eye does.
+        vec3 stone = vec3(0.30, 0.29, 0.37) * (lit * 0.5 * exp(-depth / 200.0) + 0.06);
+        float land = isle(at + run * depth, k);
+        if (land >= ISLE_COVER) return vec4(stone * (land >= ISLE_COVER + 0.03 ? 1.0 : 0.82), shows);
+        if (isle(at + run * depth * (1.0 + ISLE_THICK), k) >= ISLE_COVER + 0.04) return vec4(stone * 0.5, shows);
+    }
+    return vec4(0.0);
+}
+
 /** The colours a nebula can have, all near each other: purple, violet, indigo and two blues, for t in 0..1. */
 vec3 nebulaHue(float t) {
     const vec3 HUES[5] = vec3[](vec3(0.40, 0.13, 0.78), vec3(0.50, 0.20, 0.95), vec3(0.27, 0.19, 0.88),
@@ -222,9 +259,9 @@ float nebulaCloud(float n, float from) {
  * shades, so no two look alike and one changes shade across its width. Inside, two clouds of four noise octaves bent
  * by more noise, a third colour along bright filaments, and stars, all in square pixels and a few steps of
  * brightness. It is looked up far below the plane, so it barely moves as the camera does and dims at a slant.
- * A rare square outside the nebulae holds the glint of a crystal.
+ * A rare square outside the nebulae holds the glint of a crystal. In front of all of it lie a few fallen islands.
  */
-vec3 depths(vec3 dir, float t) {
+vec3 depths(vec3 dir, float t, vec3 lit) {
     float slope = -1.0 / dir.y;         // blocks of ray per block of descent
     vec2 still = dir.xz * (t + slope * NEBULA_DEPTH) + uNoiseOrigin;
     float seen = exp(-MURK * NEBULA_DEPTH * slope) * (0.55 + 0.45 * uGlow);
@@ -257,7 +294,9 @@ vec3 depths(vec3 dir, float t) {
         float pulse = 0.6 + 0.4 * sin(6.2832 * (uPhase * 160.0 + hash3(vec3(square, 1.0)).x));
         colour += vec3(0.62, 0.42, 0.95) * 0.5 * pulse * seen * (1.0 - nebula);
     }
-    return colour;
+    // The islands are above all of that and fade into it.
+    vec4 fallen = fallenIsles(dir, t, lit);
+    return mix(colour, fallen.rgb, fallen.a);
 }
 
 void main() {
@@ -292,7 +331,7 @@ void main() {
     // The void is seen where the ray leaves the box through its floor before meeting terrain.
     float floorAt = dir.y < 0.0 ? uLevels.x / dir.y : INF;
     if (through >= 0.03 && floorAt > 0.0 && floorAt <= end * 1.0001 + 0.01) {
-        gathered += through * depths(dir, floorAt);
+        gathered += through * depths(dir, floorAt, lit);
         through = 0.0;
         if (first < 0.0) first = floorAt;
     }
