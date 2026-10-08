@@ -217,41 +217,42 @@ float nebulaCloud(float n, float from) {
 
 /**
  * The void where the ray leaves the box through its floor, t along the ray: dark, and in a few places a
- * nebula. Where one is comes from a slow noise field that drifts across the void and changes with time, so
- * nebulae are rare, wander, and come and go. A second field that drifts with it gives the place its colours,
- * so no two look alike and one changes colour across its width. Inside, two clouds of four noise octaves bent
+ * nebula. Where one is comes from a slow noise field that changes with time, so nebulae are rare and fade in
+ * and out, and everything about them drifts slowly across the void as one. A second field gives the place its
+ * shades, so no two look alike and one changes shade across its width. Inside, two clouds of four noise octaves bent
  * by more noise, a third colour along bright filaments, and stars, all in square pixels and a few steps of
  * brightness. It is looked up far below the plane, so it barely moves as the camera does and dims at a slant.
  * A rare square outside the nebulae holds the glint of a crystal.
  */
 vec3 depths(vec3 dir, float t) {
     float slope = -1.0 / dir.y;         // blocks of ray per block of descent
-    vec2 at = dir.xz * (t + slope * NEBULA_DEPTH) + uNoiseOrigin;
+    vec2 still = dir.xz * (t + slope * NEBULA_DEPTH) + uNoiseOrigin;
     float seen = exp(-MURK * NEBULA_DEPTH * slope) * (0.55 + 0.45 * uGlow);
     vec3 colour = DARK;
+    // The squares drift with the nebulae, so a nebula slides as a whole and nothing in it crawls or flickers.
+    vec2 at = still + uPhase * PERIOD * vec2(0.0, 1.0);
     vec2 pixel = floor(at / NEBULA_CELL);
     vec2 centre = (pixel + 0.5) * NEBULA_CELL / PERIOD;
-    vec2 adrift = centre + uPhase * vec2(2.0, 1.0);
-    float nebula = smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(adrift, uPhase * 2.0)));
+    float nebula = smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(centre, uPhase)));
     if (nebula > 0.0) {
-        float tone = (noise(vec3(adrift * 2.0 + 0.19, 0.45)) - 0.3) / 0.4;
-        float turn = 6.2832 * noise(vec3(centre * 2.0, uPhase * 4.0));
+        float tone = (noise(vec3(centre * 2.0 + 0.19, 0.45)) - 0.3) / 0.4;
+        float turn = 6.2832 * noise(vec3(centre * 2.0, 0.77));
         vec2 bent = centre + NEBULA_WARP * vec2(cos(turn), sin(turn));
-        float one = nebulaCloud(fbm(vec3(bent * 2.0 + uPhase * vec2(1.0, 0.0), 0.21), 4), 0.42);
-        float two = nebulaCloud(fbm(vec3(bent * 3.0 + uPhase * vec2(0.0, -1.0) + 0.43, 0.57), 4), 0.47);
-        float thread = 1.0 - abs(2.0 * noise(vec3(bent * 8.0 + uPhase * vec2(-1.0, 1.0), 0.89)) - 1.0);
+        float one = nebulaCloud(fbm(vec3(bent * 2.0, 0.21), 4), 0.42);
+        float two = nebulaCloud(fbm(vec3(bent * 3.0 + 0.43, 0.57), 4), 0.47);
+        float thread = 1.0 - abs(2.0 * noise(vec3(bent * 8.0, 0.89)) - 1.0);
         thread = step(0.86, thread) * max(one, two);
         vec3 glow = nebulaHue(tone) * 0.55 * one + nebulaHue(fract(tone + 0.3)) * 0.45 * two;
         glow = mix(glow, mix(nebulaHue(fract(tone + 0.6)), vec3(0.86, 0.82, 1.0), 0.4) * 0.75, thread * 0.8);
         // A star fills its square and is brighter inside the clouds.
         vec3 random = hash3(vec3(mod(pixel, PERIOD / NEBULA_CELL), 2.0));
         if (random.x < NEBULA_STARS) {
-            float twinkle = 0.6 + 0.4 * sin(6.2832 * (uPhase * 160.0 + random.y));
+            float twinkle = 0.6 + 0.4 * sin(6.2832 * (uPhase * 64.0 + random.y));
             glow += vec3(0.74, 0.72, 0.98) * twinkle * (0.25 + 0.75 * max(one, two));
         }
         colour += glow * nebula * NEBULA_STRENGTH * seen;
     }
-    vec2 square = floor(at / CRYSTAL_CELL);
+    vec2 square = floor(still / CRYSTAL_CELL);
     if (textureLod(uNoise, vec3((square + 0.5) / NOISE_SIZE, 9.5 / NOISE_SIZE), 0.0).r < CRYSTAL_SHARE) {
         float pulse = 0.6 + 0.4 * sin(6.2832 * (uPhase * 160.0 + hash3(vec3(square, 1.0)).x));
         colour += vec3(0.62, 0.42, 0.95) * 0.5 * pulse * seen * (1.0 - nebula);
