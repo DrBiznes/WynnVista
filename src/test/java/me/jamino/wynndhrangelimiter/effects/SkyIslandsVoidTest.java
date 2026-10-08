@@ -22,9 +22,10 @@ class SkyIslandsVoidTest {
     void shaderIsCompleteAndDrawnAtFullResolution() {
         SkyIslandsVoid effect = new SkyIslandsVoid();
         String source = EffectProgram.source(effect.shader());
-        assertTrue(source.contains("float cloudCell(vec2 rel, int sheet)"));
+        assertTrue(source.contains("void cloudSea(vec3 dir, float from, float to, vec3 lit)"));
+        assertTrue(source.contains("vec3 depths(vec3 dir, float t)"));
         assertFalse(source.contains("#include"));
-        assertFalse(effect.halfResolution(), "the cloud cells keep their edges");
+        assertFalse(effect.halfResolution(), "the cloud cubes keep their edges");
     }
 
     @Test

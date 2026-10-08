@@ -1,8 +1,8 @@
 package me.jamino.wynndhrangelimiter.effects;
 
 /**
- * The void under the Sky Islands: a sea of blocky cloud the islands' spikes dip into and, far below it, a dark
- * abyss with a faint glow. Placement and timing rules; the look is in the shader.
+ * The void under the Sky Islands: clumps of cloud cubes the islands' spikes dip into and, below them, a dark
+ * void with a rare nebula. Placement and timing rules; the look is in the shader.
  */
 public final class SkyIslandsVoid implements WorldEffect {
     public static final String ID = "sky_islands_void";
@@ -29,9 +29,9 @@ public final class SkyIslandsVoid implements WorldEffect {
     public static final int SOUTH_Z = -4192;
 
     /**
-     * The world there ends at y 0 and the longest spikes reach down to y 1. The lowest terrace of cloud lies
-     * among the lowest spikes, with dimmer sheets sunk below it; the abyss is a plane below those and below
-     * the world, where nothing can be in front of it but the cloud.
+     * The world there ends at y 0 and the longest spikes reach down to y 1. The lowest layer of cloud cubes
+     * has its top among the lowest spikes; the void begins at a plane below the cloud and below the world,
+     * where nothing can be in front of it but the cloud.
      */
     public static final double CLOUD_Y = 4;
     public static final double ABYSS_Y = -40;
@@ -45,9 +45,9 @@ public final class SkyIslandsVoid implements WorldEffect {
 
     @Override public String id() { return ID; }
     @Override public String name() { return "Sky Islands Void"; }
-    @Override public String description() { return "A sea of blocky cloud over a dark, faintly glowing abyss under the Sky Islands"; }
+    @Override public String description() { return "Clumps of cloud cubes over a dark void with a rare nebula under the Sky Islands"; }
     @Override public String shader() { return "sky_islands_void.fsh"; }
-    /** Half resolution would blur the edges of the cloud cells. */
+    /** Half resolution would blur the edges of the cloud cubes. */
     @Override public boolean halfResolution() { return false; }
     @Override public double anchorX() { return (MIN_X + MAX_X) / 2.0; }
     @Override public double anchorZ() { return (NORTH_Z + SOUTH_Z) / 2.0; }
