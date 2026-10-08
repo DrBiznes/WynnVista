@@ -93,4 +93,12 @@ class SmokePlumeTest {
         assertTrue(midnight > 0.05f && midnight < 0.2f, "and dim under the moon: " + midnight);
         assertTrue(SmokePlume.skyReference(SmokePlume.lighting(6000, 1)) < noon, "dimmer in rain");
     }
+
+    @Test
+    void skyIsComparedWithTheReferenceOfTheTimeItWasSeen() {
+        // The probe keeps the reference beside the sky's colour, and the effects divide by that one.
+        String probe = EffectProgram.source("fog_probe.fsh");
+        assertTrue(probe.contains("vec4 seen = vec4(colour / count, uReference);"));
+        assertTrue(probe.contains("skyGain = clamp(seen / max(sky.a, 1.0e-3), GAIN_MIN, GAIN_MAX);"));
+    }
 }

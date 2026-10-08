@@ -197,8 +197,8 @@ public final class WorldEffects {
             if (!ModConfig.effectEnabled(effect.id()) || BROKEN.contains(effect.shader())) continue;
             if (!EffectRegion.shows(snapshot, true, dimension, client.player.getX(), client.player.getZ(),
                     effect.anchorX(), effect.anchorZ())) continue;
+            if (!effect.inRange(cameraPos.x, cameraPos.y, cameraPos.z)) continue;
             double distance = Math.hypot(effect.anchorX() - cameraPos.x, effect.anchorZ() - cameraPos.z);
-            if (distance > effect.maxViewDistance()) continue;
             WorldEffect.Bounds box = effect.bounds();
             EffectCulling.ScreenRect rect = EffectCulling.project(viewProjection,
                     (float) (box.minX() - cameraPos.x), (float) (box.minY() - cameraPos.y),
@@ -258,7 +258,8 @@ public final class WorldEffects {
             // The fog already in the image is measured before anything is drawn over it.
             GL11C.glDisable(GL11C.GL_BLEND);
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
-            for (Visible entry : visible) measureFog(entry, scene, color);
+            float reference = SmokePlume.skyReference(SmokePlume.lighting(frame));
+            for (Visible entry : visible) measureFog(entry, scene, color, reference);
             GL11C.glEnable(GL11C.GL_BLEND);
 
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
@@ -364,10 +365,11 @@ public final class WorldEffects {
 
     /**
      * Updates an effect's fog probe from the finished world image: how much detail the terrain at the
-     * effect's distance still has, and its colour. If the probe shader is unusable the probe keeps its
-     * initial "clear".
+     * effect's distance still has, and its colour, and the sky at the horizon with {@code reference}, the
+     * effects' own brightness now ({@link SmokePlume#skyReference}). If the probe shader is unusable the
+     * probe keeps its initial "clear".
      */
-    private static void measureFog(Visible entry, Scene scene, int color) {
+    private static void measureFog(Visible entry, Scene scene, int color, float reference) {
         FogProbe probe = FOG_PROBES.computeIfAbsent(entry.effect().id(), id -> createFogProbe());
         if (fogBroken) return;
         if (fogProgram == null) {
@@ -399,6 +401,7 @@ public final class WorldEffects {
         fogProgram.set("uBand", band.near(), band.far());
         fogProgram.set("uContrast", EffectFog.CONTRAST_GONE, EffectFog.CONTRAST_CLEAR);
         fogProgram.set("uRate", rate);
+        fogProgram.set("uReference", reference);
         // With a model the amount of fog is known and is not measured.
         fogProgram.set("uProbeMode", scene.fog() != null && !scene.fog().measured() ? 1 : 0);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);

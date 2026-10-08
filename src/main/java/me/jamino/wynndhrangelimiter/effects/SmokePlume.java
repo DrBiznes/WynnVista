@@ -66,7 +66,7 @@ public final class SmokePlume implements WorldEffect {
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
         Lighting light = lighting(frame);
-        program.set("uSkyMatch", frame.packLighting() ? 1 : 0, skyReference(light));
+        program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
         program.set("uVent", (float) (PEAK_X - frame.cameraX()), (float) (VENT_Y - frame.cameraY()),
                 (float) (PEAK_Z - frame.cameraZ()));
         program.set("uShape", HEIGHT, VENT_RADIUS, TOP_RADIUS);
@@ -134,7 +134,8 @@ public final class SmokePlume implements WorldEffect {
 
     /**
      * Brightness of a middling part of an effect under this light, to compare with the sky a shader pack
-     * has drawn: three quarters of the sky light and somewhat under half of the sun or moon.
+     * has drawn: three quarters of the sky light and somewhat under half of the sun or moon. The fog probe
+     * keeps it beside the sky it saw.
      */
     public static float skyReference(Lighting light) {
         return 0.75f * luminance(light.ambientRed(), light.ambientGreen(), light.ambientBlue())

@@ -9,7 +9,9 @@
 //
 // Texel 1, the colour of the sky just above the horizon in the effect's direction. It is what distant
 // terrain fades into, so it is the colour of a modelled fog, and under a shader pack it is what the effects'
-// own lighting is matched to (skyLight() in scene.glsl).
+// own lighting is matched to (skyLight() in scene.glsl). Its alpha is how bright the effect's own light model
+// was when that sky was seen: the two are compared as they were together, so a sky that has been out of view
+// since another time of day still says how much brighter or dimmer than the model the pack draws.
 
 #include "scene.glsl"
 
@@ -20,9 +22,10 @@ uniform vec2 uBand;           // terrain distances that say something about the 
 uniform vec2 uContrast;       // terrain detail at which it counts as swallowed, and as fully visible
 uniform float uRate;          // share of this frame's measurement blended in; 1 replaces the old value
 uniform int uProbeMode;       // 0: measure the fog, 1: a model knows it
+uniform float uReference;     // brightness of a middling part of the effect under its own light, now
 
 out vec4 fragColor;           // texel 0: rgb colour of terrain at the effect's distance, a: how much detail it keeps
-                              // texel 1: rgb colour of the horizon sky, negative while none was seen, a: 1
+                              // texel 1: rgb colour of the horizon sky, negative while none was seen, a: uReference when it was
 
 const int COLUMNS = 32;
 const int ROWS = 24;
@@ -69,10 +72,11 @@ void horizon() {
     vec4 previous = texelFetch(uPrevious, ivec2(1, 0), 0);
     bool fresh = uRate >= 1.0 || previous.r < 0.0;
     if (count < 0.5) {
-        fragColor = uRate >= 1.0 ? vec4(-1.0, -1.0, -1.0, 1.0) : vec4(previous.rgb, 1.0);
+        fragColor = uRate >= 1.0 ? vec4(-1.0, -1.0, -1.0, 1.0) : previous;
         return;
     }
-    fragColor = vec4(fresh ? colour / count : mix(previous.rgb, colour / count, uRate), 1.0);
+    vec4 seen = vec4(colour / count, uReference);
+    fragColor = fresh ? seen : mix(previous, seen, uRate);
 }
 
 void main() {

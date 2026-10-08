@@ -31,11 +31,19 @@ public final class SkyIslandsVoid implements WorldEffect {
     /**
      * The world there ends at y 0 and the longest spikes reach down to y 1. The lowest layer of cloud cubes
      * has its top among the lowest spikes; the void begins at a plane below the cloud and below the world,
-     * where nothing can be in front of it but the cloud.
+     * where nothing can be in front of it but the cloud. The highest cubes end at y 20 and the haze around
+     * them is densest at y 8 and thins to 1/e every 8 blocks: above the top of the box less than half a
+     * percent of it is left along any ray, so the box ends there and not at the islands' tops.
      */
     public static final double CLOUD_Y = 4;
     public static final double ABYSS_Y = -40;
-    public static final double TOP_Y = 256;
+    public static final double TOP_Y = 72;
+
+    /**
+     * Blocks from the box, along the ground, beyond which the void is not drawn. The cubes are gone 520
+     * blocks from the camera, and from further out only the haze could show over the rim of the land.
+     */
+    public static final double REACH = 640;
 
     /** Blocks per repeat of the noise, and the ticks after which the moving patterns repeat. */
     public static final double NOISE_PERIOD = 2048;
@@ -54,15 +62,21 @@ public final class SkyIslandsVoid implements WorldEffect {
     @Override public Bounds bounds() { return BOUNDS; }
 
     /** The void lies below the rim of the land around it and cannot be seen from much further away. */
-    @Override public double maxViewDistance() { return 1500; }
+    @Override public double maxViewDistance() { return REACH; }
+
+    /** From the box, not its middle: the box is wider than the void can be seen from. */
+    @Override public boolean inRange(double x, double y, double z) {
+        return BOUNDS.groundDistance(x, z) <= REACH;
+    }
 
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
         SmokePlume.Lighting light = SmokePlume.lighting(frame);
-        program.set("uSkyMatch", frame.packLighting() ? 1 : 0, SmokePlume.skyReference(light));
+        program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
         program.set("uLevels", (float) (ABYSS_Y - frame.cameraY()), (float) (CLOUD_Y - frame.cameraY()), 0);
         program.set("uNoiseOrigin", wrap(frame.cameraX()), wrap(frame.cameraZ()));
         program.set("uPhase", phase(frame.worldTime(), frame.tickProgress()));
+        program.set("uLightDir", light.dirX(), light.dirY(), light.dirZ());
         program.set("uLightColor", light.red(), light.green(), light.blue());
         program.set("uAmbient", light.ambientRed(), light.ambientGreen(), light.ambientBlue());
         program.set("uGlow", Math.max(0, Math.min(1, light.glow())));

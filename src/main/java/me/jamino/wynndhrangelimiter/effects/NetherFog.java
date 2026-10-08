@@ -72,7 +72,7 @@ public final class NetherFog implements WorldEffect {
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
         SmokePlume.Lighting light = SmokePlume.lighting(frame);
-        program.set("uSkyMatch", frame.packLighting() ? 1 : 0, SmokePlume.skyReference(light));
+        program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
         program.set("uOrigin", (float) (CENTER_X - frame.cameraX()), (float) (FLOOR_Y - frame.cameraY()),
                 (float) (CENTER_Z - frame.cameraZ()));
         program.set("uExtent", RADIUS_X, RADIUS_Z);

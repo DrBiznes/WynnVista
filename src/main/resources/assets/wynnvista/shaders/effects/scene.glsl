@@ -4,7 +4,7 @@
 uniform sampler2D uSceneDepth;
 uniform sampler2D uLodDepth;
 uniform sampler3D uNoise;
-uniform sampler2D uFogProbe;  // 2x1, written by fog_probe.fsh: the fog measurement, then the horizon sky's colour
+uniform sampler2D uFogProbe;  // 2x1, written by fog_probe.fsh: the fog measurement, then the horizon sky's colour with the effect's own brightness when it was seen
 uniform sampler2D uTerrainDepth;  // vanilla depth as it was before a cloud mod drew its clouds into it
 uniform sampler2D uCloudDepth;    // depth of that cloud layer alone, 1 where it wrote none
 uniform sampler2D uCloudColor;    // the cloud layer alone: premultiplied colour, opacity in alpha
@@ -21,7 +21,7 @@ uniform sampler2D uFogTable;  // a pack's or LOD mod's fog (FogTable): x over gr
 uniform vec4 uFogTableRange;  // x: 1 / ground distance covered, 0 without a table, y: lowest height, camera-relative, z: 1 / height covered, w: 1 when the probe's measurement still applies
 uniform vec4 uFogTableColor;  // rgb: the fog's colour, a: 1 when it is known, 0 to take it from the probe
 uniform mat4 uSceneForward;   // camera-relative world -> vanilla clip space
-uniform vec2 uSkyMatch;       // x: 1 while a shader pack renders and the effect is lit to match its sky, y: the effect's brightness under its own light
+uniform float uSkyMatch;      // 1 while a shader pack renders and the effect is lit to match its sky
 uniform int uSteps;           // ray-march samples, already reduced for small or distant effects
 uniform int uOctaves;         // noise octaves worth sampling at this distance
 
@@ -160,17 +160,18 @@ float luminance(vec3 colour) {
  * The sky light for an effect whose own model gives `ambient`. Without a shader pack that is tinted by the
  * game's fog colour. Under one, the pack has drawn a sky the game knows nothing about: the light takes the
  * hue of that sky at the horizon, and skyGain brings the effect's brightness to it, so the effect is as
- * dim, bright, blue or pink as the scene the pack exposed and graded.
+ * dim, bright, blue or pink as the scene the pack exposed and graded. The sky is compared with the effect's
+ * own brightness at the time it was seen, so while it is out of view the effect still follows the time of day.
  */
 vec3 skyLight(vec3 ambient) {
     skyGain = 1.0;
     sunTint = vec3(1.0);
-    if (uSkyMatch.x < 0.5) return mix(ambient, uFogColor, 0.45);
-    vec3 sky = texelFetch(uFogProbe, ivec2(1, 0), 0).rgb;
+    if (uSkyMatch < 0.5) return mix(ambient, uFogColor, 0.45);
+    vec4 sky = texelFetch(uFogProbe, ivec2(1, 0), 0);
     if (sky.r < 0.0) return ambient;
-    float seen = luminance(sky);
-    vec3 hue = sky / max(seen, 1.0e-3);
-    skyGain = clamp(seen / max(uSkyMatch.y, 1.0e-3), GAIN_MIN, GAIN_MAX);
+    float seen = luminance(sky.rgb);
+    vec3 hue = sky.rgb / max(seen, 1.0e-3);
+    skyGain = clamp(seen / max(sky.a, 1.0e-3), GAIN_MIN, GAIN_MAX);
     sunTint = mix(vec3(1.0), hue, SUN_HUE);
     // The sky light keeps its strength and trades its own hue for the pack's.
     return mix(ambient, luminance(ambient) * hue, SKY_HUE);

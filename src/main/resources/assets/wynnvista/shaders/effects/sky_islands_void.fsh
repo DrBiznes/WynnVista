@@ -10,6 +10,7 @@
 uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cubes, both camera-relative
 uniform vec2 uNoiseOrigin;      // the camera's place within one repeat of the noise pattern, in blocks
 uniform float uPhase;           // 0..1 over the time after which the moving patterns repeat
+uniform vec3 uLightDir;         // unit direction towards the sun or moon
 uniform vec3 uLightColor;
 uniform vec3 uAmbient;
 uniform float uGlow;            // 1 at night, less by day
@@ -39,6 +40,7 @@ const float HAZE_SINK = 10.0;           // and below it, where it takes the colo
 const float HAZE_DENSITY = 0.011;       // extinction per block at its level
 const float HAZE_MAX = 0.95;
 const float EDGE = 96.0;                // blocks from the sides of the box over which everything fades out
+const float SUN_FACING = 1.5;           // under a shader pack, the sun's light on a face turned straight to it, against its even share
 
 const float NEBULA_DEPTH = 220.0;       // how far below where the void begins its nebulae appear to lie
 const float NEBULA_CELL = 4.0;          // side of one square of a nebula, at its depth
@@ -63,6 +65,7 @@ const vec3 DARK = vec3(0.012, 0.009, 0.024);
 vec3 gathered = vec3(0.0);      // premultiplied colour of what the ray has met, front to back
 float through = 1.0;            // how much still shows through it
 float first = -1.0;             // where the ray first met something, negative until then
+vec3 sunlight = vec3(0.0);      // the sun's or moon's share of the light the cloud is lit by
 
 vec3 hash3(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
@@ -99,11 +102,19 @@ bool hitCube(vec3 low, float size, vec3 origin, vec3 inv, out vec3 lo, out float
  * Colour of a cloud cube where the ray enters it. `local` is that point within the cube, 0..1 each way, `lo`
  * says by which face, `h` is the cube's own random. Like the launch clouds: white, some cubes faintly rose or
  * blue, a blush along the foot of the sides and over the underside, lighter texels, and a block's face shading.
+ * A shader pack lights its blocks from where its sun is, so under one the sun's share of the light goes to
+ * the faces turned to it.
  */
-vec3 cubeColour(vec3 local, vec3 lo, bool rising, vec3 h, vec3 lit) {
+vec3 cubeColour(vec3 local, vec3 lo, vec3 dir, vec3 h, vec3 lit) {
     bool level = lo.y >= max(lo.x, lo.z);
+    bool rising = dir.y > 0.0;
     bool under = level && rising;
     float face = level ? (rising ? 0.74 : 1.0) : (lo.x >= lo.z ? 0.9 : 0.84);
+    if (uSkyMatch > 0.5) {
+        vec3 normal = level ? vec3(0.0, -sign(dir.y), 0.0)
+                : (lo.x >= lo.z ? vec3(-sign(dir.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(dir.z)));
+        lit += sunlight * (SUN_FACING * max(dot(normal, uLightDir), 0.0) - 1.0);
+    }
     vec3 albedo = h.z < 0.62 ? vec3(0.97, 0.97, 0.99) : (h.z < 0.82 ? vec3(0.98, 0.91, 0.95) : vec3(0.89, 0.94, 1.0));
     if (under) albedo = mix(albedo, vec3(0.96, 0.80, 0.90), 0.7);
     else if (!level && local.y < 0.3125) albedo = mix(albedo, vec3(0.96, 0.80, 0.90), 0.55);
@@ -193,7 +204,7 @@ void cloudSea(vec3 dir, float from, float to, vec3 lit) {
                 vec3 local = (origin + dir * t / CELL - low) / size;
                 // Cubes fade out just in front of the camera instead of filling the view with one face.
                 float alpha = fade * smoothstep(1.0, 5.0, t) * (1.0 - smoothstep(CELLS_NEAR, CELLS_FAR, t));
-                gathered += through * alpha * cubeColour(local, lo, dir.y > 0.0, h, lit);
+                gathered += through * alpha * cubeColour(local, lo, dir, h, lit);
                 through *= 1.0 - alpha;
                 if (first < 0.0 && alpha > 0.0) first = t;
                 if (through < 0.03) return;
@@ -313,7 +324,8 @@ void main() {
 
     // By day the cloud is lit by the sky and sun; the haze below it is a dim violet.
     vec3 ambient = skyLight(uAmbient);
-    vec3 lit = (ambient * 0.9 + uLightColor * sunTint * 0.35) * skyGain;
+    sunlight = uLightColor * sunTint * 0.35 * skyGain;
+    vec3 lit = ambient * 0.9 * skyGain + sunlight;
     vec3 pale = vec3(0.92, 0.91, 0.96) * lit + VIOLET * (0.01 + 0.035 * uGlow);
     vec3 dusk = pale * vec3(0.42, 0.36, 0.70) + VIOLET * (0.03 + 0.07 * uGlow);
 
@@ -323,7 +335,8 @@ void main() {
         float a = (uLevels.y - 2.0 * CELL) / dir.y;
         float b = (uLevels.y + float(LAYERS) * CELL) / dir.y;
         float from = max(min(a, b), span.x);
-        float to = min(max(a, b), end);
+        // No cube shows beyond CELLS_FAR, so the lattice is not walked there.
+        float to = min(min(max(a, b), end), CELLS_FAR);
         if (to > from) cloudSea(dir, from, to, lit);
         if (through < 0.03) solid = first;
     }

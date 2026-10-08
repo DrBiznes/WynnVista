@@ -39,8 +39,26 @@ public interface WorldEffect {
     /** Horizontal distance from the anchor beyond which the effect is not drawn. */
     double maxViewDistance();
 
+    /**
+     * Whether the effect can be in view from a camera position at all. An effect spread over an area
+     * measures from its box instead of its anchor.
+     */
+    default boolean inRange(double x, double y, double z) {
+        return Math.hypot(anchorX() - x, anchorZ() - z) <= maxViewDistance();
+    }
+
     /** Sets this effect's own uniforms. The scene, depth and quality uniforms are already set. */
     void upload(EffectProgram program, EffectFrame frame);
 
-    record Bounds(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {}
+    record Bounds(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
+        /** Blocks from a position to the box; 0 inside it. */
+        public double distance(double x, double y, double z) {
+            return Math.hypot(groundDistance(x, z), Math.max(0, Math.max(minY - y, y - maxY)));
+        }
+
+        /** The same along the ground only: 0 anywhere above or below the box. */
+        public double groundDistance(double x, double z) {
+            return Math.hypot(Math.max(0, Math.max(minX - x, x - maxX)), Math.max(0, Math.max(minZ - z, z - maxZ)));
+        }
+    }
 }

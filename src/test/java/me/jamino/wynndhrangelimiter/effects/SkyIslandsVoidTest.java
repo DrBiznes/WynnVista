@@ -78,6 +78,26 @@ class SkyIslandsVoidTest {
         }
         // From a corner of the map the effect is still within its view distance.
         assertTrue(Math.hypot(SkyIslandsVoid.MAP_SIZE_X, SkyIslandsVoid.MAP_SIZE_Z) / 2 < air.maxViewDistance());
+        // It is in range from the map's corner and from just outside it or above it, and from no further.
+        int east = SkyIslandsVoid.MAP_MIN_X + SkyIslandsVoid.MAP_SIZE_X;
+        assertTrue(air.inRange(east, 60, SkyIslandsVoid.MAP_MIN_Z));
+        assertTrue(air.inRange(east + 40, 60, -4700));
+        assertFalse(air.inRange(east + 65, 60, -4700));
+        assertTrue(air.inRange(1300, SkyIslandsAir.TOP_Y + 60, -4700));
+        assertFalse(air.inRange(1300, SkyIslandsAir.TOP_Y + 65, -4700));
+    }
+
+    @Test
+    void voidIsInRangeFromItsBoxAndTheLandBesideItOnly() {
+        SkyIslandsVoid effect = new SkyIslandsVoid();
+        assertTrue(effect.inRange(1300, 400, -4600), "from any height over it");
+        assertTrue(effect.inRange(SkyIslandsVoid.MIN_X - 600, 150, -4600), "from the Canyon of the Lost");
+        assertTrue(effect.inRange(1300, 150, SkyIslandsVoid.NORTH_Z - 600), "from Molten Heights");
+        assertFalse(effect.inRange(SkyIslandsVoid.MIN_X - 650, 150, -4600));
+        assertFalse(effect.inRange(SkyIslandsVoid.MIN_X - 500, 150, SkyIslandsVoid.NORTH_Z - 500), "measured to the corner");
+        // The cubes show from as far as the shader draws them.
+        assertTrue(EffectProgram.source(effect.shader()).contains("const float CELLS_FAR = 520.0;"));
+        assertTrue(SkyIslandsVoid.REACH > 520);
     }
 
     private static int texel(BufferedImage map, int x, int z) {
@@ -85,9 +105,12 @@ class SkyIslandsVoidTest {
     }
 
     @Test
-    void boxCoversTheIslandsFromTheAbyssUp() {
+    void boxCoversTheVoidFromTheAbyssToTheTopOfTheHaze() {
         WorldEffect.Bounds box = new SkyIslandsVoid().bounds();
         assertEquals(SkyIslandsVoid.ABYSS_Y, box.minY(), "the abyss is the floor of the box");
+        // Four lattice layers of 4 blocks above the lowest cubes' tops, and eight times the haze's 8 blocks over its level.
+        assertTrue(box.maxY() >= SkyIslandsVoid.CLOUD_Y + 4 * 4 && box.maxY() >= SkyIslandsVoid.CLOUD_Y + 4 + 8 * 8);
+        assertTrue(box.maxY() < 100, "the islands above are not part of it: looking up from them culls it");
         assertTrue(SkyIslandsVoid.ABYSS_Y < 0 && SkyIslandsVoid.CLOUD_Y > 0, "the world's lowest blocks are at y 0");
         // The corners of the Sky Islands the effect was asked for.
         assertTrue(box.minX() <= 776 && box.maxX() >= 1468 && box.minZ() <= -4928 && box.maxZ() >= -4427);

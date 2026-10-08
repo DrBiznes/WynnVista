@@ -8,7 +8,7 @@ package me.jamino.wynndhrangelimiter.effects;
 public final class SkyIslandsAir implements WorldEffect {
     public static final String ID = "sky_islands_air";
 
-    /** Blocks from the camera within which the shader draws; the box below is that much larger than the map. */
+    /** Blocks from the camera within which the shader draws. */
     public static final double RANGE = 64;
     public static final double TOP_Y = 210;
 
@@ -52,10 +52,15 @@ public final class SkyIslandsAir implements WorldEffect {
         return Math.hypot(SkyIslandsVoid.MAP_SIZE_X, SkyIslandsVoid.MAP_SIZE_Z) / 2 + RANGE;
     }
 
+    /** Nothing is drawn further than {@link #RANGE} from the camera, so nothing from further than that from the box. */
+    @Override public boolean inRange(double x, double y, double z) {
+        return BOUNDS.distance(x, y, z) <= RANGE;
+    }
+
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
         SmokePlume.Lighting light = SmokePlume.lighting(frame);
-        program.set("uSkyMatch", frame.packLighting() ? 1 : 0, SmokePlume.skyReference(light));
+        program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
         program.set("uMap", (float) (SkyIslandsVoid.MAP_MIN_X - frame.cameraX()),
                 (float) (SkyIslandsVoid.MAP_MIN_Z - frame.cameraZ()), SkyIslandsVoid.MAP_SIZE_X,
                 SkyIslandsVoid.MAP_SIZE_Z);

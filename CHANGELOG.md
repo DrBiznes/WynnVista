@@ -18,6 +18,8 @@
 - Config: "Match Shader Pack Lighting" switches this off.
 - The clouds of Complementary Reimagined/Unbound, BSL and Photon now pass in front of world effects. Before, the smoke plume was drawn over a shader pack's clouds.
 - Config: "Shader Pack Clouds Hide Effects" switches this off.
+- With a shader pack, the Sky Islands cloud cubes are lit on the faces turned to the pack's sun or moon, and world effects keep following the time of day while no sky is in view. Before, effects seen from a place without a view of the horizon, such as under the Sky Islands, kept the brightness of the last sky seen.
+- The Sky Islands effects do less work: the void is skipped when looking up from the islands and from further than 640 blocks away, and the updrafts and motes are skipped unless you are within 64 blocks of the area.
 
 ## 2.1.0
 
