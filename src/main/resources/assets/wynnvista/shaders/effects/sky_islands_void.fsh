@@ -201,10 +201,10 @@ void cloudSea(vec3 dir, float from, float to, vec3 lit) {
     }
 }
 
-/** The colours a nebula can have, from violet over blue, teal and rose to amber, for t in 0..1. */
+/** The colours a nebula can have, all near each other: purple, violet, indigo and two blues, for t in 0..1. */
 vec3 nebulaHue(float t) {
-    const vec3 HUES[5] = vec3[](vec3(0.46, 0.17, 0.95), vec3(0.16, 0.30, 0.90), vec3(0.10, 0.66, 0.72),
-            vec3(0.90, 0.30, 0.70), vec3(0.95, 0.62, 0.30));
+    const vec3 HUES[5] = vec3[](vec3(0.40, 0.13, 0.78), vec3(0.50, 0.20, 0.95), vec3(0.27, 0.19, 0.88),
+            vec3(0.16, 0.30, 0.92), vec3(0.26, 0.46, 0.95));
     float x = clamp(t, 0.0, 0.999) * 4.0;
     int i = int(x);
     return mix(HUES[i], HUES[i + 1], x - float(i));
@@ -242,12 +242,12 @@ vec3 depths(vec3 dir, float t) {
         float thread = 1.0 - abs(2.0 * noise(vec3(bent * 8.0 + uPhase * vec2(-1.0, 1.0), 0.89)) - 1.0);
         thread = step(0.86, thread) * max(one, two);
         vec3 glow = nebulaHue(tone) * 0.55 * one + nebulaHue(fract(tone + 0.3)) * 0.45 * two;
-        glow = mix(glow, mix(nebulaHue(fract(tone + 0.6)), vec3(1.0), 0.35) * 0.75, thread * 0.8);
+        glow = mix(glow, mix(nebulaHue(fract(tone + 0.6)), vec3(0.86, 0.82, 1.0), 0.4) * 0.75, thread * 0.8);
         // A star fills its square and is brighter inside the clouds.
         vec3 random = hash3(vec3(mod(pixel, PERIOD / NEBULA_CELL), 2.0));
         if (random.x < NEBULA_STARS) {
             float twinkle = 0.6 + 0.4 * sin(6.2832 * (uPhase * 160.0 + random.y));
-            glow += vec3(0.80, 0.78, 0.95) * twinkle * (0.25 + 0.75 * max(one, two));
+            glow += vec3(0.74, 0.72, 0.98) * twinkle * (0.25 + 0.75 * max(one, two));
         }
         colour += glow * nebula * NEBULA_STRENGTH * seen;
     }

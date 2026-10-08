@@ -3,7 +3,7 @@
 ## Unreleased
 
 **Added**
-- World effect: the void under the Sky Islands. Clumps of cloud built from whole cubes, in the style of the clouds that launch you between the islands, float around the lowest spikes, over a dark void where here and there a glowing pixel-art nebula, each in its own colours, drifts by far below. It has its own toggle ("Sky Islands Void") on the World Effects config page.
+- World effect: the void under the Sky Islands. Clumps of cloud built from whole cubes, in the style of the clouds that launch you between the islands, float around the lowest spikes, over a dark void where here and there a glowing pixel-art nebula in purples, indigo and blue drifts by far below. It has its own toggle ("Sky Islands Void") on the World Effects config page.
 - World effect: updrafts and motes in the Sky Islands ("Sky Islands Updrafts and Motes"). Near you, white streaks of rising wind blow in gusts through the gaps between the islands, strongest around Windwalker Temple, small violet motes rise under the islands, and spray rises where a waterfall lands in the cloud. Astraulus' Tower has motes of starlight around it and Wybel Island pastel sparkles.
 - Better Clouds support (optional): world effects are now seen through its translucent clouds. Before, a cloud in front of the smoke plume showed the sky behind the plume instead of the smoke.
 
