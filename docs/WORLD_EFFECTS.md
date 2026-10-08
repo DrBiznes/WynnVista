@@ -1,6 +1,6 @@
 # World effects
 
-Date: 2026-10-06. Branch `feature/world-effects`. Effects: the smoke plume rising from Mount Wynn (peak at `-183 205 -1964`) and the lava fog over the Roots of Corruption, around the Nether portal. Tested on Windows 11, RTX 4070, Minecraft 1.21.11, DH 3.3.3, Voxy 0.2.16-beta, WynnIris 1.2.2.
+Date: 2026-10-06. Branch `feature/world-effects`. Effects: the smoke plume rising from Mount Wynn (peak at `-183 205 -1964`) the lava fog over the Roots of Corruption, around the Nether portal, and, in the Sky Islands, the void under them and the updrafts and motes in their air (branch `feature/sky-islands-effects`, 2026-10-07). Tested on Windows 11, RTX 4070, Minecraft 1.21.11, DH 3.3.3, Voxy 0.2.16-beta, WynnIris 1.2.2.
 
 ## How it works
 
@@ -22,7 +22,10 @@ World effects are drawn over the **finished world image**, after every world pas
 | Fog rules: where the probe looks, which distances it trusts, smoothing, the LOD border fade (pure, unit-tested) | `effects/EffectFog` |
 | The plume: placement, shape, sun/moon lighting, the pack sun path and the brightness reference for matching a pack's sky, rendering style (pure, unit-tested) | `effects/SmokePlume` |
 | The Roots of Corruption lava fog: placement, shape, drift, glow, rendering style (pure, unit-tested) | `effects/NetherFog` |
-| Shaders: shared scene code, the plume's shape and its two styles, the lava fog's shape and its two styles, the half-resolution composite, the fog probe | `assets/wynnvista/shaders/effects/{scene.glsl,plume_shape.glsl,smoke_plume.fsh,smoke_plume_blocky.fsh,nether_fog_shape.glsl,nether_fog.fsh,nether_fog_blocky.fsh,upsample.fsh,fog_probe.fsh}` |
+| The void under the Sky Islands: placement, levels, pattern timing (pure, unit-tested) | `effects/SkyIslandsVoid` |
+| Updrafts and motes in the Sky Islands: placement of the named places (pure, unit-tested) | `effects/SkyIslandsAir` |
+| Terrain maps: a per-area picture of the ground an effect may read as `uTerrainMap` (see [TERRAIN_MASKS.md](TERRAIN_MASKS.md)) | `WorldEffect.terrainMap()`, `assets/wynnvista/textures/effects/` |
+| Shaders: shared scene code, the plume's shape and its two styles, the lava fog's shape and its two styles, the Sky Islands void and air (`sky_islands_void.fsh`, `sky_islands_air.fsh`), the half-resolution composite, the fog probe | `assets/wynnvista/shaders/effects/{scene.glsl,plume_shape.glsl,smoke_plume.fsh,smoke_plume_blocky.fsh,nether_fog_shape.glsl,nether_fog.fsh,nether_fog_blocky.fsh,upsample.fsh,fog_probe.fsh}` |
 
 Occlusion uses two depth sources, each unprojected with the projection it was rendered with, and takes the nearer hit:
 
@@ -193,6 +196,35 @@ Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever t
 - **Colour.** One colour per slab from the shared glow (ember, blood red, the portal's purple), brighter where the fog is thick, with a per-slab variation and the block-style face shading of the plume. There are no light shafts.
 - **Limits.** At most 144 cells per lattice and 380 blocks of fog are walked, with two noise octaves. Opacity is capped at 93%. The fine lattice is replaced by the coarse one when its cells are lower than 1.5 pixels. No half resolution.
 
+## Sky Islands void
+
+`sky_islands_void` replaces the flat vanilla void under the Sky Islands. Its box is x 560..1808, z -5056..-4192, larger than the terrain mask (x 704..1535, z -5008..-4369) on every side: the void runs on south towards the Raiders' bases and east past the coast, and a separate piece of it lies under the Colossus to the south-west. It does not read the terrain map. Over the last 96 blocks before a side of the box everything fades out, so where no land hides the edge there is none. It is a cloud sea first and a magical abyss second, kept quiet because the area is flown through constantly. One shader, one pass, nothing ray-marched: every pixel costs a fixed handful of noise lookups.
+
+- **Cloud sea.** Blocky cloud in the manner of Minecraft's own: three flat sheets at y 4, 8 and 12, around the ends of the longest spikes, each divided into square cells of 4 blocks. A cell is cloud or empty from one noise value, and a higher sheet needs a higher value, so the sheets stand on each other as terraces. A sheet is 82% opaque and one flat colour, brighter the higher it is when seen from above and shaded when seen from below. The whole pattern drifts along x at 1.28 blocks per second without changing shape. Cells fade out between 220 and 520 blocks from the camera, where they would be smaller than a pixel.
+- **Sunken sheets.** Two more sheets at y -8 and y -20, with cells of 8 blocks and patterns of their own (one drifts along z, the deepest stands still). They are dimmer, more transparent (62% and 50%) and take 55% and 85% of the abyss's violet, and the lowest terrace takes 18%. They show through the gaps of the sheets above and slide against them as the camera moves, so the sea has depth and goes over into the abyss by steps and not at one edge.
+- **Haze.** A thin even mist, densest at y 8 and thinning exponentially over 8 blocks above and 24 below. Its amount along a view ray is the exact integral of that profile up to the terrain, so it is barely there straight down, softens the spikes where they enter the cloud, and closes into a pale deck towards the horizon, where it replaces the faded cells. The part of it below its level has the abyss's colour: the nebula is seen through a veil of it (about 20% straight down, more at a slant).
+- **Abyss.** An opaque plane at y -40, below the world, seen through the gaps in the cloud: almost black, holding a nebula. The nebula follows the night nebula of Complementary Reimagined (`shaders/lib/atmospherics/nightNebula.glsl`), used as a reference for the technique only; no code of that pack is included. Three clouds of colour (violet, blue, and a rose that is mixed over the other two) each come from three octaves of noise whose coordinates are bent by a further noise sample; each drifts its own way, and the thresholds of the violet and blue ones rise and fall slowly against each other. It is drawn in squares of 8 blocks, and 4.5% of the squares hold a star that twinkles slowly and is up to four times brighter inside the nebula. All of it is looked up 220 blocks below the plane, so it hardly moves as the camera does and reads as far away. Its light is 55% by day and full at night.
+- **Waterfalls.** The void does nothing at a waterfall: the water runs into the sea like anything else, and the spray around it belongs to the updraft pass. Two attempts at more were removed on 2026-10-07 and 2026-10-08: a mound of cloud with rings of brighter cells running outwards, and a plain opaque patch of cloud that also hid the water's foot. The patch flickered against the drifting cells around it.
+
+The cloud is lit by the sky and sun (the plume's light model) and carries a trace of the abyss's violet, a little more at night. Nothing is drawn on the islands themselves. Everything is fixed to the world and repeats every 32,000 ticks without a jump. Distance haze, the modelled fog and clouds are applied as for the other effects. It is drawn up to 1,500 blocks from the middle of the box, always at full resolution, as the upsample would blur the cell edges.
+
+A first version had soft billowing mist, bright veins and stars in the abyss, and violet light on the islands' undersides found with the terrain map. It was replaced on 2026-10-07 as too busy for an area that is flown through, and the nebula is what was kept of its abyss.
+
+## Sky Islands updrafts and motes
+
+`sky_islands_air` is one pass for everything that rises through the air there. It is drawn only within 64 blocks of the camera and reads the terrain map.
+
+All of it is one mechanism. The ground is divided into squares of 8 blocks, and a square holds at most one upright line, 0.28 blocks thick, at a place inside it fixed by a hash. Dashes move along the line. The view ray walks the squares it passes over (at most 20) and intersects each line exactly. For a streak, the height at which the ray enters the line decides whether a dash is there. A mote is a whole cube, as high as the line is thick: the ray's way through the line is tested against it, so the cube has its top or underside as well as its sides, and the face the ray enters by is shaded as a block's is (top 1, sides 0.8 and 0.62, underside 0.5). Testing only where the ray enters, as the first version did, drew two sides without a top, an angle bracket. Nothing is marched, and the map is only read for a line the ray actually meets. What a line is depends on where its square lies:
+
+- **Spray**, within about 10 blocks of a waterfall (the map's alpha): a square there holds two more lines, thinner, of small white cubes that rise at 2.2 blocks per second from the cloud and thin out with height, up to 18 blocks right at the water and lower further out. These squares are found with one map lookup per square, made only where the ray is within 18 blocks above the cloud.
+- **Updraft streaks**, over open void (the map's blue channel), except within about 11 blocks of a waterfall. White dashes of 6 to 11 blocks rising at 9 blocks per second from the top of the cloud (y 10) to between y 80 and y 130, brightest at the head and stepping down in three levels along the tail. They blow in gusts: a noise field with patches of about 96 blocks that moves across the area switches the lines of a patch on and off, and 60% of the squares in a gust hold a streak. Lit like the cloud.
+- **Windwalker Temple** (`1358 -4745`): within 80 blocks of it the gusts are stronger and near it constant, every square holds a streak, and the streaks reach up to 40 blocks higher.
+- **Levitation motes**, under an island (the map's green channel gives the underside): in 45% of the squares, small violet cubes rising at 0.8 blocks per second from the cloud to the rock, each with a slow blink. They shine by themselves, 80% at night and 45% by day.
+- **Astraulus' Tower** (`1206 126 -4921`): within 40 blocks, from 30 below to 55 above that height, motes of pale gold and pale blue that drift up slowly and blink.
+- **Wybel Island** (`1310 66 -4684`): within 45 blocks, from 8 below to 40 above, sparkles in four pastels that blink faster.
+
+Lines fade in from 1.5 to 5 blocks from the camera and out from 38 to 64. Terrain hides them through the depth buffers as it does every effect. Always at full resolution.
+
 ## Where an effect is shown
 
 Decided on the CPU, in this order, before any GL call. If nothing survives, the frame does no effect work at all.
@@ -228,7 +260,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 
 | Check | Result |
 | --- | --- |
-| `gradlew build`: 64 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
+| `gradlew build`: 71 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `SkyIslandsVoidTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
 | Voxy, no shader pack: Ragni view, crater close-ups, far view from the east, noon / sunset / night | PASS: the plume rises out of the crater, the crater rim and nearer LOD terrain hide it, lava glow at night (`pw-*`, `final-*`, `half-*`) |
 | Voxy + Complementary Reimagined | PASS (`iv-*`), run before the culling and half-resolution work |
 | DH (OpenGL), no shader pack | PASS for drawing and LOD occlusion (`pv-*`), run before the culling and half-resolution work |
@@ -265,6 +297,11 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Better Clouds with both blocky styles: the plume from 300 blocks and from under the column, the lava fog from above the clouds | PASS by eye: both shaders compile, clouds stay in front of the cubes (`bc2-*`). No cloud lay over the lava fog in that view |
 | Better Clouds + Complementary Reimagined (WynnIris), the two plume views | PASS by eye: no errors, the plume shows through Better Clouds' clouds (`bc3-*`) |
 | Without Better Clouds installed, after the change: the plume view from 300 blocks | PASS: both effects compile and draw, no cloud layer is registered (`bc4-*`) |
+| Sky Islands void, Voxy, no shader pack, 854x480 (2026-10-07 and 08): between the islands at y 60 looking along the void, from y 120 looking down, at Sky Falls from y 30, at the south end (`1300 70 -4400`) and looking east from `1560 140 -4480`; noon and midnight | PASS by eye: terraced cloud cells around the spikes with dimmer sheets below them, haze towards the horizon, the abyss with its nebula and stars through the gaps, islands and bridges hide it, nothing on the islands; the sea carries on south of the mask and east to the horizon (`sa1-*`, `sx1-*`, `sy1-*`). The fixture has LOD terrain only, and a superflat floor at y -61 behind the abyss plane. The piece under the Colossus was not found: the view from `690 110 -4480` shows land |
+| Sky Islands updrafts and motes, same setup: a gust in the gap at `1300 45 -4400`, Windwalker Temple, under an island at y 30, Wybel Island and Astraulus' Tower at midnight | PASS by eye: stepped white streaks in the gaps and none over the islands, sparse violet motes under the islands, pastel sparkles over Wybel Island, gold and blue motes around the tower, all hidden by terrain in front (`sa1-*`, `sa2-*`; `sp1-*` at 1920x1080 after the density was lowered); spray around the falls (`sx1-*`). Seen in still frames only, and no mote was seen from near enough to tell a cube from the earlier two-sided shape |
+| Both, Voxy + Complementary Reimagined, the same views, noon and midnight | PASS by eye: both compile and draw; the sea takes the pack's light, streaks and motes are visible (`sc1-*`) |
+| Both, Voxy + BSL v10.1.8 and Photon v1.3b, two views, noon and midnight | Both compile and draw (`sb1-*`, `sph1-*`). By day the cloud sea is dim and grey-violet under both, not white: it is brought to the brightness of the horizon sky those packs draw, which is darker than their lit terrain |
+| Sky Islands GPU time, 1920x1080, Voxy, no shader pack, RTX 4070, each effect alone covering the whole view at full resolution, views `1300 45 -4400` and `1230 60 -4690` | Void 0.21–0.38 ms, updrafts and motes 0.25–0.52 ms (13 logged 100-frame averages each), both before the spray was added. With it, updrafts and motes alone, flying low at Sky Falls and at `1230 20 -4690`: 0.41–0.73 ms (13 averages). The void was not measured again |
 | LOD caches after all runs | PASS: `lod_fixture.py check` for both backends (not repeated after the fog runs) |
 
 ## Open
@@ -282,6 +319,9 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **Performance** was measured on one GPU with Voxy only; nothing was measured on integrated or older graphics. The switch between the direct and half-resolution paths at 12% coverage has no hysteresis.
 - DH's Blaze3D renderer and vanilla with no LOD mod were not run. The fixture-only `FIXTURE_CUSTOM` mask rule is covered by unit tests, not by a run.
 
+- **Sky Islands void.** Run only in the Voxy fixture. Not run on the live server, where the void behind it is the real one and the terrain is real blocks. Not run with DH, in rain, with Better Clouds, or in motion: the drift, the twinkle, the spray rings and the hand-over from cells to haze with distance have not been watched. Colours, coverage and levels were set by eye. The sheets have no side faces, so at a low angle a terrace is flat steps and not a block. Water is not sorted against it: a waterfall is drawn by the game and the cloud is laid over it, and the haze, which is laid over everything, greys the water for some blocks above the cloud. The box outside the terrain mask was set from two top-down fixture views and the maintainer's description, not from map data: the east side reaches x 1808 without knowing where the void ends there, and the piece under the Colossus is assumed to lie east of x 560. Anywhere inside the box where the world has no block above y 12 shows the sea. Under BSL and Photon the sea is dim by day (see Results). The view from among the sheets (below about y 15) and from below the abyss plane was not looked at.
+- **Sky Islands updrafts and motes.** They need the terrain map and so stop at the mask's box (x 704..1535, z -5008..-4369): south, east and south-west of it the void has its sea but no streaks, motes or spray. That is intended: the larger box is there to put the sea under the edges of the area, and the mask is not to be recorded again for it. The GPU times in Results are from before the cube test and were not taken again: a run on 2026-10-08 logged 0.7 to 10 ms while the frame rate of the whole client was a sixth of the usual, which is not a measurement of this pass. Run only in the Voxy fixture, in still frames: the speed of the streaks, the gusts moving across the area and the blinking have not been watched, and how much of it is too much while flying is not known. A streak stands over a column that is empty all the way up; it is not stopped by a bridge or branch in a neighbouring column, only hidden by what is in front of it. The three places use one point and a radius each, taken from territory banners and one discovery, not fitted to the builds. Not measured with a shader pack.
+
 ## Future locations
 
 Places to add world effects to. None is started; each needs its anchor, bounds and a fixture run before it is listed as done.
@@ -289,7 +329,7 @@ Places to add world effects to. None is started; each needs its anchor, bounds a
 - [ ] Lake Gylia
 - [ ] The Forgery
 - [ ] Lights Secret
-- [ ] Sky Islands
+- [x] Sky Islands: the void, updrafts, motes, and three named places (Windwalker Temple, Astraulus' Tower, Wybel Island)
 - [ ] Ozoth's Spire
 - [ ] Qira Hive
 - [ ] Volcanic Isles
@@ -301,4 +341,5 @@ Places to add world effects to. None is started; each needs its anchor, bounds a
 
 1. Implement `WorldEffect`: an id, a config label, an anchor block, world-space bounds, a view distance and an `upload` that sets its uniforms.
 2. Write its fragment shader beside `smoke_plume.fsh`. Start with `#include "scene.glsl"` for the view ray, `boxSpan`, `sceneDistance`, noise and the `uSteps` / `uOctaves` budget. Write `fragColor` (premultiplied, finished by `underClouds`, which applies the fog) and `fragDistance` for every pixel instead of discarding, so the half-resolution path works.
-3. Add it to `EFFECTS` in `WorldEffects`. The config toggle, region masking, culling, scissor, fog and resolution choice then apply without further code.
+3. If it has to know where the ground is beyond the first surface along a ray, return a map from `terrainMap()` and read it as `uTerrainMap` (see [TERRAIN_MASKS.md](TERRAIN_MASKS.md)).
+4. Add it to `EFFECTS` in `WorldEffects`. The config toggle, region masking, culling, scissor, fog and resolution choice then apply without further code.

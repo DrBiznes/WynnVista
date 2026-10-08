@@ -20,6 +20,12 @@ public interface WorldEffect {
     default boolean halfResolution() { return true; }
 
     /**
+     * Terrain map this effect reads as {@code uTerrainMap}: a PNG under
+     * {@code assets/wynnvista/textures/effects/}, one texel per block column; null for none.
+     */
+    default String terrainMap() { return null; }
+
+    /**
      * Block the effect stands on. It is shown exactly where LOD terrain at this block is shown, so it is
      * culled with the region mask.
      */

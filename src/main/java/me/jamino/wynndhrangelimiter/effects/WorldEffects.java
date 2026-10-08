@@ -23,12 +23,16 @@ import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL21C;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.opengl.GL33C;
+import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,13 +52,15 @@ import java.util.Set;
 public final class WorldEffects {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista-effects");
     private static final int NOISE_SIZE = 32;
+    private static final String TEXTURES = "/assets/wynnvista/textures/effects/";
     /** {@code -Dwynnvista.effects.profile=true} logs the GPU time of the effect pass. */
     private static final boolean PROFILE = Boolean.getBoolean("wynnvista.effects.profile");
     private static final int PROFILE_FRAMES = 100;
     /** Share of the view an effect must cover before it is marched at half resolution. */
     private static final double HALF_RESOLUTION_COVERAGE = 0.12;
 
-    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog());
+    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog(), new SkyIslandsVoid(),
+            new SkyIslandsAir());
 
     private static boolean failed;
     private static boolean created;
@@ -85,6 +91,8 @@ public final class WorldEffects {
     private static EffectProgram fogProgram;
     private static boolean fogBroken;
     private static final Set<String> BROKEN = new HashSet<>();
+    /** Terrain maps by file name; 0 for one that could not be loaded. */
+    private static final Map<String, Integer> TERRAIN_MAPS = new HashMap<>();
     private static String loggedState = "";
     private static int timerQuery;
     private static boolean timerPending;
@@ -267,6 +275,8 @@ public final class WorldEffects {
                 WorldEffect effect = entry.effect();
                 EffectProgram program = program(effect);
                 if (program == null) continue;
+                int terrainMap = effect.terrainMap() == null ? 0 : terrainMap(effect);
+                if (effect.terrainMap() != null && terrainMap == 0) continue;
                 // Only the pixels the effect's box can cover are shaded at all.
                 int x0 = Math.max(0, (int) Math.floor(entry.rect().minX() * width) - 1);
                 int y0 = Math.max(0, (int) Math.floor(entry.rect().minY() * height) - 1);
@@ -296,6 +306,10 @@ public final class WorldEffects {
                 program.set("uBoxMax", (float) (box.maxX() - frame.cameraX()), (float) (box.maxY() - frame.cameraY()),
                         (float) (box.maxZ() - frame.cameraZ()));
                 effect.upload(program, frame);
+                if (terrainMap != 0) {
+                    bind(11, GL11C.GL_TEXTURE_2D, terrainMap);
+                    program.set("uTerrainMap", 11);
+                }
                 if (half) {
                     drawHalfResolution(scene, width, height, x0, y0, x1, y1);
                 } else {
@@ -589,6 +603,43 @@ public final class WorldEffects {
         }
     }
 
+    /**
+     * Loads an effect's terrain map on first use. A map that cannot be read disables only the effects using it.
+     */
+    private static int terrainMap(WorldEffect effect) {
+        String name = effect.terrainMap();
+        Integer known = TERRAIN_MAPS.get(name);
+        if (known != null) return known;
+        int texture = 0;
+        ByteBuffer file = null;
+        try (InputStream in = WorldEffects.class.getResourceAsStream(TEXTURES + name);
+             MemoryStack stack = MemoryStack.stackPush()) {
+            if (in == null) throw new IOException("missing");
+            byte[] bytes = in.readAllBytes();
+            file = MemoryUtil.memAlloc(bytes.length).put(bytes).flip();
+            IntBuffer width = stack.mallocInt(1);
+            IntBuffer height = stack.mallocInt(1);
+            ByteBuffer pixels = STBImage.stbi_load_from_memory(file, width, height, stack.mallocInt(1), 4);
+            if (pixels == null) throw new IOException(STBImage.stbi_failure_reason());
+            texture = GL11C.glGenTextures();
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE11);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+            resetUnpack();
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL11C.GL_RGBA8, width.get(0), height.get(0), 0,
+                    GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, pixels);
+            STBImage.stbi_image_free(pixels);
+            LOGGER.info("World effect '{}' loaded its terrain map {} ({} x {})", effect.id(), name, width.get(0),
+                    height.get(0));
+        } catch (IOException e) {
+            LOGGER.error("World effect '{}' disabled: its terrain map {} is unusable", effect.id(), name, e);
+        } finally {
+            if (file != null) MemoryUtil.memFree(file);
+        }
+        TERRAIN_MAPS.put(name, texture);
+        return texture;
+    }
+
     private static void logState(String state) {
         if (state.equals(loggedState)) return;
         loggedState = state;
@@ -681,11 +732,13 @@ public final class WorldEffects {
                            int[] pixelStore) {
         private static final int[] TARGETS = {GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_3D,
                 GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
-                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
+                GL11C.GL_TEXTURE_2D};
         private static final int[] BINDINGS = {GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
-                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
+                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
+                GL11C.GL_TEXTURE_BINDING_2D};
         private static final int[] PIXEL_STORE = {GL11C.GL_UNPACK_ALIGNMENT, GL11C.GL_UNPACK_ROW_LENGTH,
                 GL11C.GL_UNPACK_SKIP_PIXELS, GL11C.GL_UNPACK_SKIP_ROWS, GL12C.GL_UNPACK_IMAGE_HEIGHT,
                 GL12C.GL_UNPACK_SKIP_IMAGES};
