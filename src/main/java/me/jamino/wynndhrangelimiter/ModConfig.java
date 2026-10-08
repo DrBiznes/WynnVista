@@ -41,6 +41,7 @@ public final class ModConfig implements ModMenuApi {
         boolean effectsEnabled = true;
         int effectSteps = 64;
         boolean effectFogModels = true;
+        boolean effectPackLighting = true;
         /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
         Map<String, Boolean> effects = new LinkedHashMap<>();
         String smokePlumeStyle = "REALISTIC";
@@ -65,6 +66,7 @@ public final class ModConfig implements ModMenuApi {
                 if (json.has("effectsEnabled")) result.effectsEnabled = json.get("effectsEnabled").getAsBoolean();
                 if (json.has("effectSteps")) result.effectSteps = json.get("effectSteps").getAsInt();
                 if (json.has("effectFogModels")) result.effectFogModels = json.get("effectFogModels").getAsBoolean();
+                if (json.has("effectPackLighting")) result.effectPackLighting = json.get("effectPackLighting").getAsBoolean();
                 if (json.has("effects") && json.get("effects").isJsonObject()) {
                     json.getAsJsonObject("effects").entrySet().forEach(entry ->
                             result.effects.put(entry.getKey(), entry.getValue().getAsBoolean()));
@@ -108,6 +110,8 @@ public final class ModConfig implements ModMenuApi {
     public static int effectSteps() { return Math.max(16, Math.min(128, config.effectSteps)); }
     /** Whether a shader pack's or LOD mod's fog is worked out from its settings instead of measured. */
     public static boolean effectFogModels() { return config.effectFogModels; }
+    /** Whether effects are lit to match the sky and sun path of the shader pack in use. */
+    public static boolean effectPackLighting() { return config.effectPackLighting; }
     /** Rendering style of the Mount Wynn smoke plume; an unknown value means the default. */
     public static SmokePlume.Style smokePlumeStyle() {
         try {
@@ -191,6 +195,15 @@ public final class ModConfig implements ModMenuApi {
                             + "Voxy. Off: the fog is only measured from the picture"))
                     .setSaveConsumer(value -> {
                         config.effectFogModels = value;
+                        save();
+                    }).build());
+            effects.addEntry(entries.startBooleanToggle(Text.literal("Match Shader Pack Lighting"),
+                            config.effectPackLighting)
+                    .setDefaultValue(true)
+                    .setTooltip(Text.literal("With a shader pack, light effects from the pack's sun and moon and "
+                            + "match their brightness and tint to the sky the pack draws. Off: their own lighting"))
+                    .setSaveConsumer(value -> {
+                        config.effectPackLighting = value;
                         save();
                     }).build());
             for (WorldEffect effect : WorldEffects.all()) {

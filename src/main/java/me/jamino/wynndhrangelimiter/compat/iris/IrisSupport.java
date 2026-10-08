@@ -20,6 +20,7 @@ public final class IrisSupport {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
     private static Boolean dhTerrain;
     private static boolean packOptionsBroken;
+    private static boolean sunPathBroken;
 
     private IrisSupport() {}
 
@@ -54,6 +55,23 @@ public final class IrisSupport {
             }
         }
         return UNKNOWN_PACK;
+    }
+
+    /**
+     * Degrees by which the active shader pack tilts the sun's path, 0 when it cannot be read. Only meaningful
+     * while {@link #shaderPackInUse()}.
+     */
+    public static float sunPathRotation() {
+        if (sunPathBroken) return 0;
+        try {
+            float rotation = IrisPackOptions.sunPathRotation();
+            return Float.isFinite(rotation) ? rotation : 0;
+        } catch (LinkageError | RuntimeException e) {
+            sunPathBroken = true;
+            LOGGER.warn("The shader pack's sun path is not readable from this Iris build; world effects will "
+                    + "be lit from the vanilla sun path", e);
+            return 0;
+        }
     }
 
     private static final EffectFog.PackOptions UNKNOWN_PACK = new EffectFog.PackOptions() {

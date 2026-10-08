@@ -46,7 +46,7 @@ void main() {
     float t1 = min(span.y, leave + coarse);
 
     // The sky around the plume lights it as much as the sun does, which also carries sunset and weather colours.
-    vec3 ambient = mix(uAmbient, uFogColor, 0.45);
+    vec3 ambient = skyLight(uAmbient);
     int lightOctaves = min(uOctaves, 2);
     float dt = max((t1 - t0) / float(uSteps), 1.5);
     float t = t0 + dt * dither(gl_FragCoord.xy);
@@ -73,8 +73,8 @@ void main() {
             // than going dark: the sun term keeps a floor and the sky fills in the rest.
             vec3 albedo = mix(vec3(0.66, 0.65, 0.64), vec3(0.97, 0.97, 0.98), smoothstep(0.0, 0.4, u));
             vec3 lit = albedo * (ambient * mix(0.85, 1.0, u) * (0.55 + 0.2 * shade)
-                    + uLightColor * mix(0.22, 0.6, shade));
-            lit += vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
+                    + uLightColor * sunTint * mix(0.22, 0.6, shade));
+            lit = lit * skyGain + vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
             float alpha = 1.0 - exp(-d * EXTINCTION * dt);
             colour += transmittance * alpha * lit;
             transmittance *= 1.0 - alpha;

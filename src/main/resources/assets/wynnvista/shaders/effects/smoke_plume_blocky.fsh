@@ -107,8 +107,8 @@ void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, fl
                 // The face the ray enters by is shaded as a block's would be: top brightest, underside darkest.
                 float face = lo.y >= max(lo.x, lo.z) ? (stride.y < 0.0 ? 1.0 : 0.7) : (lo.x >= lo.z ? 0.82 : 0.9);
                 vec3 lit = albedo * face * (ambient * mix(0.85, 1.0, u) * (0.55 + 0.2 * shade)
-                        + uLightColor * mix(0.22, 0.6, shade));
-                lit += vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
+                        + uLightColor * sunTint * mix(0.22, 0.6, shade));
+                lit = lit * skyGain + vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
                 // Cubes fade out just in front of the camera instead of filling the view with one face.
                 float nearFade = smoothstep(size, size * 3.0, length(centre - origin) * size);
                 float alpha = opacity * mix(0.55, 1.0, scale) * nearFade;
@@ -140,7 +140,7 @@ void main() {
     int first = 0;
     while (first < LEVELS - 1 && CELL[first] < MIN_PIXELS * uPixelSize) first++;
 
-    vec3 ambient = mix(uAmbient, uFogColor, 0.45);
+    vec3 ambient = skyLight(uAmbient);
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;

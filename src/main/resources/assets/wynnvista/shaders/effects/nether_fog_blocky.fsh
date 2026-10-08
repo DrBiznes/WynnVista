@@ -132,8 +132,8 @@ void main() {
     while (first < LEVELS - 1 && CELL[first].y < MIN_PIXELS * uPixelSize) first++;
 
     // The sky lights the fog by day; at night almost all of its colour is the lava's own glow.
-    vec3 ambient = mix(uAmbient, uFogColor, 0.45);
-    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + uLightColor * 0.3);
+    vec3 ambient = skyLight(uAmbient);
+    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + uLightColor * sunTint * 0.3) * skyGain;
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;

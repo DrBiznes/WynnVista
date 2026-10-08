@@ -53,8 +53,8 @@ void main() {
     span.y = min(span.y, span.x + MAX_DEPTH);
 
     // The sky lights the fog by day; at night almost all of its colour is the lava's own glow.
-    vec3 ambient = mix(uAmbient, uFogColor, 0.45);
-    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + uLightColor * 0.3);
+    vec3 ambient = skyLight(uAmbient);
+    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + uLightColor * sunTint * 0.3) * skyGain;
     int steps = min(uSteps, MAX_STEPS);
     int octaves = min(uOctaves, MAX_OCTAVES);
     float dt = max((span.y - span.x) / float(steps), 1.0);

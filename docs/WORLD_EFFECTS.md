@@ -20,7 +20,7 @@ World effects are drawn over the **finished world image**, after every world pas
 | Cloud layer registry (one optional layer per frame) | `effects/CloudLayer` |
 | Better Clouds layer: its clouds alone and the depth from before them | `compat/betterclouds/BetterCloudsLayer`, `BetterCloudsSupport`, `MixinBetterCloudsRenderer` |
 | Fog rules: where the probe looks, which distances it trusts, smoothing, the LOD border fade (pure, unit-tested) | `effects/EffectFog` |
-| The plume: placement, shape, sun/moon lighting, rendering style (pure, unit-tested) | `effects/SmokePlume` |
+| The plume: placement, shape, sun/moon lighting, the pack sun path and the brightness reference for matching a pack's sky, rendering style (pure, unit-tested) | `effects/SmokePlume` |
 | The Roots of Corruption lava fog: placement, shape, drift, glow, rendering style (pure, unit-tested) | `effects/NetherFog` |
 | Shaders: shared scene code, the plume's shape and its two styles, the lava fog's shape and its two styles, the half-resolution composite, the fog probe | `assets/wynnvista/shaders/effects/{scene.glsl,plume_shape.glsl,smoke_plume.fsh,smoke_plume_blocky.fsh,nether_fog_shape.glsl,nether_fog.fsh,nether_fog_blocky.fsh,upsample.fsh,fog_probe.fsh}` |
 
@@ -88,6 +88,23 @@ Its limits are why it is no longer the first choice: it needs terrain at about t
 
 WynnIris' own post-process fog (Mist Woods, skybox scene effects) is not part of any pack's formula. With a recognised pack it is therefore no longer followed, where the probe used to catch it once it had swallowed the terrain.
 
+## Lighting under a shader pack
+
+An effect has its own lighting: a sun and moon on a fixed east-west path, a sky light, and colours for each time of day (`SmokePlume.lighting`). A shader pack lights, exposes and grades its scene differently, so an effect with only its own lighting was a dark shape at night in every pack and off-colour at sunrise. While a pack renders the world, two things are taken from it instead ("Match Shader Pack Lighting" on the World Effects config page, `effectPackLighting`, on by default):
+
+- **Where the light comes from.** Iris knows the pack's `sunPathRotation` (`WorldRenderingPipeline.getSunPathRotation()`, read in `compat/iris/IrisPackOptions`). The light direction follows the path Iris gives the pack's sun, RotY(-90) RotZ(rotation) RotX(sky angle) of straight up, with the moon opposite: a negative rotation leans the noon sun to the south. Without a pack the fixed path, with its slight southward lean, is kept.
+- **How bright and what colour.** The probe's second texel holds the colour of the sky just above the horizon in the effect's direction (see Fog). `skyLight()` in `scene.glsl` uses it three ways: the effect's sky light keeps its strength but takes 80% of that sky's hue; its sun or moon light takes 50% of it; and everything it is lit by is scaled so that a middling part of the effect (`SmokePlume.skyReference`: three quarters of its sky light plus 45% of its sun light) is as bright as that sky, within 0.35x to 2.5x. The lava glow of the plume and the lava fog's own emission are not scaled.
+
+The reasoning for the horizon as the reference: smoke and haze both scatter the same light, so by day a plume is about as bright as the haze at the horizon, and at night it is a moonlit shape of about the sky's brightness. The image is the pack's finished one, after its tonemapping, which is also where effects are drawn, so no knowledge of the pack's exposure is needed.
+
+Limits:
+
+- It needs sky at the horizon in view near the effect. Until one has been seen (looking straight down, or from inside a canyon) the effect keeps its own lighting, with the pack's sun direction.
+- One colour for the whole effect. A pack's sunset is far brighter towards the sun than away from it; the sample is an average over the effect's part of the view and half its width to either side.
+- Pack clouds or a sun disc inside that strip of sky are averaged in.
+- The effect still does not receive the pack's bloom, and is not in its water reflections.
+- Not applied without a shader pack: there the game's fog colour tints the sky light, as before.
+
 ## Better Clouds
 
 [Better Clouds](https://github.com/Qendolin/better-clouds) is optional; nothing here runs without it. It blends its translucent clouds into the world image and writes their depth into Minecraft's depth buffer. To the effect pass a cloud was therefore terrain: the plume stopped at it, and the cloud showed the sky it had been blended with instead of the smoke behind it.
@@ -101,7 +118,7 @@ WynnIris' own post-process fog (Mist Woods, skybox scene effects) is not part of
 In `scene.glsl`, `sceneDistance()` uses the copied depth wherever the vanilla depth is the cloud's, so anything drawn nearer after the clouds still counts. Each effect records what its march had gathered when it reached the cloud's distance (`cloudDistance()`), and `underClouds()` puts the cloud between that part and the rest: the part behind is weakened by the cloud's opacity, and the cloud's own colour, which blending the effect over the image would cover, is added back. Without a shader pack the result is exactly what drawing smoke, cloud, smoke in order would give.
 
 - **Far clouds.** Better Clouds clamps clouds beyond the vanilla far plane onto it, so they have no usable depth. Their distance is taken as where the ray meets the dimension's cloud height.
-- **Shader packs.** With a pack active Better Clouds draws into the pack's buffers and the pack processes the image afterwards, so the cloud colour in the image is not the captured one. The smoke behind a cloud is then only weakened by the cloud's opacity, which lets up to a quarter of the cloud's contrast against the sky through where the smoke is dense.
+- **Shader packs.** Effects are composited after the pack's final pass. Their fog is modelled or measured (see Fog) and their lighting matched to the pack's sky and sun path (see Lighting under a shader pack); they do not receive the pack's bloom, are not in its reflections, and pack clouds do not hide them (Better Clouds' clouds are handled, see Better Clouds). Run with Complementary Reimagined, BSL and Photon on Voxy only.
 - **Other versions.** `BetterCloudsSupport` reads the renderer's bytecode for that draw call before the mixin is applied. A Better Clouds build without it is left alone and logs `Better Clouds world effect integration unavailable`; its clouds then hide effects as before.
 - **Cost.** One depth copy and one more full-view cloud shading draw per frame while an effect is in view. Not measured.
 - No Better Clouds code or assets are included, and the mod is not compiled against it.
@@ -186,7 +203,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 
 | Check | Result |
 | --- | --- |
-| `gradlew build`: 61 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
+| `gradlew build`: 63 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
 | Voxy, no shader pack: Ragni view, crater close-ups, far view from the east, noon / sunset / night | PASS: the plume rises out of the crater, the crater rim and nearer LOD terrain hide it, lava glow at night (`pw-*`, `final-*`, `half-*`) |
 | Voxy + Complementary Reimagined | PASS (`iv-*`), run before the culling and half-resolution work |
 | DH (OpenGL), no shader pack | PASS for drawing and LOD occlusion (`pv-*`), run before the culling and half-resolution work |
@@ -205,6 +222,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Voxy + Complementary with `BORDER_FOG_DISTANCE_OVERWORLD=10` (run with the border-only version) | PASS: the option was read (`strength 10.0` in that version's log); the plume is half faded at 2,000 and gone at 2,900 with the terrain (`border3-*`) |
 | Voxy + BSL v10.1.8, defaults: noon, then midnight | Recognised and applied. By eye the plume is brighter than BSL's dim, blue scene by day and a dark shape at night: its own lighting does not follow the pack's exposure, which no fog amount corrects. From y 420 BSL's cloud layer lies between the camera and the terrain and does not cover the plume (`fm-bsl-*`) |
 | Voxy + Photon v1.3b, defaults: noon, sunrise, midnight | Recognised and applied (profile log: haze 0.01–0.04, fade 0.57 at the foot and 0.25 at the top at 2,900 blocks; horizon colour read as about 0.65 0.69 0.74). From y 140 the plume sits in the scene's haze. From y 420 Photon's cloud sea covers the terrain but not the plume (`fm-photon-*`) |
+| Lighting match (2026-10-07), Voxy, 854x480, the plume from 2,000 blocks at y 140: noon, midnight, sunrise with Complementary Reimagined, BSL v10.1.8 and Photon v1.3b | PASS by eye and by pixel: the plume is within a few percent of the sky beside it at all three times in all three packs (for example Complementary at midnight: plume 34 43 58, sky 31 40 52; BSL at sunrise: plume 232 200 180, sky 227 198 167), where before it was a dark shape at night. Profile log: horizon sky read as 0.73 0.88 0.95 at noon, 0.09 0.17 0.22 at midnight and 0.95 0.85 0.70 at sunrise in BSL (`lit-bsl-*`, `lit-comp-*`, `lit-photon-*`, `lit-sheet.png`). The sun path rotation is unit-tested only: which side of the plume is lit was not compared with the packs' shadows. Not run: DH, the lava fog, the blocky styles, rain, the config toggle |
 | Fog models not run: DH with any pack, the lava fog, a WynnIris ambiance preset, changed BSL or Photon options, rain under a pack, DH's height fog modes, the config toggle, an Iris build without the option classes, the live server | |
 | Photon with the WynnIris ambiance pack on the live server (manual, by the maintainer, 2026-10-07) | PASS by eye: the plume is hidden by the presets' fog. No screenshots or probe readings recorded |
 | Lava fog, Voxy, no shader pack and Complementary Reimagined (2026-10-07), 854x480 and 1920x1080: on the surface at the rim, in the pit looking up, inside the layer, 300 blocks away from above, straight down from y 520; midnight, noon, dusk | PASS: drawn with vanilla + LOD depth in both, spikes and terrain hide it, nothing below the floor (y 85 in these runs; lowered to y 67 afterwards and re-checked from the pit, `nx-*`), covers the corrupted ground (`nv-*`, `nw-*`) |
@@ -224,7 +242,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **DH fixture height.** In the DH fixture the imported LOD terrain sits roughly 40–50 blocks lower than the same terrain in the Voxy fixture, so the plume floats above the cone there. In the Voxy fixture the supplied peak coordinates land exactly in the crater. This looks like a vertical shift of the copied DH database in the superflat save, not an effect error, but it must be confirmed with DH on the live server.
 - **Up close in real chunks.** The fixture has no real Wynncraft blocks, so the view from inside vanilla render distance (standing on the mountain, in the crater, inside the smoke) is only covered by the pillar test. Half-resolution edges against real foliage have not been seen.
 - **Shader packs.** The plume is composited after the pack's final pass with its own lighting (sun/moon direction from the time of day, sky colour from the fog colour). The pack's fog is matched by measurement (see Fog); it does not receive the pack's bloom or tonemapping, and pack clouds do not hide it (Better Clouds' clouds are handled, see Better Clouds). Only Complementary Reimagined was run.
-- **Fog models.** See the approximations and the runs not made under Fog and Results. A pack's clouds lying between the camera and an effect, and the effects' own lighting against a pack's exposure (BSL by day, every pack at night), are the visible mismatches left; neither is fog.
+- **Fog models.** See the approximations and the runs not made under Fog and Results. A pack's clouds lying between the camera and an effect are the visible mismatch left.
 - **Fog probe.** Now the fallback only. Not run with DH or without a shader pack; its horizon-colour mode was run with the three packs on Voxy only. Photon with the WynnIris ambiance pack has only the manual check of the measuring version; with the Photon model that view has not been looked at again.
 - **Lava fog.** Run only in the Voxy fixture, which has LOD terrain and no real blocks; not run with DH, in rain, with Photon or on the live server. Its extent comes from a screenshot, so the rim may need adjusting against the real area. Density and colour were set by eye. Pack and vanilla clouds in front of the fog are drawn under it (see Translucents).
 - **Blocky plume style.** Run only in the Voxy fixture without a shader pack; not run with DH, with a shader pack, at 1920x1080 or on the live server. Beyond about 3,000 blocks a cube is only a few pixels and may shimmer as it rises, and the change of lattice with distance is a visible switch; neither was looked at in motion. Band heights, cube sizes, opacity and shading were set by eye.
@@ -233,6 +251,21 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **Better Clouds.** Run only in the Voxy fixture at 854x480, with Better Clouds 1.13.11 and its default settings; not run with DH, in Fabulous graphics, on the live server, or in motion. The half-resolution path (plume filling the view) was not looked at with clouds in front: there the cloud's outline inside the smoke is at half resolution. On hardware where Better Clouds uses its depth fallback the clouds get no depth and all use the cloud-height estimate. The added GPU time was not measured.
 - **Performance** was measured on one GPU with Voxy only; nothing was measured on integrated or older graphics. The switch between the direct and half-resolution paths at 12% coverage has no hysteresis.
 - DH's Blaze3D renderer and vanilla with no LOD mod were not run. The fixture-only `FIXTURE_CUSTOM` mask rule is covered by unit tests, not by a run.
+
+## Future locations
+
+Places to add world effects to. None is started; each needs its anchor, bounds and a fixture run before it is listed as done.
+
+- [ ] Lake Gylia
+- [ ] The Forgery
+- [ ] Lights Secret
+- [ ] Sky Islands
+- [ ] Ozoth's Spire
+- [ ] Qira Hive
+- [ ] Volcanic Isles
+- [ ] Mistwoods
+- [ ] Toxic Wastes
+- [ ] Path to Darkness
 
 ## Adding an effect
 

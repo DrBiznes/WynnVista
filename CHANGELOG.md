@@ -12,6 +12,8 @@
 - World effects now follow the fog settings of the shader pack in use: Complementary Reimagined/Unbound, BSL and Photon. The amount of fog on the smoke plume and lava fog is worked out from the pack's own fog options (including any you changed), and with Distant Horizons or Voxy they fade out towards the LOD render distance the way the pack fades the terrain there. Other packs are still measured from the picture as before.
 - Without a shader pack, world effects now follow Distant Horizons' own fog settings and Voxy's environmental fog, instead of measuring them.
 - Config: "Follow Fog Settings" switches this off and goes back to measuring the fog from the picture.
+- With a shader pack, world effects are now lit to match it: their brightness and tint follow the sky the pack draws, and their lit side follows the pack's sun and moon path. Before, the smoke plume was a dark shape at night and off-colour at sunrise under shader packs.
+- Config: "Match Shader Pack Lighting" switches this off.
 
 ## 2.1.0
 

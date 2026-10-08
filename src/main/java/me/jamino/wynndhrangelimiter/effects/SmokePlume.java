@@ -65,7 +65,8 @@ public final class SmokePlume implements WorldEffect {
 
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
-        Lighting light = lighting(frame.timeOfDay(), frame.rain());
+        Lighting light = lighting(frame);
+        program.set("uSkyMatch", frame.packLighting() ? 1 : 0, skyReference(light));
         program.set("uVent", (float) (PEAK_X - frame.cameraX()), (float) (VENT_Y - frame.cameraY()),
                 (float) (PEAK_Z - frame.cameraZ()));
         program.set("uShape", HEIGHT, VENT_RADIUS, TOP_RADIUS);
@@ -88,6 +89,20 @@ public final class SmokePlume implements WorldEffect {
      * and sets in the west, as in vanilla.
      */
     public static Lighting lighting(long timeOfDay, float rain) {
+        return lighting(timeOfDay, rain, false, 0);
+    }
+
+    /** The light of a frame: under a shader pack it comes from where that pack puts its sun and moon. */
+    public static Lighting lighting(EffectFrame frame) {
+        return lighting(frame.timeOfDay(), frame.rain(), frame.packLighting(), frame.sunPathRotation());
+    }
+
+    /**
+     * @param packSun         true to follow a shader pack's sun path instead of the fixed one above
+     * @param sunPathRotation that pack's {@code sunPathRotation} in degrees: the path is tilted about the
+     *                        east-west axis, towards the north at noon for a positive value
+     */
+    public static Lighting lighting(long timeOfDay, float rain, boolean packSun, float sunPathRotation) {
         double angle = Math.floorMod(timeOfDay, 24000L) / 24000.0 * Math.PI * 2;
         float sunX = (float) Math.cos(angle);
         float sunY = (float) Math.sin(angle);
@@ -98,6 +113,12 @@ public final class SmokePlume implements WorldEffect {
         float dirX = sunUp ? sunX : -sunX;
         float dirY = Math.max(Math.abs(sunY), 0.12f);
         float dirZ = 0.25f;
+        if (packSun) {
+            // Iris places the sun at RotY(-90) RotZ(rotation) RotX(sky angle) of straight up; the moon is opposite.
+            double tilt = Math.toRadians(sunPathRotation);
+            dirY = Math.max((float) (Math.abs(sunY) * Math.cos(tilt)), 0.12f);
+            dirZ = (float) (-Math.abs(sunY) * Math.sin(tilt));
+        }
         float length = (float) Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
         float dim = 1 - 0.55f * clamp(rain);
         float sun = day * dim;
@@ -109,6 +130,19 @@ public final class SmokePlume implements WorldEffect {
         return new Lighting(dirX / length, dirY / length, dirZ / length, red, green, blue,
                 ambient * 0.92f, ambient * 0.97f, ambient * lerp(1.45f, 1.10f, day),
                 lerp(1.0f, 0.1f, day));
+    }
+
+    /**
+     * Brightness of a middling part of an effect under this light, to compare with the sky a shader pack
+     * has drawn: three quarters of the sky light and somewhat under half of the sun or moon.
+     */
+    public static float skyReference(Lighting light) {
+        return 0.75f * luminance(light.ambientRed(), light.ambientGreen(), light.ambientBlue())
+                + 0.45f * luminance(light.red(), light.green(), light.blue());
+    }
+
+    private static float luminance(float red, float green, float blue) {
+        return 0.2126f * red + 0.7152f * green + 0.0722f * blue;
     }
 
     private static float clamp(float value) {

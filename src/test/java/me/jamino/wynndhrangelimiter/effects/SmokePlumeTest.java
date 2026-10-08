@@ -58,4 +58,39 @@ class SmokePlumeTest {
         float step = SmokePlume.scroll(201, 0) - SmokePlume.scroll(200, 0);
         assertEquals(SmokePlume.RISE_SPEED / 20.0, step, 1e-3);
     }
+
+    @Test
+    void packSunPathTiltsTheLightOutOfTheEastWestPlane() {
+        SmokePlume.Lighting flat = SmokePlume.lighting(6000, 0, true, 0);
+        assertEquals(0f, flat.dirZ(), 1e-6, "an untilted pack sun passes straight overhead");
+        assertEquals(1f, flat.dirY(), 1e-6);
+
+        SmokePlume.Lighting tilted = SmokePlume.lighting(6000, 0, true, -40);
+        assertEquals(Math.sin(Math.toRadians(40)), tilted.dirZ(), 1e-5, "a negative rotation leans the noon sun south");
+        assertEquals(Math.cos(Math.toRadians(40)), tilted.dirY(), 1e-5);
+        assertTrue(SmokePlume.lighting(6000, 0, true, 40).dirZ() < -0.6f, "and a positive one north");
+
+        SmokePlume.Lighting moon = SmokePlume.lighting(18000, 0, true, -40);
+        assertEquals(tilted.dirZ(), moon.dirZ(), 1e-5, "the moon is opposite the sun, so it leans the same way at midnight");
+        assertTrue(moon.dirY() > 0.7f);
+
+        SmokePlume.Lighting morning = SmokePlume.lighting(1500, 0, true, -40);
+        assertTrue(morning.dirX() > 0.5f, "still from the east in the morning");
+        for (long time = 0; time < 24000; time += 500) {
+            SmokePlume.Lighting light = SmokePlume.lighting(time, 0, true, -40);
+            assertEquals(1.0, Math.sqrt(light.dirX() * light.dirX() + light.dirY() * light.dirY()
+                    + light.dirZ() * light.dirZ()), 1e-5, "unit direction at " + time);
+            assertTrue(light.dirY() > 0, "light from above at " + time);
+        }
+        assertEquals(SmokePlume.lighting(6000, 0), SmokePlume.lighting(6000, 0, false, -40), "without a pack the path is fixed");
+    }
+
+    @Test
+    void skyReferenceFollowsTheLightSoTheMatchKeepsItsShape() {
+        float noon = SmokePlume.skyReference(SmokePlume.lighting(6000, 0));
+        float midnight = SmokePlume.skyReference(SmokePlume.lighting(18000, 0));
+        assertTrue(noon > 0.7f && noon < 1.1f, "a sunlit plume is about as bright as a daytime horizon: " + noon);
+        assertTrue(midnight > 0.05f && midnight < 0.2f, "and dim under the moon: " + midnight);
+        assertTrue(SmokePlume.skyReference(SmokePlume.lighting(6000, 1)) < noon, "dimmer in rain");
+    }
 }

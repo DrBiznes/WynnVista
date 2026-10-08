@@ -1,13 +1,15 @@
 #version 330 core
 
-// Reads what the fog in the world image looks like, into a 1x1 target that is smoothed over time.
+// Reads two things from the world image into a 2x1 target, each smoothed over time.
 //
-// Mode 0, when nothing is known about the fog (an unrecognised shader pack, WynnIris' post-process fog, no LOD
-// fog model): measures it at an effect's distance. Terrain that fog has swallowed has lost its detail and has
-// the fog's colour. Effects apply the result with throughFog().
+// Texel 0, the fog at an effect's distance, measured when nothing is known about it (mode 0: an unrecognised
+// shader pack, WynnIris' post-process fog, no LOD fog model). Terrain that fog has swallowed has lost its
+// detail and has the fog's colour. Effects apply it with throughFog(). When a FogModel says how much fog
+// there is (mode 1) nothing is measured and the texel reads "clear".
 //
-// Mode 1, when a FogModel says how much fog there is: only the fog's colour is wanted, and it is taken from
-// the sky just above the horizon in the effect's direction, which is what distant terrain fades into.
+// Texel 1, the colour of the sky just above the horizon in the effect's direction. It is what distant
+// terrain fades into, so it is the colour of a modelled fog, and under a shader pack it is what the effects'
+// own lighting is matched to (skyLight() in scene.glsl).
 
 #include "scene.glsl"
 
@@ -17,10 +19,10 @@ uniform vec2 uColumns;        // horizontal part of the view to search, 0..1
 uniform vec2 uBand;           // terrain distances that say something about the effect's distance
 uniform vec2 uContrast;       // terrain detail at which it counts as swallowed, and as fully visible
 uniform float uRate;          // share of this frame's measurement blended in; 1 replaces the old value
-uniform int uProbeMode;       // 0: terrain detail and colour, 1: colour of the sky at the horizon
+uniform int uProbeMode;       // 0: measure the fog, 1: a model knows it
 
-out vec4 fragColor;           // mode 0: rgb colour of terrain at the effect's distance, a: how much detail it keeps
-                              // mode 1: rgb colour of the horizon sky, negative while none was seen, a: 1
+out vec4 fragColor;           // texel 0: rgb colour of terrain at the effect's distance, a: how much detail it keeps
+                              // texel 1: rgb colour of the horizon sky, negative while none was seen, a: 1
 
 const int COLUMNS = 32;
 const int ROWS = 24;
@@ -64,7 +66,7 @@ void horizon() {
             count += 1.0;
         }
     }
-    vec4 previous = texelFetch(uPrevious, ivec2(0), 0);
+    vec4 previous = texelFetch(uPrevious, ivec2(1, 0), 0);
     bool fresh = uRate >= 1.0 || previous.r < 0.0;
     if (count < 0.5) {
         fragColor = uRate >= 1.0 ? vec4(-1.0, -1.0, -1.0, 1.0) : vec4(previous.rgb, 1.0);
@@ -74,8 +76,12 @@ void horizon() {
 }
 
 void main() {
-    if (uProbeMode == 1) {
+    if (gl_FragCoord.x > 1.0) {
         horizon();
+        return;
+    }
+    if (uProbeMode == 1) {
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
         return;
     }
     vec2 size = vec2(textureSize(uSceneColor, 0));
@@ -103,7 +109,7 @@ void main() {
         }
     }
     vec4 previous = texelFetch(uPrevious, ivec2(0), 0);
-    // A value left by the other mode may hold no colour.
+    // A texture that has never been measured into holds no colour.
     previous.rgb = max(previous.rgb, 0.0);
     // Without terrain at the right distance the previous value stands (or, on a fresh start, "clear").
     if (count < 0.5) {

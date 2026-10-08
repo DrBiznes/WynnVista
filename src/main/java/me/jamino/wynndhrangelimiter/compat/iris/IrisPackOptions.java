@@ -2,12 +2,13 @@ package me.jamino.wynndhrangelimiter.compat.iris;
 
 import me.jamino.wynndhrangelimiter.effects.EffectFog;
 import net.irisshaders.iris.Iris;
+import net.irisshaders.iris.pipeline.WorldRenderingPipeline;
 import net.irisshaders.iris.shaderpack.ShaderPack;
 import net.irisshaders.iris.shaderpack.option.OptionSet;
 import net.irisshaders.iris.shaderpack.option.values.OptionValues;
 
 /**
- * Reads the active shader pack's option values. These are Iris internals, not its API, so they are kept in
+ * Reads the active shader pack's option values and sun path. These are Iris internals, not its API, so they are kept in
  * this class alone: {@link IrisSupport#packOptions()} catches the linkage error of a build that lacks them.
  */
 final class IrisPackOptions {
@@ -15,6 +16,12 @@ final class IrisPackOptions {
     private static EffectFog.PackOptions options;
 
     private IrisPackOptions() {}
+
+    /** The active pack's {@code sunPathRotation} in degrees; 0 while no pipeline exists. */
+    static float sunPathRotation() {
+        WorldRenderingPipeline pipeline = Iris.getPipelineManager().getPipelineNullable();
+        return pipeline == null ? 0 : pipeline.getSunPathRotation();
+    }
 
     /** Null when Iris has no pack loaded. Changing an option reloads the pack, so one reading per pack holds. */
     static EffectFog.PackOptions current() {

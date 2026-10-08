@@ -84,7 +84,7 @@ public final class WorldEffects {
     private static long profiledNanos;
     private static int profiledFrames;
     private static String profiledDetail = "";
-    private static final float[] profiledProbe = {0, 0, 0, 1};
+    private static final float[] profiledProbe = {0, 0, 0, 1, -1, -1, -1, 1};
     private static boolean active;
 
     private WorldEffects() {}
@@ -116,8 +116,9 @@ public final class WorldEffects {
                          float cloudHeight, float cameraY, FogModel fog, FogTable.Range fogRange) {}
 
     /**
-     * One effect's 1x1 fog measurement. It is smoothed over time, so each frame reads the previous result
-     * from one texture and writes the new one to the other.
+     * One effect's two readings of the world image, side by side in a 2x1 texture: the fog measurement, and
+     * the colour of the sky at the horizon. Both are smoothed over time, so each frame reads the previous
+     * results from one texture and writes the new ones to the other.
      */
     private static final class FogProbe {
         final int[] textures = new int[2];
@@ -142,8 +143,11 @@ public final class WorldEffects {
         Framebuffer main = client.getFramebuffer();
         if (!(main.getColorAttachment() instanceof GlTexture color)
                 || !(main.getDepthAttachment() instanceof GlTexture depth)) return;
+        // Under a shader pack the effects are lit from that pack's sun path and matched to the sky it drew.
+        boolean packLighting = ModConfig.effectPackLighting() && IrisSupport.shaderPackInUse();
         EffectFrame frame = new EffectFrame(cameraPos.x, cameraPos.y, cameraPos.z, client.world.getTime(),
-                client.world.getTimeOfDay(), tickProgress, client.world.getRainGradient(tickProgress));
+                client.world.getTimeOfDay(), tickProgress, client.world.getRainGradient(tickProgress),
+                packLighting, packLighting ? IrisSupport.sunPathRotation() : 0);
         float cloudHeight = client.world.getEnvironmentAttributes()
                 .getAttributeValue(EnvironmentAttributes.CLOUD_HEIGHT_VISUAL, cameraPos) - (float) cameraPos.y;
         try {
@@ -276,8 +280,9 @@ public final class WorldEffects {
                 if (PROFILE) {
                     profiledDetail = effect.id() + " " + (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
                             + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
-                            + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f", profiledProbe[0],
-                            profiledProbe[1], profiledProbe[2], profiledProbe[3])
+                            + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f, horizon sky %.2f %.2f %.2f",
+                            profiledProbe[0], profiledProbe[1], profiledProbe[2], profiledProbe[3],
+                            profiledProbe[4], profiledProbe[5], profiledProbe[6])
                             + modelledAt(scene.fog(), env, entry.distance(), box);
                 }
             }
@@ -343,7 +348,7 @@ public final class WorldEffects {
         int previous = probe.current;
         probe.current = 1 - previous;
         GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[probe.current]);
-        GL11C.glViewport(0, 0, 1, 1);
+        GL11C.glViewport(0, 0, 2, 1);
         bind(5, GL11C.GL_TEXTURE_2D, color);
         bind(6, GL11C.GL_TEXTURE_2D, probe.textures[previous]);
         fogProgram.use();
@@ -354,17 +359,17 @@ public final class WorldEffects {
         fogProgram.set("uBand", band.near(), band.far());
         fogProgram.set("uContrast", EffectFog.CONTRAST_GONE, EffectFog.CONTRAST_CLEAR);
         fogProgram.set("uRate", rate);
-        // With a model the amount of fog is known; the probe then only fetches the colour of the horizon.
+        // With a model the amount of fog is known and is not measured.
         fogProgram.set("uProbeMode", scene.fog() != null && !scene.fog().measured() ? 1 : 0);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
 
         if (PROFILE && profiledFrames == 0) {
             int packBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
             GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, 0);
-            float[] value = new float[4];
-            GL11C.glReadPixels(0, 0, 1, 1, GL11C.GL_RGBA, GL11C.GL_FLOAT, value);
+            float[] value = new float[8];
+            GL11C.glReadPixels(0, 0, 2, 1, GL11C.GL_RGBA, GL11C.GL_FLOAT, value);
             GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, packBuffer);
-            System.arraycopy(value, 0, profiledProbe, 0, 4);
+            System.arraycopy(value, 0, profiledProbe, 0, 8);
         }
     }
 
@@ -378,8 +383,8 @@ public final class WorldEffects {
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
             // No colour seen yet, full visibility. Full floats: at high frame rates each step of the
             // smoothing is smaller than a half float can hold near 1.
-            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, 1, 1, 0, GL11C.GL_RGBA, GL11C.GL_FLOAT,
-                    new float[] {-1, -1, -1, 1});
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, 2, 1, 0, GL11C.GL_RGBA, GL11C.GL_FLOAT,
+                    new float[] {-1, -1, -1, 1, -1, -1, -1, 1});
             probe.framebuffers[i] = GL30C.glGenFramebuffers();
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[i]);
             GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
