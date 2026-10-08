@@ -14,6 +14,8 @@
 - Config: "Follow Fog Settings" switches this off and goes back to measuring the fog from the picture.
 - With a shader pack, world effects are now lit to match it: their brightness and tint follow the sky the pack draws, and their lit side follows the pack's sun and moon path. Before, the smoke plume was a dark shape at night and off-colour at sunrise under shader packs.
 - Config: "Match Shader Pack Lighting" switches this off.
+- The clouds of Complementary Reimagined/Unbound, BSL and Photon now pass in front of world effects. Before, the smoke plume was drawn over a shader pack's clouds.
+- Config: "Shader Pack Clouds Hide Effects" switches this off.
 
 ## 2.1.0
 

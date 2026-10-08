@@ -1,6 +1,7 @@
 package me.jamino.wynndhrangelimiter.compat.iris;
 
 import me.jamino.wynndhrangelimiter.effects.EffectFog;
+import me.jamino.wynndhrangelimiter.effects.PackClouds;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.api.v0.IrisApi;
 import org.objectweb.asm.ClassReader;
@@ -19,8 +20,10 @@ import java.io.InputStream;
 public final class IrisSupport {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
     private static Boolean dhTerrain;
+    private static Boolean pipeline;
     private static boolean packOptionsBroken;
     private static boolean sunPathBroken;
+    private static boolean packCloudsBroken;
 
     private IrisSupport() {}
 
@@ -74,12 +77,51 @@ public final class IrisSupport {
         }
     }
 
+    /**
+     * GL names of the pack's colour buffers that hold its clouds, in the order of
+     * {@link PackClouds.Kind#first()} and {@code second()} (0 for an unused second), or null when they are
+     * not there or not readable.
+     */
+    public static int[] packCloudTextures(PackClouds.Kind kind) {
+        if (packCloudsBroken) return null;
+        try {
+            if (kind.afterDeferred()) {
+                int copy = pipelineSupported() ? IrisCloudCapture.take() : 0;
+                return copy > 0 ? new int[] {copy, 0} : null;
+            }
+            int first = IrisPackOptions.colorTexture(kind.first());
+            int second = kind.second() < 0 ? 0 : IrisPackOptions.colorTexture(kind.second());
+            return first <= 0 || kind.second() >= 0 && second <= 0 ? null : new int[] {first, second};
+        } catch (LinkageError | ReflectiveOperationException | RuntimeException e) {
+            packCloudsBroken = true;
+            LOGGER.warn("The shader pack's buffers are not readable from this Iris build; its clouds will not "
+                    + "hide world effects", e);
+            return null;
+        }
+    }
+
     private static final EffectFog.PackOptions UNKNOWN_PACK = new EffectFog.PackOptions() {
         @Override public String name() { return ""; }
         @Override public boolean defines(String option) { return false; }
         @Override public String value(String option) { return null; }
         @Override public boolean enabled(String option, boolean fallback) { return fallback; }
     };
+
+    /** Whether Iris's pipeline has the shape {@code MixinIrisPipelineClouds} hooks into. */
+    public static synchronized boolean pipelineSupported() {
+        if (pipeline == null) {
+            String owner = "net/irisshaders/iris/pipeline/IrisRenderingPipeline";
+            pipeline = loaded() && hasMethod(owner, "beginTranslucents", "()V")
+                    && hasField(owner, "renderTargets", "Lnet/irisshaders/iris/targets/RenderTargets;")
+                    && hasField(owner, "flippedAfterTranslucent", "Lcom/google/common/collect/ImmutableSet;")
+                    && hasMethod("net/irisshaders/iris/pipeline/CompositeRenderer", "renderAll", "()V");
+            if (loaded() && !pipeline) {
+                LOGGER.info("Iris pipeline hook unavailable (Iris signatures differ); some packs' clouds will "
+                        + "not hide world effects");
+            }
+        }
+        return pipeline;
+    }
 
     /** Whether Iris's DH terrain program pipeline has the expected shape for {@code compat.dh.iris}. */
     public static synchronized boolean dhTerrainSupported() {

@@ -43,6 +43,14 @@ public interface FogModel {
     default float[] colour() { return null; }
 
     /**
+     * For a shader pack whose cloud buffers are understood: where they are and how to read them this
+     * frame. Null for anything else.
+     *
+     * @param viewDistance the vanilla render distance in blocks
+     */
+    default PackClouds clouds(Env env, float viewDistance) { return null; }
+
+    /**
      * True when the model only knows part of the fog, so the fog probe's measurement of the image is still
      * applied on top (an unrecognised shader pack).
      */

@@ -64,6 +64,13 @@ public final class WorldEffects {
     private static int sampler;
     private static int noiseTexture;
     private static int fogTable;
+    private static EffectProgram packCloudProgram;
+    private static boolean packCloudsBroken;
+    private static PackClouds.Kind wantedPackClouds;
+    private static int packCloudFramebuffer;
+    private static int packCloudTexture;
+    private static int packCloudWidth;
+    private static int packCloudHeight;
     private static FogModel tableModel;
     private static FogModel.Env tableEnv;
     private static FogTable.Range tableRange;
@@ -94,6 +101,14 @@ public final class WorldEffects {
         return active;
     }
 
+    /**
+     * The shader pack whose clouds the effects in view are drawn behind, for work during the world pass that
+     * only that needs; null when there is none.
+     */
+    public static PackClouds.Kind packCloudsWanted() {
+        return active ? wantedPackClouds : null;
+    }
+
     /** Every effect, in draw order; the config screen builds one toggle from each. */
     public static List<WorldEffect> all() {
         return EFFECTS;
@@ -110,10 +125,12 @@ public final class WorldEffects {
     /**
      * What every program needs to place a pixel in the world: the vanilla projection, the LOD depth and the
      * cloud layer of this frame, either of which may be null, the cloud height relative to the camera, and
-     * the modelled fog with the part of the world its table covers (see {@link EffectFog#model}), or null.
+     * the modelled fog with the part of the world its table covers (see {@link EffectFog#model}), or null,
+     * and whether a shader pack's clouds are bound in place of a cloud layer.
      */
     private record Scene(Matrix4f forward, Matrix4f inverse, LodDepth.Layer lod, CloudLayer.Layer clouds,
-                         float cloudHeight, float cameraY, FogModel fog, FogTable.Range fogRange) {}
+                         float cloudHeight, float cameraY, FogModel fog, FogTable.Range fogRange,
+                         boolean packClouds) {}
 
     /**
      * One effect's two readings of the world image, side by side in a 2x1 texture: the fog measurement, and
@@ -152,8 +169,8 @@ public final class WorldEffects {
                 .getAttributeValue(EnvironmentAttributes.CLOUD_HEIGHT_VISUAL, cameraPos) - (float) cameraPos.y;
         try {
             if (!created) create();
-            draw(visible, frame, viewProjection, projection.m11(), cloudHeight, fogColor, main, color.getGlId(),
-                    depth.getGlId());
+            draw(visible, frame, viewProjection, projection.m11(), cloudHeight,
+                    client.gameRenderer.getViewDistanceBlocks(), fogColor, main, color.getGlId(), depth.getGlId());
         } catch (RuntimeException e) {
             failed = true;
             LOGGER.error("World effects disabled after a rendering error", e);
@@ -185,12 +202,21 @@ public final class WorldEffects {
     }
 
     private static void draw(List<Visible> visible, EffectFrame frame, Matrix4f viewProjection, float projectionScaleY,
-                             float cloudHeight, Vector4f fogColor, Framebuffer main, int color, int depth) {
+                             float cloudHeight, float viewDistance, Vector4f fogColor, Framebuffer main, int color,
+                             int depth) {
         LodDepth.Layer lod = LodDepth.resolve();
         CloudLayer.Layer clouds = CloudLayer.resolve();
-        FogModel fog = ModConfig.effectFogModels() ? EffectFog.model(IrisSupport.packOptions(), lod) : null;
+        FogModel known = EffectFog.model(IrisSupport.packOptions(), lod);
+        FogModel fog = ModConfig.effectFogModels() ? known : null;
+        FogModel.Env env = FogModel.Env.of(frame.cameraY(), frame.rain(), frame.timeOfDay(),
+                lod == null ? null : lod.backend(), lod == null ? 0 : lod.renderDistance());
+        // A shader pack's own clouds, unless a cloud mod's layer is already there to be drawn behind.
+        PackClouds packClouds = known == null || clouds != null || !ModConfig.effectPackClouds() || packCloudsBroken
+                ? null : known.clouds(env, viewDistance);
+        wantedPackClouds = packClouds == null ? null : packClouds.kind();
+        int[] packTextures = packClouds == null ? null : IrisSupport.packCloudTextures(packClouds.kind());
         logState(visible.size() + " drawn with " + (lod == null ? "vanilla depth only" : "vanilla + LOD depth")
-                + (clouds == null ? "" : ", under a cloud layer")
+                + (clouds != null ? ", under a cloud layer" : packTextures != null ? ", under the pack's clouds" : "")
                 + ", fog: " + (fog == null ? "measured" : fog.name()));
         int width = main.textureWidth;
         int height = main.textureHeight;
@@ -198,9 +224,7 @@ public final class WorldEffects {
         for (Visible entry : visible) boxes.add(entry.effect().bounds());
         Scene scene = new Scene(viewProjection, new Matrix4f(viewProjection).invert(), lod, clouds, cloudHeight,
                 (float) frame.cameraY(), fog,
-                FogTable.range(frame.cameraX(), frame.cameraZ(), boxes));
-        FogModel.Env env = FogModel.Env.of(frame.cameraY(), frame.rain(), frame.timeOfDay(),
-                lod == null ? null : lod.backend(), lod == null ? 0 : lod.renderDistance());
+                FogTable.range(frame.cameraX(), frame.cameraZ(), boxes), packTextures != null);
 
         GlState saved = GlState.capture();
         try {
@@ -220,6 +244,7 @@ public final class WorldEffects {
             bind(10, GL11C.GL_TEXTURE_2D, fogTable);
             if (fog != null) uploadFogTable(fog, env, scene.fogRange());
             GL30C.glBindVertexArray(vertexArray);
+            if (packTextures != null) readPackClouds(packClouds, packTextures, width, height);
 
             beginProfile();
             // The fog already in the image is measured before anything is drawn over it.
@@ -304,8 +329,9 @@ public final class WorldEffects {
         program.set("uLodInverse", lod == null ? scene.inverse() : lod.inverseViewProjection());
         program.set("uLodParams", lod == null ? 0 : 1, lod == null ? 1 : lod.clearDepth(),
                 lod != null && lod.zeroToOne() ? 1 : 0);
-        program.set("uCloudParams", clouds == null ? 0 : 1, clouds != null && clouds.colorInImage() ? 1 : 0,
-                scene.cloudHeight());
+        // 1: a cloud mod's layer with its own depth, 2: a shader pack's clouds as distance and opacity.
+        program.set("uCloudParams", clouds != null ? 1 : scene.packClouds() ? 2 : 0,
+                clouds != null && clouds.colorInImage() ? 1 : 0, scene.cloudHeight());
         program.set("uSceneForward", scene.forward());
         FogModel fog = scene.fog();
         FogTable.Range range = scene.fogRange();
@@ -462,6 +488,57 @@ public final class WorldEffects {
         upsample.set("uLowColor", 3);
         upsample.set("uLowDistance", 4);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+    }
+
+    /**
+     * Draws the pack's cloud buffers into a view-sized texture of distance and opacity ({@code pack_clouds.fsh})
+     * and binds it where a cloud layer's colour would be. If its shader is unusable the pack's clouds are
+     * given up on and nothing is bound.
+     */
+    private static void readPackClouds(PackClouds clouds, int[] textures, int width, int height) {
+        if (packCloudProgram == null) {
+            try {
+                packCloudProgram = EffectProgram.link("pack_clouds.fsh");
+            } catch (RuntimeException e) {
+                packCloudsBroken = true;
+                LOGGER.error("Shader pack clouds will not hide world effects: their shader is unusable", e);
+                return;
+            }
+        }
+        if (packCloudFramebuffer == 0 || width != packCloudWidth || height != packCloudHeight) {
+            if (packCloudFramebuffer == 0) {
+                packCloudFramebuffer = GL30C.glGenFramebuffers();
+                packCloudTexture = GL11C.glGenTextures();
+            }
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE9);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, packCloudTexture);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, width, height, 0, GL11C.GL_RGBA,
+                    GL11C.GL_FLOAT, (ByteBuffer) null);
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudFramebuffer);
+            GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                    packCloudTexture, 0);
+            if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+                throw new IllegalStateException("Pack cloud buffer is incomplete");
+            }
+            packCloudWidth = width;
+            packCloudHeight = height;
+        }
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudFramebuffer);
+        GL11C.glViewport(0, 0, width, height);
+        GL11C.glDisable(GL11C.GL_BLEND);
+        GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
+        bind(3, GL11C.GL_TEXTURE_2D, textures[0]);
+        bind(4, GL11C.GL_TEXTURE_2D, textures[1] > 0 ? textures[1] : textures[0]);
+        packCloudProgram.use();
+        packCloudProgram.set("uPackFirst", 3);
+        packCloudProgram.set("uPackSecond", 4);
+        packCloudProgram.set("uKind", clouds.kind().ordinal());
+        packCloudProgram.set("uPackScale", clouds.uvScale(), clouds.distanceScale());
+        packCloudProgram.set("uViewSize", (float) width, (float) height);
+        GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+        GL11C.glEnable(GL11C.GL_BLEND);
+        bind(9, GL11C.GL_TEXTURE_2D, packCloudTexture);
     }
 
     private static void createLowResolution(int lowWidth, int lowHeight) {

@@ -264,4 +264,32 @@ class FogModelsTest {
         assertEquals(0f, clamped[0]);
         assertEquals(1f, clamped[1]);
     }
+
+    @Test
+    void packsSayWhereTheirCloudsAreKeptAndHowDistancesAreStored() {
+        FogModel.Env voxy = env(100, 0, NOON, LodDepth.Backend.VOXY, 4096);
+        FogModel.Env dh = env(100, 0, NOON, LodDepth.Backend.DISTANT_HORIZONS, 4096);
+        FogModel.Env vanilla = env(100, 0, NOON, null, 0);
+
+        FogModel photon = FogModels.forPack(pack("photon", PHOTON, Map.of()));
+        assertEquals(new PackClouds(PackClouds.Kind.PHOTON, 1, 1), photon.clouds(voxy, 512), "blocks, at full resolution");
+        FogModel upscaled = FogModels.forPack(pack("photon", with(PHOTON, "TAAU_RENDER_SCALE", "0.60"), Map.of("TAAU", true)));
+        assertEquals(0.6f, upscaled.clouds(voxy, 512).uvScale(), "its buffers cover the view with part of themselves");
+        assertEquals(11, PackClouds.Kind.PHOTON.first());
+        assertEquals(12, PackClouds.Kind.PHOTON.second());
+
+        FogModel bsl = FogModels.forPack(pack("x", BSL, Map.of()));
+        assertEquals(new PackClouds(PackClouds.Kind.BSL, 1, 4096), bsl.clouds(voxy, 512), "the LOD distance when it is the larger");
+        assertEquals(1024f, bsl.clouds(vanilla, 512).distanceScale(), "twice the vanilla distance");
+        assertEquals((float) ((4096 + 512) * Math.sqrt(2)), bsl.clouds(dh, 512).distanceScale(), 1e-3, "Iris's far plane for DH");
+        assertEquals(-1, PackClouds.Kind.BSL.second());
+
+        FogModel complementary = FogModels.forPack(pack("x", COMPLEMENTARY, Map.of()));
+        assertEquals(new PackClouds(PackClouds.Kind.COMPLEMENTARY, 1, 3840), complementary.clouds(voxy, 512));
+        assertEquals(4096f, complementary.clouds(dh, 512).distanceScale());
+        assertEquals(512f, complementary.clouds(vanilla, 512).distanceScale(), "the vanilla distance without a LOD mod");
+
+        assertNull(new FogModels.UnknownPack().clouds(voxy, 512), "an unknown pack's buffers are not guessed at");
+        assertNull(new FogModels.Voxy(0.001f, 0, 1, 1, 0, 0, 0).clouds(voxy, 512));
+    }
 }

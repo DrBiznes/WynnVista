@@ -12,7 +12,7 @@ uniform sampler2D uCloudColor;    // the cloud layer alone: premultiplied colour
 uniform mat4 uSceneInverse;   // vanilla NDC -> camera-relative world
 uniform mat4 uLodInverse;     // LOD NDC -> camera-relative world
 uniform vec3 uLodParams;      // x: 1 when a LOD depth is bound, y: its clear value, z: 1 when depth is NDC z directly
-uniform vec3 uCloudParams;    // x: 1 when a cloud layer is bound, y: 1 when the image holds its colour unchanged, z: its height above the camera
+uniform vec3 uCloudParams;    // x: 1 when a cloud mod's layer is bound, 2 when a shader pack's clouds are (uCloudColor then holds r: distance in blocks, a: opacity), y: 1 when the image holds the layer's colour unchanged, z: its height above the camera
 uniform vec2 uViewSize;     // size of the target being drawn, which may be smaller than the depth textures
 uniform vec3 uBoxMin;         // the effect's bounding box, camera-relative
 uniform vec3 uBoxMax;
@@ -50,7 +50,7 @@ vec2 boxSpan(vec3 dir) {
 float sceneDistance(vec2 uv, vec2 ndc) {
     float nearest = INF;
     float depth = texelFetch(uSceneDepth, ivec2(uv * vec2(textureSize(uSceneDepth, 0))), 0).r;
-    if (uCloudParams.x > 0.5) {
+    if (uCloudParams.x > 0.5 && uCloudParams.x < 1.5) {
         // Where the vanilla depth is a cloud's, the terrain behind it is in the copy made before the clouds.
         ivec2 texel = ivec2(uv * vec2(textureSize(uCloudDepth, 0)));
         if (depth >= texelFetch(uCloudDepth, texel, 0).r - 1.0e-6) depth = texelFetch(uTerrainDepth, texel, 0).r;
@@ -98,6 +98,12 @@ float cloudDistance(vec2 uv, vec2 ndc, vec3 dir, out vec4 cloud) {
     if (uCloudParams.x < 0.5) return INF;
     ivec2 texel = ivec2(uv * vec2(textureSize(uCloudColor, 0)));
     cloud = texelFetch(uCloudColor, texel, 0);
+    if (uCloudParams.x > 1.5) {
+        // A shader pack's clouds: only where they are and how much they hide is known, not their colour.
+        float reach = cloud.r;
+        cloud = vec4(0.0, 0.0, 0.0, cloud.a);
+        return cloud.a <= 0.0 ? INF : reach;
+    }
     if (cloud.a <= 0.0) return INF;
     float depth = texelFetch(uCloudDepth, texel, 0).r;
     if (depth < 0.9999998) return length(unproject(uSceneInverse, vec3(ndc, depth * 2.0 - 1.0)));

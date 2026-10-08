@@ -45,6 +45,14 @@ public final class FogModels {
 
         @Override public String name() { return "Complementary"; }
 
+        /** Cloud distances are stored as a share of the pack's render distance, which is the LOD mod's when there is one. */
+        @Override
+        public PackClouds clouds(Env env, float viewDistance) {
+            float margin = env.backend() == LodDepth.Backend.VOXY ? VOXY_MARGIN : 0;
+            float distance = env.lodRenderDistance() > margin ? env.lodRenderDistance() - margin : viewDistance;
+            return new PackClouds(PackClouds.Kind.COMPLEMENTARY, 1, distance);
+        }
+
         @Override
         public void sample(Env env, double along, double y, float[] out) {
             if (atmospheric) {
@@ -92,6 +100,14 @@ public final class FogModels {
 
         @Override public String name() { return "BSL"; }
 
+        /** Cloud distances are stored as a share of twice the vanilla render distance, or of the LOD distance if larger. */
+        @Override
+        public PackClouds clouds(Env env, float viewDistance) {
+            float lod = env.backend() == LodDepth.Backend.VOXY ? env.lodRenderDistance()
+                    : env.backend() == LodDepth.Backend.DISTANT_HORIZONS ? PackClouds.dhFarPlane(env.lodRenderDistance()) : 0;
+            return new PackClouds(PackClouds.Kind.BSL, 1, Math.max(2 * viewDistance, lod));
+        }
+
         @Override
         public void sample(Env env, double along, double y, float[] out) {
             double length = Math.hypot(along, y - env.cameraY());
@@ -125,7 +141,7 @@ public final class FogModels {
     public record Photon(float intensity, float seaLevel, float rayleighStart, float rayleighHalfLife,
                          float mieStart, float mieHalfLife, float rayleigh, float rayleighRain,
                          float mieMorning, float mieNoon, float mieEvening, float mieMidnight, float mieBlueHour,
-                         float mieRain, boolean border) implements FogModel {
+                         float mieRain, boolean border, float renderScale) implements FogModel {
         private static final int STEPS = 8;
         /** The pack's random humidity and temperature average to this factor on the blue haze. */
         private static final double HUMID = 1.25;
@@ -144,7 +160,14 @@ public final class FogModels {
                     number(pack, "AIR_FOG_MIE_DENSITY_MORNING", 0.007f), number(pack, "AIR_FOG_MIE_DENSITY_NOON", 0.0001f),
                     number(pack, "AIR_FOG_MIE_DENSITY_EVENING", 0.005f), number(pack, "AIR_FOG_MIE_DENSITY_MIDNIGHT", 0.005f),
                     number(pack, "AIR_FOG_MIE_DENSITY_BLUE_HOUR", 0.002f), number(pack, "AIR_FOG_MIE_DENSITY_RAIN", 0.03f),
-                    pack.enabled("BORDER_FOG", true));
+                    pack.enabled("BORDER_FOG", true),
+                    pack.enabled("TAAU", false) ? Math.max(0.1f, Math.min(1, number(pack, "TAAU_RENDER_SCALE", 0.75f))) : 1);
+        }
+
+        /** The pack's buffers cover the view with only part of themselves while it upscales its image. */
+        @Override
+        public PackClouds clouds(Env env, float viewDistance) {
+            return new PackClouds(PackClouds.Kind.PHOTON, renderScale, 1);
         }
 
         /** How strongly a haze of the pack's colour setting dims what is behind it, as one number. */

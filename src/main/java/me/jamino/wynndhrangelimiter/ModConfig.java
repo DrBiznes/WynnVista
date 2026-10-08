@@ -42,6 +42,7 @@ public final class ModConfig implements ModMenuApi {
         int effectSteps = 64;
         boolean effectFogModels = true;
         boolean effectPackLighting = true;
+        boolean effectPackClouds = true;
         /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
         Map<String, Boolean> effects = new LinkedHashMap<>();
         String smokePlumeStyle = "REALISTIC";
@@ -67,6 +68,7 @@ public final class ModConfig implements ModMenuApi {
                 if (json.has("effectSteps")) result.effectSteps = json.get("effectSteps").getAsInt();
                 if (json.has("effectFogModels")) result.effectFogModels = json.get("effectFogModels").getAsBoolean();
                 if (json.has("effectPackLighting")) result.effectPackLighting = json.get("effectPackLighting").getAsBoolean();
+                if (json.has("effectPackClouds")) result.effectPackClouds = json.get("effectPackClouds").getAsBoolean();
                 if (json.has("effects") && json.get("effects").isJsonObject()) {
                     json.getAsJsonObject("effects").entrySet().forEach(entry ->
                             result.effects.put(entry.getKey(), entry.getValue().getAsBoolean()));
@@ -112,6 +114,8 @@ public final class ModConfig implements ModMenuApi {
     public static boolean effectFogModels() { return config.effectFogModels; }
     /** Whether effects are lit to match the sky and sun path of the shader pack in use. */
     public static boolean effectPackLighting() { return config.effectPackLighting; }
+    /** Whether a supported shader pack's own clouds hide the effects behind them. */
+    public static boolean effectPackClouds() { return config.effectPackClouds; }
     /** Rendering style of the Mount Wynn smoke plume; an unknown value means the default. */
     public static SmokePlume.Style smokePlumeStyle() {
         try {
@@ -204,6 +208,15 @@ public final class ModConfig implements ModMenuApi {
                             + "match their brightness and tint to the sky the pack draws. Off: their own lighting"))
                     .setSaveConsumer(value -> {
                         config.effectPackLighting = value;
+                        save();
+                    }).build());
+            effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Clouds Hide Effects"),
+                            config.effectPackClouds)
+                    .setDefaultValue(true)
+                    .setTooltip(Text.literal("Draw effects behind the clouds of the shader pack in use "
+                            + "(Complementary, BSL, Photon). Off: effects are drawn over the pack's clouds"))
+                    .setSaveConsumer(value -> {
+                        config.effectPackClouds = value;
                         save();
                     }).build());
             for (WorldEffect effect : WorldEffects.all()) {
