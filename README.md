@@ -9,7 +9,7 @@ The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay
 - Supports both **Distant Horizons** and **Voxy** LOD mods
 - Selective LODs: only shows the LODs of the region you're in (main map, Realm of Light, Void), no peeking at the other realms
 - Doesn't touch your LOD render distance, set it in DH or Voxy
-- **World Effects**: a smoke plume rising from Mount Wynn and the fog over the Roots of Corruption, seen from miles away
+- **World Effects**: a smoke plume rising from Mount Wynn and the fog over the Roots of Corruption, visible in LODs. Many more to come!!
 - Realistic or Blocky style for each effect
 - Works with shader packs: **Complementary**, **BSL** and **Photon**
 - Configurable settings via Mod Menu or config file
