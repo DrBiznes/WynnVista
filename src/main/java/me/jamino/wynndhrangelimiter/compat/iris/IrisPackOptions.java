@@ -1,7 +1,9 @@
 package me.jamino.wynndhrangelimiter.compat.iris;
 
 import me.jamino.wynndhrangelimiter.effects.EffectFog;
+import com.mojang.blaze3d.textures.GpuTexture;
 import net.irisshaders.iris.Iris;
+import net.irisshaders.iris.compat.dh.DHCompat;
 import net.irisshaders.iris.pipeline.IrisRenderingPipeline;
 import net.irisshaders.iris.pipeline.WorldRenderingPipeline;
 import net.irisshaders.iris.shaderpack.ShaderPack;
@@ -10,10 +12,12 @@ import net.irisshaders.iris.shaderpack.option.values.OptionValues;
 import net.irisshaders.iris.targets.RenderTarget;
 import net.irisshaders.iris.targets.RenderTargets;
 
+import net.minecraft.client.texture.GlTexture;
+
 import java.lang.reflect.Field;
 
 /**
- * Reads the active shader pack's option values, sun path and colour buffers. These are Iris internals, not its API, so they are kept in
+ * Reads the active shader pack's option values, sun path, colour buffers and depth copies. These are Iris internals, not its API, so they are kept in
  * this class alone: {@link IrisSupport#packOptions()} catches the linkage error of a build that lacks them.
  */
 final class IrisPackOptions {
@@ -35,15 +39,42 @@ final class IrisPackOptions {
      * every buffer that was written this frame back into its main texture.
      */
     static int colorTexture(int index) throws ReflectiveOperationException {
-        if (!(Iris.getPipelineManager().getPipelineNullable() instanceof IrisRenderingPipeline pipeline)) return 0;
+        RenderTargets targets = renderTargets();
+        if (targets == null || index < 0 || index >= targets.getRenderTargetCount()) return 0;
+        RenderTarget target = targets.get(index);
+        return target == null ? 0 : target.getMainTexture();
+    }
+
+    /**
+     * GL name of the pack's {@code depthtex1}: the depth of the world as it was just before translucents,
+     * water among them, were drawn. 0 while no pack renders.
+     */
+    static int opaqueDepthTexture() throws ReflectiveOperationException {
+        RenderTargets targets = renderTargets();
+        GpuTexture depth = targets == null ? null : targets.getDepthTextureNoTranslucents();
+        return depth instanceof GlTexture texture ? texture.getGlId() : 0;
+    }
+
+    /**
+     * GL names of the two depth textures Iris gives a pack for Distant Horizons, with its water
+     * ({@code dhDepthTex0}) and from before it ({@code dhDepthTex1}); null while there are none.
+     */
+    static int[] dhDepthTextures() {
+        if (!(Iris.getPipelineManager().getPipelineNullable() instanceof IrisRenderingPipeline pipeline)) return null;
+        DHCompat compat = pipeline.getDHCompat();
+        if (compat == null) return null;
+        int surface = compat.getDepthTex();
+        int opaque = compat.getDepthTexNoTranslucent();
+        return surface > 0 && opaque > 0 ? new int[] {surface, opaque} : null;
+    }
+
+    private static RenderTargets renderTargets() throws ReflectiveOperationException {
+        if (!(Iris.getPipelineManager().getPipelineNullable() instanceof IrisRenderingPipeline pipeline)) return null;
         if (renderTargets == null) {
             renderTargets = IrisRenderingPipeline.class.getDeclaredField("renderTargets");
             renderTargets.setAccessible(true);
         }
-        RenderTargets targets = (RenderTargets) renderTargets.get(pipeline);
-        if (targets == null || index < 0 || index >= targets.getRenderTargetCount()) return 0;
-        RenderTarget target = targets.get(index);
-        return target == null ? 0 : target.getMainTexture();
+        return (RenderTargets) renderTargets.get(pipeline);
     }
 
     /** Null when Iris has no pack loaded. Changing an option reloads the pack, so one reading per pack holds. */

@@ -19,9 +19,18 @@ public final class LodDepth {
      * @param backend               the LOD mod that drew it
      * @param renderDistance        the LOD render distance in blocks as a shader pack is told it, 0 when unknown
      * @param fog                   the fog the backend itself drew over its terrain this frame, or null
+     * @param surfaceTextureId      GL name of the same view's depth with the backend's translucents (its
+     *                              water) drawn, when it keeps that apart from the depth without them; else 0
+     * @param opaqueTextureId       GL name of the depth without them, to compare it with; 0 with the above
      */
     public record Layer(int textureId, Matrix4f inverseViewProjection, float clearDepth, boolean zeroToOne,
-                        Backend backend, float renderDistance, FogModel fog) {}
+                        Backend backend, float renderDistance, FogModel fog, int surfaceTextureId,
+                        int opaqueTextureId) {
+        /** Whether this layer can tell where its water is. */
+        public boolean knowsWater() {
+            return surfaceTextureId > 0 && opaqueTextureId > 0 && surfaceTextureId != opaqueTextureId;
+        }
+    }
 
     public enum Backend { DISTANT_HORIZONS, VOXY }
 

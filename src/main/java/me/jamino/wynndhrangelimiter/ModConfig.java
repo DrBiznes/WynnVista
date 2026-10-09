@@ -43,6 +43,7 @@ public final class ModConfig implements ModMenuApi {
         boolean effectFogModels = true;
         boolean effectPackLighting = true;
         boolean effectPackClouds = true;
+        boolean effectPackReflections = true;
         /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
         Map<String, Boolean> effects = new LinkedHashMap<>();
         String smokePlumeStyle = "REALISTIC";
@@ -69,6 +70,7 @@ public final class ModConfig implements ModMenuApi {
                 if (json.has("effectFogModels")) result.effectFogModels = json.get("effectFogModels").getAsBoolean();
                 if (json.has("effectPackLighting")) result.effectPackLighting = json.get("effectPackLighting").getAsBoolean();
                 if (json.has("effectPackClouds")) result.effectPackClouds = json.get("effectPackClouds").getAsBoolean();
+                if (json.has("effectPackReflections")) result.effectPackReflections = json.get("effectPackReflections").getAsBoolean();
                 if (json.has("effects") && json.get("effects").isJsonObject()) {
                     json.getAsJsonObject("effects").entrySet().forEach(entry ->
                             result.effects.put(entry.getKey(), entry.getValue().getAsBoolean()));
@@ -116,6 +118,8 @@ public final class ModConfig implements ModMenuApi {
     public static boolean effectPackLighting() { return config.effectPackLighting; }
     /** Whether a supported shader pack's own clouds hide the effects behind them. */
     public static boolean effectPackClouds() { return config.effectPackClouds; }
+    /** Whether effects are mirrored in the water of a shader pack that draws reflections on it. */
+    public static boolean effectPackReflections() { return config.effectPackReflections; }
     /** Rendering style of the Mount Wynn smoke plume; an unknown value means the default. */
     public static SmokePlume.Style smokePlumeStyle() {
         try {
@@ -219,6 +223,15 @@ public final class ModConfig implements ModMenuApi {
                         config.effectPackClouds = value;
                         save();
                     }).build());
+            effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Water Reflections"),
+                            config.effectPackReflections)
+                    .setDefaultValue(true)
+                    .setTooltip(Text.literal("With a shader pack whose water reflects, show effects in that "
+                            + "water too. Off: water mirrors the sky and terrain but not the effects"))
+                    .setSaveConsumer(value -> {
+                        config.effectPackReflections = value;
+                        save();
+                    }).build());
             for (WorldEffect effect : WorldEffects.all()) {
                 effects.addEntry(entries.startBooleanToggle(Text.literal(effect.name()), effectEnabled(effect.id()))
                         .setDefaultValue(true)
@@ -232,8 +245,7 @@ public final class ModConfig implements ModMenuApi {
                             smokePlumeStyle())
                     .setDefaultValue(SmokePlume.Style.REALISTIC)
                     .setEnumNameProvider(style -> Text.literal(((SmokePlume.Style) style).label()))
-                    .setTooltip(Text.literal("Realistic: soft volumetric smoke. Blocky: translucent cubes, "
-                            + "in the style of the Better Clouds mod"))
+                    .setTooltip(Text.literal("Realistic: soft volumetric smoke. Blocky: translucent cubes"))
                     .setSaveConsumer(value -> {
                         config.smokePlumeStyle = value.name();
                         save();
@@ -242,8 +254,7 @@ public final class ModConfig implements ModMenuApi {
                             netherFogStyle())
                     .setDefaultValue(NetherFog.Style.REALISTIC)
                     .setEnumNameProvider(style -> Text.literal(((NetherFog.Style) style).label()))
-                    .setTooltip(Text.literal("Realistic: soft glowing fog. Blocky: translucent slabs, "
-                            + "in the style of the Better Clouds mod"))
+                    .setTooltip(Text.literal("Realistic: soft glowing fog. Blocky: translucent slabs"))
                     .setSaveConsumer(value -> {
                         config.netherFogStyle = value.name();
                         save();

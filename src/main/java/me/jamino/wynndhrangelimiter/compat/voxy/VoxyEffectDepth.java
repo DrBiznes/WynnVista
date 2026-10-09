@@ -21,6 +21,7 @@ public final class VoxyEffectDepth implements LodDepth.Provider {
     private boolean zeroToOne;
     private float renderDistance;
     private FogModel fog;
+    private int surfaceTexture;
     private boolean rendered;
 
     private VoxyEffectDepth() {}
@@ -30,15 +31,20 @@ public final class VoxyEffectDepth implements LodDepth.Provider {
         LOGGER.info("Voxy depth registered for world effects");
     }
 
-    /** Called from the pipeline mixin once Voxy has drawn a viewport. */
+    /**
+     * Called from the pipeline mixin once Voxy has drawn a viewport.
+     *
+     * @param surfaceTexture the depth with Voxy's translucents, when {@code texture} is without them; else 0
+     */
     public static void publish(int texture, Matrix4fc viewProjection, float clearDepth, boolean zeroToOne,
-                               float renderDistance, FogModel fog) {
+                               float renderDistance, FogModel fog, int surfaceTexture) {
         viewProjection.invert(INSTANCE.inverseViewProjection);
         INSTANCE.texture = texture;
         INSTANCE.clearDepth = clearDepth;
         INSTANCE.zeroToOne = zeroToOne;
         INSTANCE.renderDistance = renderDistance;
         INSTANCE.fog = fog;
+        INSTANCE.surfaceTexture = surfaceTexture;
         INSTANCE.rendered = true;
     }
 
@@ -50,6 +56,6 @@ public final class VoxyEffectDepth implements LodDepth.Provider {
     @Override
     public LodDepth.Layer resolve() {
         return rendered ? new LodDepth.Layer(texture, inverseViewProjection, clearDepth, zeroToOne,
-                LodDepth.Backend.VOXY, renderDistance, fog) : null;
+                LodDepth.Backend.VOXY, renderDistance, fog, surfaceTexture, surfaceTexture > 0 ? texture : 0) : null;
     }
 }

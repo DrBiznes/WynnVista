@@ -68,7 +68,7 @@ class FogModelsTest {
     @Test
     void modelComesFromThePackOrElseFromTheLodMod() {
         FogModel own = new FogModels.Voxy(0.001f, 0, 1, 1, 0.5f, 0.6f, 0.7f);
-        LodDepth.Layer lod = new LodDepth.Layer(1, new Matrix4f(), 1, false, LodDepth.Backend.VOXY, 4096, own);
+        LodDepth.Layer lod = new LodDepth.Layer(1, new Matrix4f(), 1, false, LodDepth.Backend.VOXY, 4096, own, 0, 0);
         assertNull(EffectFog.model(null, null), "vanilla alone: the probe");
         assertSame(own, EffectFog.model(null, lod));
         EffectFog.PackOptions complementary = pack("x", COMPLEMENTARY, Map.of());

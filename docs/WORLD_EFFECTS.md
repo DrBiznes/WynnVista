@@ -102,8 +102,35 @@ Limits:
 - It needs sky at the horizon in view near the effect. Until one has been seen (looking straight down, or from inside a canyon) the effect keeps its own lighting, with the pack's sun direction.
 - One colour for the whole effect. A pack's sunset is far brighter towards the sun than away from it; the sample is an average over the effect's part of the view and half its width to either side.
 - Pack clouds or a sun disc inside that strip of sky are averaged in.
-- The effect still does not receive the pack's bloom, and is not in its water reflections.
+- The effect still does not receive the pack's bloom. It is in the pack's water reflections only as drawn by the pass below.
 - Not applied without a shader pack: there the game's fog colour tints the sky light, as before.
+
+## Water reflections under a shader pack
+
+A shader pack mirrors the sky and the terrain in its water, but effects are drawn after the pack has finished, so the water showed the mountain without its plume. While a pack renders, each effect is therefore drawn a second time, before the effect itself, on the water pixels of the finished image: the pixel's ray is reflected off the water and the effect is marched along the reflected ray with its own shader. "Shader Pack Water Reflections" on the World Effects config page (`effectPackReflections`, on by default). Nothing is drawn without a pack: vanilla water does not reflect.
+
+| Piece | Location |
+| --- | --- |
+| Finding water, the reflected ray, ripples, what hides the reflection | `translucentSurface()`, `mirror()`, `beginRay()` in `scene.glsl`; uniforms `uMirror`, `uMirrorCamera`, `uWater` |
+| A ray that does not start at the camera | `rayOrigin`, `rayStart`, `rayWeight` in `scene.glsl`, used by every effect shader |
+| How much each pack's water reflects, and whether its reflections are on (pure, unit-tested) | `effects/PackWater` |
+| Where on screen a reflection can be (pure, unit-tested) | `EffectCulling.reflection` |
+| The pack's depth from before translucents (`depthtex1`); DH's pair of depths under Iris | `IrisPackOptions.opaqueDepthTexture`, `dhDepthTextures`, through `IrisSupport` |
+| The LOD mod's depth with and without its water | `LodDepth.Layer.surfaceTextureId`, `opaqueTextureId`; Voxy's `fbTranslucent` in `MixinVoxyRenderPipelineDepth` |
+| The pass itself | `WorldEffects.shade` with a `PackWater` |
+
+- **Where water is.** No pack marks its water in a way that is the same for all packs, so water is taken to be a pixel whose depth differs from the depth drawn without translucents and whose surface is level (from the depth's screen derivatives; this leaves out glass walls and portals, not a glass floor). For the vanilla world the pair is the frame's depth and Iris's `depthtex1`. For LOD terrain it is the LOD mod's own pair: Voxy's Iris pipeline draws translucents into a second depth buffer, and Iris keeps DH's depth from before its water. Voxy also writes its LODs into the vanilla depth after `depthtex1` was taken, so a vanilla hit only counts when it is clearly nearer than the LOD.
+- **The ray.** The reflected ray starts at the point behind the water from which it seems to come, so that distances along it are the whole path to the eye and the march, fog and haze code of each effect is used unchanged. Positions along it are true world positions.
+- **Ripples.** Two samples of the effects' noise tilt the water's normal by up to about 1 degree, drifting with time. They fade out where one pixel spans more than a ripple. This is not the pack's own wave pattern.
+- **What hides it.** The reflected ray is followed across the image in 16 steps that grow with distance and stops where it passes just behind terrain the image holds (vanilla or LOD depth). Terrain outside the view hides nothing.
+- **Strength.** `strength * (base + (1 - base) * (1 - cosine)^power)` of the reflection is blended over the water, with each pack's own curve: Complementary 0.15, 3 and its `FRESNEL_MULTIPLIER`; BSL, Photon and unrecognised packs 0.02, 5. A pack whose reflections are off gets none: Complementary `WATER_REFLECT_QUALITY` -1, BSL `REFLECTION` 0, Photon with both `ENVIRONMENT_REFLECTIONS` and `SKY_REFLECTIONS` off.
+- **Culling and cost.** An effect outside the view is kept while its footprint, drawn downward from the camera's height, is in view; only that rectangle is shaded. A pixel that is not water costs two or three depth reads. The reflection is marched at full resolution with half the configured samples and one noise octave fewer. Not measured.
+
+Limits:
+
+- Pack clouds, Better Clouds and anything else in front of the effect are not in its reflection, and the reflection is not hidden by the pack's own reflection of nearer terrain: it is blended over whatever the pack drew on the water.
+- The lava fog thins around the camera; in a reflection it thins around the ray's start instead.
+- An Iris build without the fields used logs `The shader pack's depth buffers are not readable` once and draws no reflections in nearby water.
 
 ## Shader pack clouds
 
@@ -143,7 +170,7 @@ A shader pack marches its clouds straight into the image and writes no depth for
 In `scene.glsl`, `sceneDistance()` uses the copied depth wherever the vanilla depth is the cloud's, so anything drawn nearer after the clouds still counts. Each effect records what its march had gathered when it reached the cloud's distance (`cloudDistance()`), and `underClouds()` puts the cloud between that part and the rest: the part behind is weakened by the cloud's opacity, and the cloud's own colour, which blending the effect over the image would cover, is added back. Without a shader pack the result is exactly what drawing smoke, cloud, smoke in order would give.
 
 - **Far clouds.** Better Clouds clamps clouds beyond the vanilla far plane onto it, so they have no usable depth. Their distance is taken as where the ray meets the dimension's cloud height.
-- **Shader packs.** Effects are composited after the pack's final pass. Their fog is modelled or measured (see Fog), their lighting matched to the pack's sky and sun path (see Lighting under a shader pack) and the clouds of Complementary, BSL and Photon drawn in front of them (see Shader pack clouds); they do not receive the pack's bloom and are not in its reflections. Run on Voxy only.
+- **Shader packs.** Effects are composited after the pack's final pass. Their fog is modelled or measured (see Fog), their lighting matched to the pack's sky and sun path (see Lighting under a shader pack) and the clouds of Complementary, BSL and Photon drawn in front of them (see Shader pack clouds); they do not receive the pack's bloom, and are mirrored in its water by a pass of their own (see Water reflections under a shader pack). Run on Voxy only.
 - **Other versions.** `BetterCloudsSupport` reads the renderer's bytecode for that draw call before the mixin is applied. A Better Clouds build without it is left alone and logs `Better Clouds world effect integration unavailable`; its clouds then hide effects as before.
 - **Cost.** One depth copy and one more full-view cloud shading draw per frame while an effect is in view. Not measured.
 - No Better Clouds code or assets are included, and the mod is not compiled against it.
@@ -228,7 +255,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 
 | Check | Result |
 | --- | --- |
-| `gradlew build`: 64 JUnit tests including `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
+| `gradlew build`: JUnit tests including `PackWaterTest`, `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
 | Voxy, no shader pack: Ragni view, crater close-ups, far view from the east, noon / sunset / night | PASS: the plume rises out of the crater, the crater rim and nearer LOD terrain hide it, lava glow at night (`pw-*`, `final-*`, `half-*`) |
 | Voxy + Complementary Reimagined | PASS (`iv-*`), run before the culling and half-resolution work |
 | DH (OpenGL), no shader pack | PASS for drawing and LOD occlusion (`pv-*`), run before the culling and half-resolution work |
@@ -252,6 +279,11 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Photon v1.3b, overcast: 2,000 blocks at y 140; 2,900 at y 420; 850 at y 330 | PASS by eye: hidden with its mountain behind the overcast from 2,000; only the top shows above the cloud sea from 2,900; from 850 the plume rises out of the cloud tops with its base covered. Before, it was drawn over the clouds (`pc-photon-*` against `fm-photon-*`) |
 | BSL v10.1.8, the same views | PASS by eye: the plume's base is behind the cloud layer from above, and it is untouched where no cloud is in front (`pc-bsl-*`) |
 | Complementary Reimagined, the same views and two looking up at the plume from 450 and 650 blocks | PASS by eye: the pack's blocky clouds stay in front of the smoke where they overlap it (`pc3-comp-*`), and the plume is not hidden where they do not (`pc2-comp-*`). Reading the buffer at the end of the frame instead of copying it hid the plume everywhere (`pc-comp-*`), which is why the copy exists |
+| Water reflections (2026-10-08), Voxy, 854x480, noon, LOD water north of Mount Wynn seen from `-49 90 -2860` and `500 60 -2600`. Log line `mirrored in vanilla and LOD water` in each run | |
+| Complementary Reimagined | PASS by eye: the plume stands mirrored in the sea under the mountain's own reflection, and the lava fog's red is mirrored beside it; land in front keeps its place (`wr2-*`, `wr3-*`) |
+| BSL v10.1.8 | Drawn; a faint column under the mountain, about as weak as the pack's own reflections on its dark water at that angle (`wr-bsl-*`) |
+| Photon v1.3b, both blocky styles | Shaders compile and the pass runs; the plume was mostly behind the pack's overcast and its reflection could not be told apart from the mirrored clouds (`wr-photon-*`) |
+| Water reflections not run: DH, vanilla water in real chunks (the fixture has none), glass and other translucents, night, rain, the config toggle, a pack with reflections switched off, the camera close to or under water, GPU time | |
 | Shader pack clouds not run: DH, Complementary Unbound's cloud style, the lava fog, the half-resolution path, Photon with `TAAU`, clouds switched off in a pack, night, the config toggle, an Iris build without the fields used | |
 | Fog models not run: DH with any pack, the lava fog, a WynnIris ambiance preset, changed BSL or Photon options, rain under a pack, DH's height fog modes, the config toggle, an Iris build without the option classes, the live server | |
 | Photon with the WynnIris ambiance pack on the live server (manual, by the maintainer, 2026-10-07) | PASS by eye: the plume is hidden by the presets' fog. No screenshots or probe readings recorded |
@@ -277,6 +309,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **Lava fog.** Run only in the Voxy fixture, which has LOD terrain and no real blocks; not run with DH, in rain, with Photon or on the live server. Its extent comes from a screenshot, so the rim may need adjusting against the real area. Density and colour were set by eye. Pack and vanilla clouds in front of the fog are drawn under it (see Translucents).
 - **Blocky plume style.** Run only in the Voxy fixture without a shader pack; not run with DH, with a shader pack, at 1920x1080 or on the live server. Beyond about 3,000 blocks a cube is only a few pixels and may shimmer as it rises, and the change of lattice with distance is a visible switch; neither was looked at in motion. Band heights, cube sizes, opacity and shading were set by eye.
 - **Blocky lava fog.** Run only in the Voxy fixture without a shader pack, at 854x480; not seen in motion, in rain, in the pit, near the portal's purple glow, or at the distance where the fine lattice is dropped. From inside it is brighter and more opaque than the realistic fog. Slab size, opacity and band height were set by eye.
+- **Water reflections.** Seen only in LOD water on Voxy; the vanilla-world and DH paths are unrun (see Results). Strength and ripples were not compared against each pack pixel by pixel.
 - **Translucents.** Water, particles and clouds that do not write depth are not sorted against the plume. Vanilla clouds, and the clouds of a shader pack other than Complementary, BSL and Photon, are not handled the way Better Clouds' are.
 - **Better Clouds.** Run only in the Voxy fixture at 854x480, with Better Clouds 1.13.11 and its default settings; not run with DH, in Fabulous graphics, on the live server, or in motion. The half-resolution path (plume filling the view) was not looked at with clouds in front: there the cloud's outline inside the smoke is at half resolution. On hardware where Better Clouds uses its depth fallback the clouds get no depth and all use the cloud-height estimate. The added GPU time was not measured.
 - **Performance** was measured on one GPU with Voxy only; nothing was measured on integrated or older graphics. The switch between the direct and half-resolution paths at 12% coverage has no hysteresis.

@@ -49,14 +49,14 @@ void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 
     vec3 size = CELL[level];
     vec3 safe = mix(dir, vec3(1.0e-7), lessThan(abs(dir), vec3(1.0e-7)));
     // The ray inside this level's band of heights.
-    float ya = (bottomTop.x + uOrigin.y) / safe.y;
-    float yb = (bottomTop.y + uOrigin.y) / safe.y;
+    float ya = (bottomTop.x + uOrigin.y - rayOrigin.y) / safe.y;
+    float yb = (bottomTop.y + uOrigin.y - rayOrigin.y) / safe.y;
     from = max(from, min(ya, yb));
     to = min(to, max(ya, yb));
     if (to <= from) return;
 
     // Lattice space: one unit per cell, origin at the centre of the layer's floor.
-    vec3 origin = -uOrigin / size;
+    vec3 origin = (rayOrigin - uOrigin) / size;
     vec3 inv = size / safe;
     vec3 stride = sign(safe);
     vec3 start = origin + safe * from / size;
@@ -77,7 +77,7 @@ void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 
             vec3 glow = fogGlow(q) * uEmission;
             float strength = BILLOWS * smoothstep(0.3, 0.7, field.y) + WISPS * field.z;
             // Slabs shrink to nothing around the camera, leaving a clearing to see through.
-            float reach = smoothstep(NEAR_EMPTY, NEAR_RANGE, length(q + uOrigin));
+            float reach = smoothstep(NEAR_EMPTY, NEAR_RANGE, length(q + uOrigin - rayOrigin));
             float scale = clamp(sqrt(field.x) * strength, 0.0, 1.0) * reach;
             if (scale >= MIN_SIZE) {
                 vec3 h = hash3(cell + float(level) * 17.0);
@@ -86,7 +86,7 @@ void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 
                 vec3 b = (centre + 0.5 * scale - origin) * inv;
                 vec3 lo = min(a, b);
                 vec3 hi = max(a, b);
-                float enter = max(max(lo.x, lo.y), max(lo.z, 0.0));
+                float enter = max(max(lo.x, lo.y), max(lo.z, rayStart));
                 float leave = min(min(hi.x, hi.y), hi.z);
                 if (leave > enter && enter < to) {
                     if (firstHit < 0.0) firstHit = enter;
@@ -118,10 +118,10 @@ void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 
 void main() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
-    vec3 dir = viewRay(ndc);
+    vec3 dir;
 
     fragColor = vec4(0.0);
-    fragDistance = sceneDistance(uv, ndc);
+    fragDistance = beginRay(uv, ndc, dir);
     vec2 span = boxSpan(dir);
     span.y = min(span.y, fragDistance);
     if (span.y <= span.x) return;
@@ -159,5 +159,5 @@ void main() {
     // Aerial perspective: distant fog sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     // That, a shader pack's fog that has swallowed the canyon, and any cloud the fog is behind.
-    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, dir * max(firstHit, 0.0));
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, rayOrigin + dir * max(firstHit, 0.0));
 }

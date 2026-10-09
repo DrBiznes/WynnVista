@@ -24,6 +24,8 @@ public final class IrisSupport {
     private static boolean packOptionsBroken;
     private static boolean sunPathBroken;
     private static boolean packCloudsBroken;
+    private static boolean opaqueDepthBroken;
+    private static boolean dhDepthBroken;
 
     private IrisSupport() {}
 
@@ -96,6 +98,39 @@ public final class IrisSupport {
             packCloudsBroken = true;
             LOGGER.warn("The shader pack's buffers are not readable from this Iris build; its clouds will not "
                     + "hide world effects", e);
+            return null;
+        }
+    }
+
+    /**
+     * GL name of the depth the active shader pack is given as the world without its translucents, 0 when
+     * no pack renders or it is not readable. Where it differs from the finished depth there is water, or
+     * glass.
+     */
+    public static int opaqueDepthTexture() {
+        if (opaqueDepthBroken || !shaderPackInUse()) return 0;
+        try {
+            return IrisPackOptions.opaqueDepthTexture();
+        } catch (LinkageError | ReflectiveOperationException | RuntimeException e) {
+            opaqueDepthBroken = true;
+            LOGGER.warn("The shader pack's depth buffers are not readable from this Iris build; world effects "
+                    + "will not be reflected in nearby water", e);
+            return 0;
+        }
+    }
+
+    /**
+     * GL names of Distant Horizons' depth under the active shader pack, with its water and without, or null
+     * when no pack renders, DH draws nothing under it or they are not readable.
+     */
+    public static int[] dhDepthTextures() {
+        if (dhDepthBroken || !shaderPackInUse()) return null;
+        try {
+            return IrisPackOptions.dhDepthTextures();
+        } catch (LinkageError | RuntimeException e) {
+            dhDepthBroken = true;
+            LOGGER.warn("Distant Horizons' depth under a shader pack is not readable from this Iris build; "
+                    + "world effects will not be reflected in its water", e);
             return null;
         }
     }

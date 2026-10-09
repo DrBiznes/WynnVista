@@ -2,6 +2,7 @@ package me.jamino.wynndhrangelimiter.mixin.client;
 
 import me.cortex.voxy.client.config.VoxyConfig;
 import me.cortex.voxy.client.core.AbstractRenderPipeline;
+import me.cortex.voxy.client.core.IrisVoxyRenderPipeline;
 import me.cortex.voxy.client.core.NormalRenderPipeline;
 import me.cortex.voxy.client.core.RenderProperties;
 import me.cortex.voxy.client.core.rendering.Viewport;
@@ -34,7 +35,17 @@ public abstract class MixinVoxyRenderPipelineDepth {
         if (viewport.width != main.textureWidth || viewport.height != main.textureHeight) return;
         // A section is 32 chunks. Shader packs are given the same figure (vxRenderDistance, in chunks).
         VoxyEffectDepth.publish(fb.getDepthTex().id, viewport.MVP, properties.clearDepth(), properties.isZero2One(),
-                VoxyConfig.CONFIG.sectionRenderDistance * 512, wynnvista$ownFog(viewport));
+                VoxyConfig.CONFIG.sectionRenderDistance * 512, wynnvista$ownFog(viewport),
+                wynnvista$surfaceDepth());
+    }
+
+    /**
+     * Under a shader pack Voxy draws its translucents, the water among them, into a second depth buffer that
+     * starts as a copy of the first; the two differ exactly where LOD water is. 0 for its own pipeline.
+     */
+    @Unique
+    private int wynnvista$surfaceDepth() {
+        return (Object) this instanceof IrisVoxyRenderPipeline iris ? iris.fbTranslucent.getDepthTex().id : 0;
     }
 
     /** The fog Voxy's own pipeline blends over its terrain; a shader pack's pipeline draws none of it. */

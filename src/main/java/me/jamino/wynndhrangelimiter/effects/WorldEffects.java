@@ -53,6 +53,10 @@ public final class WorldEffects {
     private static final int PROFILE_FRAMES = 100;
     /** Share of the view an effect must cover before it is marched at half resolution. */
     private static final double HALF_RESOLUTION_COVERAGE = 0.12;
+    /** Blocks after which the ripples on water repeat: the noise texture's size times RIPPLE_SIZE in scene.glsl. */
+    private static final double RIPPLE_PERIOD = NOISE_SIZE * 6.0;
+    /** Ticks after which they repeat in time: the same size, at half a noise cell per second. */
+    private static final long RIPPLE_TICKS = NOISE_SIZE * 2 * 20;
 
     private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog());
 
@@ -71,6 +75,8 @@ public final class WorldEffects {
     private static int packCloudTexture;
     private static int packCloudWidth;
     private static int packCloudHeight;
+    private static EffectFog.PackOptions waterPack;
+    private static PackWater packWater;
     private static FogModel tableModel;
     private static FogModel.Env tableEnv;
     private static FogTable.Range tableRange;
@@ -120,7 +126,17 @@ public final class WorldEffects {
         CloudLayer.beginFrame();
     }
 
-    private record Visible(WorldEffect effect, EffectCulling.ScreenRect rect, double distance) {}
+    /**
+     * An effect with something to draw: {@code rect} is where it is in view, {@code mirror} where its
+     * reflection in water can be. Either may be null, not both.
+     */
+    private record Visible(WorldEffect effect, EffectCulling.ScreenRect rect, EffectCulling.ScreenRect mirror,
+                           double distance) {
+        /** The part of the view that has to do with the effect. */
+        EffectCulling.ScreenRect seen() {
+            return rect != null ? rect : mirror;
+        }
+    }
 
     /**
      * What every program needs to place a pixel in the world: the vanilla projection, the LOD depth and the
@@ -151,7 +167,8 @@ public final class WorldEffects {
         if (failed || !ModConfig.effectsEnabled() || client.world == null || client.player == null) return;
         Vec3d cameraPos = camera.getCameraPos();
         Matrix4f viewProjection = new Matrix4f(projection).mul(view);
-        List<Visible> visible = cull(client, cameraPos, viewProjection);
+        PackWater water = water();
+        List<Visible> visible = cull(client, cameraPos, viewProjection, water != null);
         if (visible.isEmpty()) {
             logState("none visible");
             return;
@@ -170,15 +187,35 @@ public final class WorldEffects {
         try {
             if (!created) create();
             draw(visible, frame, viewProjection, projection.m11(), cloudHeight,
-                    client.gameRenderer.getViewDistanceBlocks(), fogColor, main, color.getGlId(), depth.getGlId());
+                    client.gameRenderer.getViewDistanceBlocks(), fogColor, main, color.getGlId(), depth.getGlId(),
+                    water);
         } catch (RuntimeException e) {
             failed = true;
             LOGGER.error("World effects disabled after a rendering error", e);
         }
     }
 
-    /** Everything that can be decided without touching the GPU: config, region mask, distance and frustum. */
-    private static List<Visible> cull(MinecraftClient client, Vec3d cameraPos, Matrix4f viewProjection) {
+    /**
+     * How the active shader pack's water reflects, or null when effects are not to be mirrored in it: no
+     * pack, its reflections switched off, or ours.
+     */
+    private static PackWater water() {
+        EffectFog.PackOptions pack = ModConfig.effectPackReflections() ? IrisSupport.packOptions() : null;
+        if (pack == null) return null;
+        // One reading of the options per loaded pack: changing an option reloads the pack.
+        if (pack != waterPack) {
+            waterPack = pack;
+            packWater = PackWater.forPack(pack);
+        }
+        return packWater;
+    }
+
+    /**
+     * Everything that can be decided without touching the GPU: config, region mask, distance and frustum.
+     * With {@code reflections}, an effect outside the view is kept while its reflection in water may be in it.
+     */
+    private static List<Visible> cull(MinecraftClient client, Vec3d cameraPos, Matrix4f viewProjection,
+                                      boolean reflections) {
         List<Visible> visible = new ArrayList<>(EFFECTS.size());
         String host = client.getCurrentServerEntry() == null ? "" : client.getCurrentServerEntry().address;
         boolean recognized = RegionPolicy.isWynncraftHost(host) || WorldContextResolver.isFixture(client);
@@ -196,15 +233,25 @@ public final class WorldEffects {
                     (float) (box.minX() - cameraPos.x), (float) (box.minY() - cameraPos.y),
                     (float) (box.minZ() - cameraPos.z), (float) (box.maxX() - cameraPos.x),
                     (float) (box.maxY() - cameraPos.y), (float) (box.maxZ() - cameraPos.z));
-            if (rect != null) visible.add(new Visible(effect, rect, distance));
+            EffectCulling.ScreenRect mirror = !reflections ? null : EffectCulling.reflection(viewProjection,
+                    (float) (box.minX() - cameraPos.x), (float) (box.minZ() - cameraPos.z),
+                    (float) (box.maxX() - cameraPos.x), (float) (box.maxZ() - cameraPos.z));
+            if (rect != null || mirror != null) visible.add(new Visible(effect, rect, mirror, distance));
         }
         return visible;
     }
 
     private static void draw(List<Visible> visible, EffectFrame frame, Matrix4f viewProjection, float projectionScaleY,
                              float cloudHeight, float viewDistance, Vector4f fogColor, Framebuffer main, int color,
-                             int depth) {
+                             int depth, PackWater water) {
         LodDepth.Layer lod = LodDepth.resolve();
+        // Water is where the depth with translucents differs from the depth without them: the pack's own
+        // pair of depth buffers for the vanilla world, the LOD mod's for its terrain.
+        int opaqueDepth = water == null ? 0 : IrisSupport.opaqueDepthTexture();
+        boolean lodWater = lod != null && lod.knowsWater();
+        if (opaqueDepth <= 0 && !lodWater) water = null;
+        boolean mirrored = false;
+        for (Visible entry : visible) mirrored |= water != null && entry.mirror() != null;
         CloudLayer.Layer clouds = CloudLayer.resolve();
         FogModel known = EffectFog.model(IrisSupport.packOptions(), lod);
         FogModel fog = ModConfig.effectFogModels() ? known : null;
@@ -217,7 +264,9 @@ public final class WorldEffects {
         int[] packTextures = packClouds == null ? null : IrisSupport.packCloudTextures(packClouds.kind());
         logState(visible.size() + " drawn with " + (lod == null ? "vanilla depth only" : "vanilla + LOD depth")
                 + (clouds != null ? ", under a cloud layer" : packTextures != null ? ", under the pack's clouds" : "")
-                + ", fog: " + (fog == null ? "measured" : fog.name()));
+                + ", fog: " + (fog == null ? "measured" : fog.name())
+                + (!mirrored ? "" : ", mirrored in " + (opaqueDepth > 0 && lodWater ? "vanilla and LOD"
+                : lodWater ? "LOD" : "vanilla") + " water"));
         int width = main.textureWidth;
         int height = main.textureHeight;
         List<WorldEffect.Bounds> boxes = new ArrayList<>(visible.size());
@@ -242,6 +291,10 @@ public final class WorldEffects {
             bind(8, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.depthTexture());
             bind(9, GL11C.GL_TEXTURE_2D, clouds == null ? depth : clouds.colorTexture());
             bind(10, GL11C.GL_TEXTURE_2D, fogTable);
+            // A pair that is one texture twice never differs, so nothing is taken for water there.
+            bind(11, GL11C.GL_TEXTURE_2D, opaqueDepth > 0 ? opaqueDepth : depth);
+            bind(12, GL11C.GL_TEXTURE_2D, lod == null ? depth : lodWater ? lod.surfaceTextureId() : lod.textureId());
+            bind(13, GL11C.GL_TEXTURE_2D, lod == null ? depth : lodWater ? lod.opaqueTextureId() : lod.textureId());
             if (fog != null) uploadFogTable(fog, env, scene.fogRange());
             GL30C.glBindVertexArray(vertexArray);
             if (packTextures != null) readPackClouds(packClouds, packTextures, width, height);
@@ -263,57 +316,88 @@ public final class WorldEffects {
             GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
             // Premultiplied colour over the world image; the target's alpha is left alone.
             GL14C.glBlendFuncSeparate(GL11C.GL_ONE, GL11C.GL_ONE_MINUS_SRC_ALPHA, GL11C.GL_ZERO, GL11C.GL_ONE);
-            for (Visible entry : visible) {
-                WorldEffect effect = entry.effect();
-                EffectProgram program = program(effect);
-                if (program == null) continue;
-                // Only the pixels the effect's box can cover are shaded at all.
-                int x0 = Math.max(0, (int) Math.floor(entry.rect().minX() * width) - 1);
-                int y0 = Math.max(0, (int) Math.floor(entry.rect().minY() * height) - 1);
-                int x1 = Math.min(width, (int) Math.ceil(entry.rect().maxX() * width) + 1);
-                int y1 = Math.min(height, (int) Math.ceil(entry.rect().maxY() * height) + 1);
-                if (x1 <= x0 || y1 <= y0) continue;
-                int steps = EffectCulling.steps(ModConfig.effectSteps(), Math.max(x1 - x0, y1 - y0));
-                int octaves = EffectCulling.octaves(entry.distance(), projectionScaleY, height);
-                // A large effect is marched at half resolution and upsampled; a small one is drawn directly.
-                boolean half = effect.halfResolution() && (long) (x1 - x0) * (y1 - y0) > HALF_RESOLUTION_COVERAGE * width * height;
-                int targetWidth = half ? (width + 1) / 2 : width;
-                int targetHeight = half ? (height + 1) / 2 : height;
-
-                program.use();
-                setScene(program, scene, targetWidth, targetHeight);
-                program.set("uNoise", 2);
-                FogProbe probe = FOG_PROBES.get(effect.id());
-                bind(6, GL11C.GL_TEXTURE_2D, probe.textures[probe.current]);
-                program.set("uFogProbe", 6);
-                program.set("uFogColor", fogColor.x, fogColor.y, fogColor.z);
-                program.set("uSteps", steps);
-                program.set("uOctaves", octaves);
-                program.set("uPixelSize", (float) (entry.distance() * 2 / (projectionScaleY * height)));
-                WorldEffect.Bounds box = effect.bounds();
-                program.set("uBoxMin", (float) (box.minX() - frame.cameraX()), (float) (box.minY() - frame.cameraY()),
-                        (float) (box.minZ() - frame.cameraZ()));
-                program.set("uBoxMax", (float) (box.maxX() - frame.cameraX()), (float) (box.maxY() - frame.cameraY()),
-                        (float) (box.maxZ() - frame.cameraZ()));
-                effect.upload(program, frame);
-                if (half) {
-                    drawHalfResolution(scene, width, height, x0, y0, x1, y1);
-                } else {
-                    GL11C.glScissor(x0, y0, x1 - x0, y1 - y0);
-                    GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+            // Reflections first: an effect in front of the water it is mirrored in is drawn over them.
+            if (mirrored) {
+                for (Visible entry : visible) {
+                    if (entry.mirror() != null) {
+                        shade(entry, entry.mirror(), water, scene, frame, env, fogColor, projectionScaleY, width, height);
+                    }
                 }
-                if (PROFILE) {
-                    profiledDetail = effect.id() + " " + (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
-                            + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
-                            + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f, horizon sky %.2f %.2f %.2f",
-                            profiledProbe[0], profiledProbe[1], profiledProbe[2], profiledProbe[3],
-                            profiledProbe[4], profiledProbe[5], profiledProbe[6])
-                            + modelledAt(scene.fog(), env, entry.distance(), box);
+            }
+            for (Visible entry : visible) {
+                if (entry.rect() != null) {
+                    shade(entry, entry.rect(), null, scene, frame, env, fogColor, projectionScaleY, width, height);
                 }
             }
             endProfile();
         } finally {
             saved.restore();
+        }
+    }
+
+    /**
+     * Draws one effect into {@code rect} of the world image, or with {@code water} its reflection in the
+     * water there. The world image is bound and blending is set for premultiplied colour.
+     */
+    private static void shade(Visible entry, EffectCulling.ScreenRect rect, PackWater water, Scene scene,
+                              EffectFrame frame, FogModel.Env env, Vector4f fogColor, float projectionScaleY,
+                              int width, int height) {
+        WorldEffect effect = entry.effect();
+        EffectProgram program = program(effect);
+        if (program == null) return;
+        // Only the pixels the effect's box can cover are shaded at all.
+        int x0 = Math.max(0, (int) Math.floor(rect.minX() * width) - 1);
+        int y0 = Math.max(0, (int) Math.floor(rect.minY() * height) - 1);
+        int x1 = Math.min(width, (int) Math.ceil(rect.maxX() * width) + 1);
+        int y1 = Math.min(height, (int) Math.ceil(rect.maxY() * height) + 1);
+        if (x1 <= x0 || y1 <= y0) return;
+        boolean mirror = water != null;
+        // A reflection is rippled and faint, and is marched with half the samples and the finest detail left out.
+        int steps = EffectCulling.steps(mirror ? ModConfig.effectSteps() / 2 : ModConfig.effectSteps(),
+                Math.max(x1 - x0, y1 - y0));
+        int octaves = Math.max(2, EffectCulling.octaves(entry.distance(), projectionScaleY, height) - (mirror ? 1 : 0));
+        // A large effect is marched at half resolution and upsampled; a small one is drawn directly, and so
+        // is a reflection, which only costs anything on the water it is in.
+        boolean half = !mirror && effect.halfResolution()
+                && (long) (x1 - x0) * (y1 - y0) > HALF_RESOLUTION_COVERAGE * width * height;
+        int targetWidth = half ? (width + 1) / 2 : width;
+        int targetHeight = half ? (height + 1) / 2 : height;
+
+        program.use();
+        setScene(program, scene, targetWidth, targetHeight);
+        if (mirror) {
+            program.set("uMirror", 1, (float) ((Math.floorMod(frame.worldTime(), RIPPLE_TICKS) + frame.tickProgress()) / 20.0));
+            program.set("uMirrorCamera", (float) (frame.cameraX() - Math.floor(frame.cameraX() / RIPPLE_PERIOD) * RIPPLE_PERIOD),
+                    0, (float) (frame.cameraZ() - Math.floor(frame.cameraZ() / RIPPLE_PERIOD) * RIPPLE_PERIOD));
+            program.set("uWater", water.base(), water.power(), water.strength());
+        }
+        program.set("uNoise", 2);
+        FogProbe probe = FOG_PROBES.get(effect.id());
+        bind(6, GL11C.GL_TEXTURE_2D, probe.textures[probe.current]);
+        program.set("uFogProbe", 6);
+        program.set("uFogColor", fogColor.x, fogColor.y, fogColor.z);
+        program.set("uSteps", steps);
+        program.set("uOctaves", octaves);
+        program.set("uPixelSize", (float) (entry.distance() * 2 / (projectionScaleY * height)));
+        WorldEffect.Bounds box = effect.bounds();
+        program.set("uBoxMin", (float) (box.minX() - frame.cameraX()), (float) (box.minY() - frame.cameraY()),
+                (float) (box.minZ() - frame.cameraZ()));
+        program.set("uBoxMax", (float) (box.maxX() - frame.cameraX()), (float) (box.maxY() - frame.cameraY()),
+                (float) (box.maxZ() - frame.cameraZ()));
+        effect.upload(program, frame);
+        if (half) {
+            drawHalfResolution(scene, width, height, x0, y0, x1, y1);
+        } else {
+            GL11C.glScissor(x0, y0, x1 - x0, y1 - y0);
+            GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+        }
+        if (PROFILE && !mirror) {
+            profiledDetail = effect.id() + " " + (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
+                    + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
+                    + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f, horizon sky %.2f %.2f %.2f",
+                    profiledProbe[0], profiledProbe[1], profiledProbe[2], profiledProbe[3],
+                    profiledProbe[4], profiledProbe[5], profiledProbe[6])
+                    + modelledAt(scene.fog(), env, entry.distance(), box);
         }
     }
 
@@ -325,6 +409,10 @@ public final class WorldEffects {
         program.set("uTerrainDepth", 7);
         program.set("uCloudDepth", 8);
         program.set("uCloudColor", 9);
+        program.set("uOpaqueDepth", 11);
+        program.set("uLodSurface", 12);
+        program.set("uLodOpaque", 13);
+        program.set("uMirror", 0, 0);
         program.set("uSceneInverse", scene.inverse());
         program.set("uLodInverse", lod == null ? scene.inverse() : lod.inverseViewProjection());
         program.set("uLodParams", lod == null ? 0 : 1, lod == null ? 1 : lod.clearDepth(),
@@ -369,7 +457,7 @@ public final class WorldEffects {
         float rate = probe.measuredNanos == 0 ? 1 : EffectFog.rate((now - probe.measuredNanos) / 1.0e9);
         probe.measuredNanos = now;
         EffectFog.Band band = EffectFog.band(entry.distance());
-        EffectFog.Columns columns = EffectFog.columns(entry.rect());
+        EffectFog.Columns columns = EffectFog.columns(entry.seen());
 
         int previous = probe.current;
         probe.current = 1 - previous;
@@ -681,9 +769,11 @@ public final class WorldEffects {
                            int[] pixelStore) {
         private static final int[] TARGETS = {GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_3D,
                 GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
-                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
         private static final int[] BINDINGS = {GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
+                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
         private static final int[] PIXEL_STORE = {GL11C.GL_UNPACK_ALIGNMENT, GL11C.GL_UNPACK_ROW_LENGTH,

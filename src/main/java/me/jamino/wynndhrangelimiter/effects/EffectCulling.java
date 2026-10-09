@@ -45,6 +45,27 @@ public final class EffectCulling {
         return new ScreenRect(unit(x0), unit(y0), unit(x1), unit(y1));
     }
 
+    /** Tangent of the steepest downward view at which a reflection is still looked for. */
+    private static final float REFLECTION_SLOPE = 4;
+    /** Ripples bend a reflection a little to either side of where a mirror would show it. */
+    private static final float REFLECTION_MARGIN = 0.03f;
+
+    /**
+     * The part of the view in which level water below the camera can show the reflection of a camera-relative
+     * box, or null when it cannot be in view. A reflection lies in the same compass direction as what it
+     * mirrors and below the horizon, the further below the lower the water, so this is the box's footprint
+     * drawn downward from the camera's height. How high the box is does not matter: its reflection can be in
+     * view while the box is above it.
+     */
+    public static ScreenRect reflection(Matrix4fc viewProjection, float minX, float minZ, float maxX, float maxZ) {
+        float reach = (float) Math.hypot(Math.max(Math.abs(minX), Math.abs(maxX)),
+                Math.max(Math.abs(minZ), Math.abs(maxZ)));
+        ScreenRect rect = project(viewProjection, minX, -REFLECTION_SLOPE * reach, minZ, maxX, 0, maxZ);
+        if (rect == null || rect == ScreenRect.FULL) return rect;
+        return new ScreenRect(Math.max(0, rect.minX() - REFLECTION_MARGIN), rect.minY(),
+                Math.min(1, rect.maxX() + REFLECTION_MARGIN), rect.maxY());
+    }
+
     /** Fewer samples when the effect covers few pixels: each sample then already spans less than a pixel. */
     public static int steps(int configured, float coveredPixels) {
         return Math.max(Math.min(configured, 20), Math.min(configured, Math.round(coveredPixels / 3)));

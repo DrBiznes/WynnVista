@@ -14,6 +14,7 @@ import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhAp
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam;
 import com.seibel.distanthorizons.api.objects.DhApiResult;
 import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
+import me.jamino.wynndhrangelimiter.compat.iris.IrisSupport;
 import me.jamino.wynndhrangelimiter.effects.FogModel;
 import me.jamino.wynndhrangelimiter.effects.FogModels;
 import me.jamino.wynndhrangelimiter.effects.LodDepth;
@@ -111,9 +112,11 @@ public final class DhEffectDepth implements LodDepth.Provider {
             if (proxy == null) return null;
             int texture = textureId(proxy);
             if (texture <= 0) return null;
+            // Only a shader pack's pipeline keeps DH's depth from before its water.
+            int[] water = IrisSupport.dhDepthTextures();
             return new LodDepth.Layer(texture, inverseViewProjection, proxy.getDepthDirection().farDepth,
                     proxy.getDepthRange() == EDhApiDepthRange.ZERO_TO_POS_ONE, LodDepth.Backend.DISTANT_HORIZONS,
-                    renderDistance(), fog);
+                    renderDistance(), fog, water == null ? 0 : water[0], water == null ? 0 : water[1]);
         } catch (IllegalStateException e) {
             return null; // DH has not finished choosing a renderer yet
         } catch (LinkageError | RuntimeException e) {

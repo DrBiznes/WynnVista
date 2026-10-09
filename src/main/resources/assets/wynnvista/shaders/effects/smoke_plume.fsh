@@ -20,11 +20,11 @@ const int COARSE_STEPS = 32;
 void main() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
-    vec3 dir = viewRay(ndc);
+    vec3 dir;
 
     // Pixels without smoke write zero rather than discarding: the half-resolution path needs their distance.
     fragColor = vec4(0.0);
-    fragDistance = sceneDistance(uv, ndc);
+    fragDistance = beginRay(uv, ndc, dir);
     vec2 span = boxSpan(dir);
     span.y = min(span.y, fragDistance);
     if (span.y <= span.x) return;
@@ -36,7 +36,7 @@ void main() {
     float leave = -1.0;
     for (int i = 0; i < COARSE_STEPS; i++) {
         float t = span.x + (float(i) + 0.5) * coarse;
-        if (column(dir * t - uVent).x < 1.0) {
+        if (column(rayOrigin + dir * t - uVent).x < 1.0) {
             if (enter < 0.0) enter = t;
             leave = t;
         }
@@ -61,7 +61,7 @@ void main() {
     for (int i = 0; i < uSteps; i++) {
         if (t >= t1 || transmittance < 0.03) break;
         if (front.a < 0.0 && t >= cloudAt) front = vec4(colour, 1.0 - transmittance);
-        vec3 q = dir * t - uVent;
+        vec3 q = rayOrigin + dir * t - uVent;
         float d = density(q, uOctaves);
         if (d > 0.003) {
             if (firstHit < 0.0) firstHit = t;
@@ -88,5 +88,5 @@ void main() {
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.
-    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, dir * max(firstHit, 0.0));
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, rayOrigin + dir * max(firstHit, 0.0));
 }

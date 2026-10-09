@@ -47,6 +47,30 @@ class EffectCullingTest {
     }
 
     @Test
+    void reflectionIsLookedForBelowTheHorizonInTheBoxesDirection() {
+        EffectCulling.ScreenRect rect = EffectCulling.reflection(CAMERA, -100, -2100, 100, -1900);
+        assertNotNull(rect);
+        assertEquals(0.0f, rect.minY(), 0f, "down to the bottom of the view");
+        assertEquals(0.5f, rect.maxY(), 1e-3, "and no higher than the horizon");
+        assertTrue(rect.minX() > 0.4f && rect.maxX() < 0.6f, "as narrow as the box: " + rect);
+        EffectCulling.ScreenRect box = EffectCulling.project(CAMERA, -100, -50, -2100, 100, 300, -1900);
+        assertTrue(rect.minX() < box.minX() && rect.maxX() > box.maxX(), "with room for ripples to either side");
+
+        assertNull(EffectCulling.reflection(CAMERA, -100, 1900, 100, 2100), "behind the camera");
+        assertNull(EffectCulling.reflection(CAMERA, 5000, -1100, 5200, -900), "off to the right");
+        assertSame(EffectCulling.ScreenRect.FULL, EffectCulling.reflection(CAMERA, -100, -100, 100, 100),
+                "standing under the box");
+    }
+
+    @Test
+    void reflectionCanBeInViewWhileTheBoxIsAboveIt() {
+        // Looking 40 degrees down: a box high above the horizon is out of view, the water below it is not.
+        Matrix4f down = new Matrix4f(CAMERA).rotateX((float) Math.toRadians(40));
+        assertNull(EffectCulling.project(down, -100, 600, -1100, 100, 900, -900));
+        assertNotNull(EffectCulling.reflection(down, -100, -1100, 100, -900));
+    }
+
+    @Test
     void samplesAndOctavesDropWithScreenSizeAndDistance() {
         assertEquals(64, EffectCulling.steps(64, 1080), "a large plume uses the configured quality");
         assertEquals(40, EffectCulling.steps(64, 120));

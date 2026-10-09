@@ -16,6 +16,8 @@
 - Config: "Match Shader Pack Lighting" switches this off.
 - The clouds of Complementary Reimagined/Unbound, BSL and Photon now pass in front of world effects. Before, the smoke plume was drawn over a shader pack's clouds.
 - Config: "Shader Pack Clouds Hide Effects" switches this off.
+- With a shader pack whose water reflects, world effects are now mirrored in the water too, in nearby water and in Distant Horizons / Voxy water. Before, the sea showed Mount Wynn's reflection without its smoke plume.
+- Config: "Shader Pack Water Reflections" switches this off.
 
 ## 2.1.0
 

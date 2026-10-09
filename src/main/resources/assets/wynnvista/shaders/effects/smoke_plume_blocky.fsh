@@ -55,17 +55,17 @@ void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, fl
     vec3 boxMax = vec3(max(axis0.x, axis1.x) + radius, y1 + size, max(axis0.y, axis1.y) + radius);
 
     vec3 safe = mix(dir, vec3(1.0e-7), lessThan(abs(dir), vec3(1.0e-7)));
-    vec3 a = (boxMin + uVent) / safe;
-    vec3 b = (boxMax + uVent) / safe;
+    vec3 a = (boxMin + uVent - rayOrigin) / safe;
+    vec3 b = (boxMax + uVent - rayOrigin) / safe;
     vec3 lo = min(a, b);
     vec3 hi = max(a, b);
-    float from = max(max(lo.x, lo.y), max(lo.z, 0.0));
+    float from = max(max(lo.x, lo.y), max(lo.z, rayStart));
     float to = min(min(min(hi.x, hi.y), hi.z), limit);
     if (to <= from) return;
 
     // Lattice space: one unit per cell, origin at the vent, sliding upward with the smoke.
     vec3 lift = vec3(0.0, uScroll, 0.0);
-    vec3 origin = (-uVent - lift) / size;
+    vec3 origin = (rayOrigin - uVent - lift) / size;
     vec3 inv = size / safe;
     vec3 stride = sign(safe);
     vec3 start = origin + safe * from / size;
@@ -91,7 +91,7 @@ void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, fl
             b = (centre + 0.5 * scale - origin) * inv;
             lo = min(a, b);
             hi = max(a, b);
-            float enter = max(max(lo.x, lo.y), max(lo.z, 0.0));
+            float enter = max(max(lo.x, lo.y), max(lo.z, rayStart));
             float leave = min(min(hi.x, hi.y), hi.z);
             if (leave > enter && enter < limit) {
                 if (firstHit < 0.0) firstHit = enter;
@@ -128,10 +128,10 @@ void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, fl
 void main() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
-    vec3 dir = viewRay(ndc);
+    vec3 dir;
 
     fragColor = vec4(0.0);
-    fragDistance = sceneDistance(uv, ndc);
+    fragDistance = beginRay(uv, ndc, dir);
     vec2 span = boxSpan(dir);
     float limit = min(span.y, fragDistance);
     if (limit <= span.x) return;
@@ -165,5 +165,5 @@ void main() {
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.
-    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, dir * max(firstHit, 0.0));
+    fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, rayOrigin + dir * max(firstHit, 0.0));
 }

@@ -22,10 +22,26 @@ uniform vec4 uFogTableRange;  // x: 1 / ground distance covered, 0 without a tab
 uniform vec4 uFogTableColor;  // rgb: the fog's colour, a: 1 when it is known, 0 to take it from the probe
 uniform mat4 uSceneForward;   // camera-relative world -> vanilla clip space
 uniform vec2 uSkyMatch;       // x: 1 while a shader pack renders and the effect is lit to match its sky, y: the effect's brightness under its own light
+uniform sampler2D uOpaqueDepth;   // vanilla depth as it was before translucents were drawn (a shader pack's depthtex1)
+uniform sampler2D uLodSurface;    // the LOD renderer's depth with its water
+uniform sampler2D uLodOpaque;     // and without it; the same texture as uLodSurface when the two are not kept apart
+uniform vec2 uMirror;         // x: 1 while an effect's reflection in water is drawn instead of the effect, y: seconds, for the ripples
+uniform vec3 uMirrorCamera;   // the camera's place in the ripple pattern, which repeats
+uniform vec3 uWater;          // how much the pack's water reflects: x: seen from straight above, y: exponent of the rise towards a grazing view, z: strength
 uniform int uSteps;           // ray-march samples, already reduced for small or distant effects
 uniform int uOctaves;         // noise octaves worth sampling at this distance
 
 const float INF = 1.0e9;
+
+/**
+ * Where this pixel's ray starts, camera-relative: the camera, or for a reflection the point behind the water
+ * that the reflected ray seems to come from, so that distances along the ray are the whole path to the eye.
+ */
+vec3 rayOrigin = vec3(0.0);
+/** Distance along the ray before which nothing is drawn: the way to the water, for a reflection. */
+float rayStart = 0.0;
+/** Share of what the ray gathers that reaches the eye: the water's reflectance, for a reflection. */
+float rayWeight = 1.0;
 
 vec3 unproject(mat4 toWorld, vec3 ndc) {
     vec4 p = toWorld * vec4(ndc, 1.0);
@@ -37,14 +53,14 @@ vec3 viewRay(vec2 ndc) {
     return normalize(unproject(uSceneInverse, vec3(ndc, 1.0)) - unproject(uSceneInverse, vec3(ndc, -1.0)));
 }
 
-/** Where the ray is inside the effect's bounding box; empty (x >= y) when it misses. */
+/** Where the ray from rayOrigin is inside the effect's bounding box; empty (x >= y) when it misses. */
 vec2 boxSpan(vec3 dir) {
     vec3 inv = 1.0 / dir;
-    vec3 a = uBoxMin * inv;
-    vec3 b = uBoxMax * inv;
+    vec3 a = (uBoxMin - rayOrigin) * inv;
+    vec3 b = (uBoxMax - rayOrigin) * inv;
     vec3 lo = min(a, b);
     vec3 hi = max(a, b);
-    return vec2(max(max(lo.x, lo.y), max(lo.z, 0.0)), min(min(hi.x, hi.y), hi.z));
+    return vec2(max(max(lo.x, lo.y), max(lo.z, rayStart)), min(min(hi.x, hi.y), hi.z));
 }
 
 float sceneDistance(vec2 uv, vec2 ndc) {
@@ -95,7 +111,8 @@ vec2 tableFog(vec3 position) {
  */
 float cloudDistance(vec2 uv, vec2 ndc, vec3 dir, out vec4 cloud) {
     cloud = vec4(0.0);
-    if (uCloudParams.x < 0.5) return INF;
+    // A reflection is drawn without the clouds mirrored in front of it.
+    if (uCloudParams.x < 0.5 || uMirror.x > 0.5) return INF;
     ivec2 texel = ivec2(uv * vec2(textureSize(uCloudColor, 0)));
     cloud = texelFetch(uCloudColor, texel, 0);
     if (uCloudParams.x > 1.5) {
@@ -116,7 +133,8 @@ float cloudDistance(vec2 uv, vec2 ndc, vec3 dir, out vec4 cloud) {
  * The finished pixel of an effect: `whole` is the march's premultiplied colour and opacity, `front` the same
  * for the part of it nearer than the clouds. Both get the haze and fog, then the cloud goes between them, so
  * the part behind is seen through the cloud. `position` is where the effect begins on this pixel's ray, and
- * `haze` the effect's own guess at the haze there, used when no pack's or LOD mod's fog is modelled.
+ * `haze` the effect's own guess at the haze there, used when no pack's or LOD mod's fog is modelled. Of a
+ * reflection, only what the water reflects is returned.
  */
 vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud, vec3 position) {
     vec3 hazeColour = uFogColor;
@@ -138,8 +156,9 @@ vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud, vec3 position) 
     float behind = whole.a - front.a;
     // Blending the effect over the image also covers the cloud that is in front of it. With the cloud's
     // colour known that share is put back exactly; otherwise the effect covers less where the cloud is.
-    if (uCloudParams.y > 0.5) return vec4(colour + behind * cloud.rgb, whole.a);
-    return vec4(colour, front.a + behind * (1.0 - cloud.a));
+    vec4 seen = uCloudParams.y > 0.5 ? vec4(colour + behind * cloud.rgb, whole.a)
+            : vec4(colour, front.a + behind * (1.0 - cloud.a));
+    return seen * rayWeight;
 }
 
 const float GAIN_MIN = 0.35;   // an effect is never dimmed or brightened further than this to match a pack
@@ -204,4 +223,103 @@ float dither(vec2 pixel) {
     vec3 p = fract(vec3(pixel.xyx) * vec3(0.1031, 0.1030, 0.0973));
     p += dot(p, p.yzx + 33.33);
     return fract((p.x + p.y) * p.z);
+}
+
+const float RIPPLE = 0.03;          // how far ripples tilt the water's surface
+const float RIPPLE_SIZE = 6.0;      // blocks from one ripple to the next
+const int TRACE_STEPS = 16;         // samples of the scene along a reflected ray
+
+/**
+ * The nearest surface on this pixel, camera-relative, and whether it is translucent with something else
+ * behind it, as water is: its depth differs from the depth drawn without translucents.
+ */
+bool translucentSurface(vec2 uv, vec2 ndc, out vec3 point) {
+    point = vec3(0.0);
+    float nearest = INF;
+    bool translucent = false;
+    if (uLodParams.x > 0.5) {
+        ivec2 texel = ivec2(uv * vec2(textureSize(uLodSurface, 0)));
+        float surface = texelFetch(uLodSurface, texel, 0).r;
+        if (surface != uLodParams.y) {
+            point = unproject(uLodInverse, vec3(ndc, uLodParams.z > 0.5 ? surface : surface * 2.0 - 1.0));
+            nearest = length(point);
+            translucent = texelFetch(uLodOpaque, texel, 0).r != surface;
+        }
+    }
+    float depth = texelFetch(uSceneDepth, ivec2(uv * vec2(textureSize(uSceneDepth, 0))), 0).r;
+    if (depth < 0.9999998) {
+        vec3 hit = unproject(uSceneInverse, vec3(ndc, depth * 2.0 - 1.0));
+        // Voxy also writes its LODs into the vanilla depth, after the copy without translucents was taken.
+        // Only a hit clearly nearer than the LOD is the vanilla world's.
+        if (length(hit) < nearest * 0.98 - 0.5) {
+            point = hit;
+            translucent = texelFetch(uOpaqueDepth, ivec2(uv * vec2(textureSize(uOpaqueDepth, 0))), 0).r > depth;
+        }
+    }
+    return translucent;
+}
+
+/**
+ * Turns this pixel's ray into its reflection in the water on this pixel: sets rayOrigin, rayStart and
+ * rayWeight and replaces dir. Returns how far along the new ray it is clear of terrain, 0 where the pixel is
+ * not level water seen from above or the reflected ray misses the effect.
+ */
+float mirror(vec2 uv, vec2 ndc, inout vec3 dir) {
+    vec3 point;
+    bool water = translucentSurface(uv, ndc, point);
+    // Taken before any branch on the pixel: derivatives are undefined after one.
+    vec3 across = dFdx(point);
+    vec3 along = dFdy(point);
+    if (!water || dir.y > -0.003) return 0.0;
+    // Glass walls, portals and the like are translucent too; only a level surface is taken for water.
+    vec3 facing = cross(across, along);
+    if (abs(facing.y) < 0.9 * length(facing)) return 0.0;
+
+    // Ripples tilt the surface a little. They are dropped where a pixel spans more water than one covers.
+    float reach = length(point);
+    vec3 at = vec3((point.xz + uMirrorCamera.xz) / RIPPLE_SIZE, uMirror.y * 0.5) / NOISE_SIZE;
+    vec2 tilt = vec2(noise(at), noise(at + vec3(0.37, 0.61, 0.5))) - 0.5;
+    tilt *= RIPPLE * (1.0 - smoothstep(0.2, 0.8, max(length(across), length(along)) / RIPPLE_SIZE));
+    vec3 normal = normalize(vec3(tilt.x, 1.0, tilt.y));
+    vec3 reflected = reflect(dir, normal);
+    if (reflected.y <= 0.0) reflected = vec3(dir.x, -dir.y, dir.z);
+
+    rayOrigin = point - reflected * reach;
+    rayStart = reach;
+    rayWeight = uWater.z * (uWater.x + (1.0 - uWater.x) * pow(1.0 - clamp(dot(-dir, normal), 0.0, 1.0), uWater.y));
+    dir = reflected;
+    vec2 span = boxSpan(dir);
+    if (span.y <= span.x) return 0.0;
+
+    // Terrain between the water and the effect hides the reflection. The reflected ray is followed across
+    // the image, in steps that grow with distance, until it passes just behind something the image holds.
+    // A sample outside the image tells nothing and is taken as clear.
+    float extent = span.y - reach;
+    float jitter = dither(gl_FragCoord.xy + 11.0);
+    float previous = 0.0;
+    for (int i = 0; i < TRACE_STEPS; i++) {
+        float f = (float(i) + jitter) / float(TRACE_STEPS);
+        float s = extent * f * f;
+        vec3 q = point + dir * s;
+        vec4 clip = uSceneForward * vec4(q, 1.0);
+        vec2 spot = clip.xy / max(clip.w, 1.0e-4);
+        if (clip.w > 0.05 && abs(spot.x) < 1.0 && abs(spot.y) < 1.0) {
+            float seen = sceneDistance(spot * 0.5 + 0.5, spot);
+            float behind = length(q) - seen;
+            // Something far in front of the ray's point, as seen from the camera, is not in the ray's way.
+            if (behind > 1.0 + 0.003 * seen && behind < (s - previous) * 1.5 + 4.0) return reach + previous;
+        }
+        previous = s;
+    }
+    return span.y;
+}
+
+/**
+ * Starts this pixel's ray: its direction, and how far along it the scene lets an effect be drawn. That is
+ * the view ray up to the nearest terrain or, while reflections are drawn, its reflection in water.
+ */
+float beginRay(vec2 uv, vec2 ndc, out vec3 dir) {
+    dir = viewRay(ndc);
+    if (uMirror.x < 0.5) return sceneDistance(uv, ndc);
+    return mirror(uv, ndc, dir);
 }
