@@ -14,7 +14,7 @@ uniform float uGlow;
 layout(location = 0) out vec4 fragColor;       // premultiplied smoke colour and opacity
 layout(location = 1) out float fragDistance;   // terrain distance the march stopped at, for the half-resolution path
 
-const float EXTINCTION = 0.05;
+const float EXTINCTION = 0.05;          // per unit of plume space, so a scaled plume is as opaque across
 const int COARSE_STEPS = 32;
 
 void main() {
@@ -36,7 +36,7 @@ void main() {
     float leave = -1.0;
     for (int i = 0; i < COARSE_STEPS; i++) {
         float t = span.x + (float(i) + 0.5) * coarse;
-        if (column(rayOrigin + dir * t - uVent).x < 1.0) {
+        if (column(plumeSpace(rayOrigin + dir * t)).x < 1.0) {
             if (enter < 0.0) enter = t;
             leave = t;
         }
@@ -48,7 +48,7 @@ void main() {
     // The sky around the plume lights it as much as the sun does, which also carries sunset and weather colours.
     vec3 ambient = skyLight(uAmbient, uLightColor, dir.y);
     int lightOctaves = min(uOctaves, 2);
-    float dt = max((t1 - t0) / float(uSteps), 1.5);
+    float dt = max((t1 - t0) / float(uSteps), 1.5 * uScale);
     float t = t0 + dt * dither(gl_FragCoord.xy);
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
@@ -61,7 +61,7 @@ void main() {
     for (int i = 0; i < uSteps; i++) {
         if (t >= t1 || transmittance < 0.03) break;
         gather(front, colour, transmittance, t, cloudAt);
-        vec3 q = rayOrigin + dir * t - uVent;
+        vec3 q = plumeSpace(rayOrigin + dir * t);
         float d = density(q, uOctaves);
         if (d > 0.003) {
             if (firstHit < 0.0) firstHit = t;
@@ -75,7 +75,7 @@ void main() {
             vec3 lit = albedo * (ambient * mix(0.85, 1.0, u) * (0.55 + 0.2 * shade)
                     + sunLight * mix(0.22, 0.6, shade));
             lit += vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
-            float alpha = 1.0 - exp(-d * EXTINCTION * dt);
+            float alpha = 1.0 - exp(-d * EXTINCTION * dt / uScale);
             colour += transmittance * alpha * lit;
             transmittance *= 1.0 - alpha;
         }

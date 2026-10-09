@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SmokePlumeTest {
     @Test
     void boundsContainTheWholeBentColumn() {
-        WorldEffect.Bounds box = new SmokePlume().bounds();
+        WorldEffect.Bounds box = SmokePlume.MOUNT_WYNN.bounds();
         assertTrue(box.minY() < SmokePlume.PEAK_Y && box.maxY() == SmokePlume.VENT_Y + SmokePlume.HEIGHT);
         assertTrue(box.minX() <= SmokePlume.PEAK_X - SmokePlume.TOP_RADIUS);
         assertTrue(box.maxX() >= SmokePlume.PEAK_X + SmokePlume.DRIFT_X + SmokePlume.TOP_RADIUS);
@@ -16,10 +16,44 @@ class SmokePlumeTest {
     }
 
     @Test
+    void mountWynnKeepsItsFullSize() {
+        assertEquals(1f, SmokePlume.MOUNT_WYNN.scale());
+        assertEquals(9000, SmokePlume.MOUNT_WYNN.maxViewDistance());
+        assertEquals(SmokePlume.VENT_Y, SmokePlume.MOUNT_WYNN.bounds().minY());
+    }
+
+    @Test
+    void volcanicIslesPlumesAreScaledToTheirCraters() {
+        assertEquals(3, SmokePlume.VOLCANIC_ISLES.size());
+        float[] diameters = {15, 18, 10};
+        double[][] centres = {{-1032, 135, -3666}, {-826, 95, -3663}, {-860, 84, -3768}};
+        for (int i = 0; i < 3; i++) {
+            SmokePlume plume = SmokePlume.VOLCANIC_ISLES.get(i);
+            float scale = plume.scale();
+            assertEquals(diameters[i], 2 * SmokePlume.VENT_RADIUS * scale, 1e-4, "the vent is as wide as the crater");
+            assertTrue(scale < 0.7f, "much smaller than Mount Wynn's");
+            assertEquals(SmokePlume.VOLCANIC_ISLES_ID, plume.id(), "one toggle for the three");
+            assertEquals(centres[i][0], plume.anchorX());
+            assertEquals(centres[i][2], plume.anchorZ());
+
+            WorldEffect.Bounds box = plume.bounds();
+            assertTrue(box.minY() < centres[i][1] && box.minY() > centres[i][1] - SmokePlume.VENT_DEPTH,
+                    "the smoke starts just inside the crater");
+            assertEquals(SmokePlume.HEIGHT * scale, box.maxY() - box.minY(), 1e-3);
+            assertEquals(centres[i][0] - SmokePlume.TOP_RADIUS * scale, box.minX(), 1e-3);
+            assertEquals(centres[i][0] + (SmokePlume.DRIFT_X + SmokePlume.TOP_RADIUS) * scale, box.maxX(), 1e-3);
+            assertEquals(centres[i][2] - SmokePlume.TOP_RADIUS * scale, box.minZ(), 1e-3);
+            assertEquals(centres[i][2] + (SmokePlume.DRIFT_Z + SmokePlume.TOP_RADIUS) * scale, box.maxZ(), 1e-3);
+            assertEquals(9000 * scale, plume.maxViewDistance(), 1e-2);
+        }
+    }
+
+    @Test
     void everyStyleHasAShaderBuiltOnTheSharedColumn() {
         for (SmokePlume.Style style : SmokePlume.Style.values()) {
             String source = EffectProgram.source(style.shader());
             assertTrue(source.contains("float density(vec3 q, int octaves)"), style.name());
+            assertTrue(source.contains("uniform float uScale;"), style.name());
             assertTrue(!source.contains("#include"), style.name());
         }
     }

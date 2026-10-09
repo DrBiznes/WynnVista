@@ -58,7 +58,15 @@ public final class WorldEffects {
     /** Ticks after which they repeat in time: the same size, at half a noise cell per second. */
     private static final long RIPPLE_TICKS = NOISE_SIZE * 2 * 20;
 
-    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog());
+    private static final List<WorldEffect> EFFECTS;
+
+    static {
+        List<WorldEffect> effects = new ArrayList<>();
+        effects.add(SmokePlume.MOUNT_WYNN);
+        effects.addAll(SmokePlume.VOLCANIC_ISLES);
+        effects.add(new NetherFog());
+        EFFECTS = List.copyOf(effects);
+    }
 
     private static boolean failed;
     private static boolean created;
@@ -87,7 +95,7 @@ public final class WorldEffects {
     private static int lowSizeX;
     private static int lowSizeY;
     private static final Map<String, EffectProgram> PROGRAMS = new HashMap<>();
-    private static final Map<String, FogProbe> FOG_PROBES = new HashMap<>();
+    private static final Map<WorldEffect, FogProbe> FOG_PROBES = new HashMap<>();
     private static EffectProgram fogProgram;
     private static boolean fogBroken;
     private static final Set<String> BROKEN = new HashSet<>();
@@ -116,7 +124,7 @@ public final class WorldEffects {
         return active ? wantedPackClouds : null;
     }
 
-    /** Every effect, in draw order; the config screen builds one toggle from each. */
+    /** Every effect, in draw order; the config screen builds one toggle from each id. */
     public static List<WorldEffect> all() {
         return EFFECTS;
     }
@@ -374,7 +382,7 @@ public final class WorldEffects {
             program.set("uWater", water.base(), water.power(), water.strength());
         }
         program.set("uNoise", 2);
-        FogProbe probe = FOG_PROBES.get(effect.id());
+        FogProbe probe = FOG_PROBES.get(effect);
         bind(6, GL11C.GL_TEXTURE_2D, probe.textures[probe.current]);
         program.set("uFogProbe", 6);
         program.set("uFogColor", fogColor.x, fogColor.y, fogColor.z);
@@ -443,7 +451,7 @@ public final class WorldEffects {
      * initial "clear".
      */
     private static void measureFog(Visible entry, Scene scene, int color) {
-        FogProbe probe = FOG_PROBES.computeIfAbsent(entry.effect().id(), id -> createFogProbe());
+        FogProbe probe = FOG_PROBES.computeIfAbsent(entry.effect(), effect -> createFogProbe());
         if (fogBroken) return;
         if (fogProgram == null) {
             try {

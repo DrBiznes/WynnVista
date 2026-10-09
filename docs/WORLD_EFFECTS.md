@@ -1,6 +1,6 @@
 # World effects
 
-Date: 2026-10-06. Branch `feature/world-effects`. Effects: the smoke plume rising from Mount Wynn (peak at `-183 205 -1964`) and the lava fog over the Roots of Corruption, around the Nether portal. Tested on Windows 11, RTX 4070, Minecraft 1.21.11, DH 3.3.3, Voxy 0.2.16-beta, WynnIris 1.2.2.
+Date: 2026-10-06. Branch `feature/world-effects`. Effects: the smoke plume rising from Mount Wynn (peak at `-183 205 -1964`), the three smaller plumes of the Volcanic Isles (added 2026-10-09 on `feature/volcanic-isles-plumes`) and the lava fog over the Roots of Corruption, around the Nether portal. Tested on Windows 11, RTX 4070, Minecraft 1.21.11, DH 3.3.3, Voxy 0.2.16-beta, WynnIris 1.2.2.
 
 ## How it works
 
@@ -20,7 +20,7 @@ World effects are drawn over the **finished world image**, after every world pas
 | Cloud layer registry (one optional layer per frame) | `effects/CloudLayer` |
 | Better Clouds layer: its clouds alone and the depth from before them | `compat/betterclouds/BetterCloudsLayer`, `BetterCloudsSupport`, `MixinBetterCloudsRenderer` |
 | Fog rules: where the probe looks, which distances it trusts, smoothing, the LOD border fade (pure, unit-tested) | `effects/EffectFog` |
-| The plume: placement, shape, sun/moon lighting, the pack sun path and the brightness reference for matching a pack's sky, rendering style (pure, unit-tested) | `effects/SmokePlume` |
+| The plumes (Mount Wynn's and the Volcanic Isles' scaled copies of it): placement, shape, sun/moon lighting, the pack sun path and the brightness reference for matching a pack's sky, rendering style (pure, unit-tested) | `effects/SmokePlume` |
 | The Roots of Corruption lava fog: placement, shape, drift, glow, rendering style (pure, unit-tested) | `effects/NetherFog` |
 | Shaders: shared scene code, the plume's shape and its two styles, the lava fog's shape and its two styles, the half-resolution composite, the fog probe | `assets/wynnvista/shaders/effects/{scene.glsl,plume_shape.glsl,smoke_plume.fsh,smoke_plume_blocky.fsh,nether_fog_shape.glsl,nether_fog.fsh,nether_fog_blocky.fsh,upsample.fsh,fog_probe.fsh}` |
 
@@ -196,6 +196,22 @@ Better Clouds draws instanced cube geometry. Here the cubes are found per pixel 
 
 The blocky style is never drawn at half resolution (`WorldEffect.halfResolution`), as the upsample would blur the cube edges.
 
+## Volcanic Isles smoke plumes
+
+The three volcanoes of the Volcanic Isles each have Mount Wynn's plume, scaled down to the crater. They are three instances of `SmokePlume` (`SmokePlume.VOLCANIC_ISLES`) drawn with the same two shaders, so "Smoke Plume Style", lighting, fog, clouds and reflections apply to them as to Mount Wynn's. They share the id `volcanic_isles_plumes` and therefore one toggle, "Volcanic Isles Smoke Plumes"; each is still culled, scissored and fog-probed on its own.
+
+| Crater centre | Crater diameter | Scale | Vent | Height | Radius at the top | Drawn up to |
+| --- | --- | --- | --- | --- | --- | --- |
+| `-1032 135 -3666` | 15 | 0.54 | y 128.6 | 279 | 91 | 4,821 blocks |
+| `-826 95 -3663` | 18 | 0.64 | y 87.3 | 334 | 109 | 5,786 blocks |
+| `-860 84 -3768` | 10 | 0.36 | y 79.7 | 186 | 61 | 3,214 blocks |
+| Mount Wynn, `-183 205 -1964` | (vent 28 wide) | 1 | y 193 | 520 | 170 | 9,000 blocks |
+
+- **One number per plume.** The scale is the crater's diameter over the 28 blocks Mount Wynn's smoke is wide at its vent (`SmokePlume.scaleFor`), so the smoke leaves the vent as wide as the crater. Every other length is Mount Wynn's times the scale: height, widening, downwind drift, how far the vent sits below the given centre (12 blocks at scale 1), the bounding box and the view distance.
+- **Plume space.** The shaders work in the column's own space, relative to the vent and in units of `uScale` blocks (`plumeSpace()` in `plume_shape.glsl`), where the column has Mount Wynn's size. Billows, the rising pattern, self-shadowing, the lava glow at the vent and the opacity across the column are therefore the same picture at a smaller size. The smoke rises at 4.8 blocks per second times the scale, and the pattern still repeats exactly. At scale 1 nothing changes for Mount Wynn.
+- **Blocky style.** The lattices scale with the plume, and a lattice whose cells would be smaller than one block is left out, as one smaller than 1.5 pixels is (`MIN_BLOCKS`). The smallest volcano therefore starts with cubes of about 1.4 blocks and ends with 5.7; the largest runs from 1.3 to 10.3.
+- **Neighbours.** The second and third volcanoes are 110 blocks apart, less than their plumes' top radii together, so the two columns run into each other higher up. Each is drawn in its own pass and blended over the other in registration order, not sorted by distance.
+
 ## Roots of Corruption lava fog
 
 `nether_fog` is a layer of glowing fog over the corrupted ground around the Nether portal: an ellipse centred on `254 -1300`, from y 67, below ground level (about y 85), up to y 197. Inside radii of 140 blocks along x and 90 along z it has its full density and height; it then disperses over a further 160 blocks. The ellipse was fitted to a top-down fixture screenshot of the area, not to exact map data.
@@ -226,7 +242,7 @@ Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever t
 
 Decided on the CPU, in this order, before any GL call. If nothing survives, the frame does no effect work at all.
 
-1. **Config.** The master switch `effectsEnabled`, then the effect's own switch in `effects` (`{"smoke_plume": false}`; an effect that is not listed is on). The config screen has a "World Effects" page with the master switch, the quality slider and one toggle per registered effect.
+1. **Config.** The master switch `effectsEnabled`, then the effect's own switch in `effects` (`{"smoke_plume": false}`; an effect that is not listed is on). The config screen has a "World Effects" page with the master switch, the quality slider and one toggle per effect id; effects that share an id (the Volcanic Isles plumes) share the toggle.
 2. **Region mask.** An effect is anchored to a block and is shown exactly where LOD terrain at that block is shown: the anchor must lie inside the rectangles of the frame's `VisibilitySnapshot`, the same snapshot the DH and Voxy masks use. The plume therefore disappears with the main map in the Realm of Light, the Void, unlisted areas (`NONE`) and under any fixture override. With "Enable LOD Masking" off there is no mask, so the region the mask *would* select from the player's position is used instead. Effects never appear outside Wynncraft or the local fixture.
 3. **Distance.** Horizontal distance from the anchor against the effect's `maxViewDistance`.
 4. **Frustum.** The effect's bounding box is projected; a box entirely outside the view is skipped. The far plane is deliberately not tested.
@@ -257,7 +273,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 
 | Check | Result |
 | --- | --- |
-| `gradlew build`: JUnit tests including `PackWaterTest`, `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
+| `gradlew build` (re-run 2026-10-09 with the Volcanic Isles tests in `SmokePlumeTest`): JUnit tests including `PackWaterTest`, `SmokePlumeTest`, `NetherFogTest`, `EffectCullingTest`, `EffectRegionTest`, `EffectFogTest`, `FogModelsTest` | PASS |
 | Voxy, no shader pack: Ragni view, crater close-ups, far view from the east, noon / sunset / night | PASS: the plume rises out of the crater, the crater rim and nearer LOD terrain hide it, lava glow at night (`pw-*`, `final-*`, `half-*`) |
 | Voxy + Complementary Reimagined | PASS (`iv-*`), run before the culling and half-resolution work |
 | DH (OpenGL), no shader pack | PASS for drawing and LOD occlusion (`pv-*`), run before the culling and half-resolution work |
@@ -301,6 +317,9 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 | Better Clouds with both blocky styles: the plume from 300 blocks and from under the column, the lava fog from above the clouds | PASS by eye: both shaders compile, clouds stay in front of the cubes (`bc2-*`). No cloud lay over the lava fog in that view |
 | Better Clouds + Complementary Reimagined (WynnIris), the two plume views | PASS by eye: no errors, the plume shows through Better Clouds' clouds (`bc3-*`) |
 | Without Better Clouds installed, after the change: the plume view from 300 blocks | PASS: both effects compile and draw, no cloud layer is registered (`bc4-*`) |
+| Volcanic Isles plumes (2026-10-09), Voxy, no shader pack, 1280x720, noon, lava fog switched off: from 420 blocks south at y 180, from 200 blocks east, 170 blocks from the first volcano, and from y 520 looking down. Blocky, then realistic (first two views) | PASS by eye: a plume stands in each of the three craters, sized in the order of the craters, the cones hide the smoke behind them, and the second and third columns merge higher up (`vi1-*` blocky, `vi2-*` realistic). Log: `3 drawn with vanilla + LOD depth`, `World effect 'volcanic_isles_plumes' compiled and linked` for both shaders, no effect errors |
+| Mount Wynn after the scaling change, realistic, from 540 blocks | Drawn as before by eye (`vi2-t205`); not compared pixel by pixel with an earlier run. The blocky Mount Wynn plume was not looked at again |
+| Volcanic Isles plumes not run: DH, any shader pack, Better Clouds, night (the lava glow), reflections, GPU time, the config toggle, the live server | |
 | LOD caches after all runs | PASS: `lod_fixture.py check` for both backends (not repeated after the fog runs) |
 
 ## Open
@@ -316,6 +335,7 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **Water reflections.** Seen only in LOD water on Voxy; the vanilla-world and DH paths are unrun (see Results). Strength and ripples were not compared against each pack pixel by pixel.
 - **Translucents.** Water, particles and clouds that do not write depth are not sorted against the plume. Vanilla clouds, and the clouds of a shader pack other than Complementary, BSL and Photon, are not handled the way Better Clouds' are.
 - **Better Clouds.** Run only in the Voxy fixture at 854x480, with Better Clouds 1.13.11 and its default settings; not run with DH, in Fabulous graphics, on the live server, or in motion. The half-resolution path (plume filling the view) was not looked at with clouds in front: there the cloud's outline inside the smoke is at half resolution. On hardware where Better Clouds uses its depth fallback the clouds get no depth and all use the cloud-height estimate. The added GPU time was not measured.
+- **Volcanic Isles plumes.** Run only in the Voxy fixture without a shader pack, at noon (see Results). Their size is Mount Wynn's proportions at the crater's width and was not tuned by eye: they stand about three times as high as their cones and pass through the cloud layer. Noise octaves and the blocky style's pixel-size switch are still chosen for a full-size plume's detail, so a scaled plume is sampled with detail up to three times finer than a pixel needs before an octave is dropped; not looked at in motion. The plumes are blended in registration order, which is wrong where the nearer of two overlapping columns is drawn first.
 - **Performance** was measured on one GPU with Voxy only; nothing was measured on integrated or older graphics. The switch between the direct and half-resolution paths at 12% coverage has no hysteresis.
 - DH's Blaze3D renderer and vanilla with no LOD mod were not run. The fixture-only `FIXTURE_CUSTOM` mask rule is covered by unit tests, not by a run.
 
@@ -329,13 +349,17 @@ Places to add world effects to. None is started; each needs its anchor, bounds a
 - [ ] Sky Islands
 - [ ] Ozoth's Spire
 - [ ] Qira Hive
-- [ ] Volcanic Isles
+- [x] Volcanic Isles (the three smoke plumes; see Volcanic Isles smoke plumes)
 - [ ] Mistwoods
 - [ ] Toxic Wastes
 - [ ] Path to Darkness
+- [ ] Nessak Blizzard
+- [ ] Mage Island Motes
+- [ ] Ice Island Blizzard
+- [ ] Light Forest Motes
 
 ## Adding an effect
 
 1. Implement `WorldEffect`: an id, a config label, an anchor block, world-space bounds, a view distance and an `upload` that sets its uniforms.
 2. Write its fragment shader beside `smoke_plume.fsh`. Start with `#include "scene.glsl"` for the view ray, `boxSpan`, `sceneDistance`, noise and the `uSteps` / `uOctaves` budget. Write `fragColor` (premultiplied, finished by `underClouds`, which applies the fog) and `fragDistance` for every pixel instead of discarding, so the half-resolution path works.
-3. Add it to `EFFECTS` in `WorldEffects`. The config toggle, region masking, culling, scissor, fog and resolution choice then apply without further code.
+3. Add it to `EFFECTS` in `WorldEffects`. Another volcano needs no shader: add a `SmokePlume` instance with its crater centre and diameter. The config toggle, region masking, culling, scissor, fog and resolution choice then apply without further code.

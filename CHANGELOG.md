@@ -3,6 +3,7 @@
 ## Unreleased
 
 **Added**
+- Volcanic Isles smoke plumes: each of the three volcanoes has a smaller copy of the Mount Wynn plume, sized to its crater. One config toggle, "Volcanic Isles Smoke Plumes", switches all three; "Smoke Plume Style" applies to them too.
 - Better Clouds support (optional): world effects are now seen through its translucent clouds. Before, a cloud in front of the smoke plume showed the sky behind the plume instead of the smoke.
 
 **Changed**

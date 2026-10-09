@@ -1,14 +1,22 @@
 // Shared by both smoke plume styles: where the column is and how dense its smoke is. Include after scene.glsl.
+// The column is described at Mount Wynn's size, in "plume space": relative to the vent, one unit being uScale
+// blocks. A smaller volcano's plume is the same column scaled down, billows, rise and all.
 
 uniform vec3 uVent;           // crater vent, camera-relative
-uniform vec3 uShape;          // x: column height, y: radius at the vent, z: radius at the top
-uniform vec2 uDrift;          // how far the top has blown downwind
-uniform float uScroll;        // blocks the noise pattern has risen
+uniform float uScale;         // blocks per unit of plume space; 1 for Mount Wynn
+uniform vec3 uShape;          // x: column height, y: radius at the vent, z: radius at the top, in plume space
+uniform vec2 uDrift;          // how far the top has blown downwind, in plume space
+uniform float uScroll;        // units of plume space the noise pattern has risen
 
-const float NOISE_PERIOD = 1280.0;      // blocks per noise texture repeat at the base octave
+const float NOISE_PERIOD = 1280.0;      // units of plume space per noise texture repeat at the base octave
+
+/** A camera-relative position in plume space. */
+vec3 plumeSpace(vec3 p) {
+    return (p - uVent) / uScale;
+}
 
 /**
- * Position inside the bent, widening column: x = distance from the axis as a fraction of the radius,
+ * Position of q, in plume space, inside the bent, widening column: x = distance from the axis as a fraction of the radius,
  * y = height as a fraction of the column, zw = offset from the axis. x >= 1 means outside.
  */
 vec4 column(vec3 q) {
@@ -18,7 +26,7 @@ vec4 column(vec3 q) {
     return vec4(length(off) / mix(uShape.y, uShape.z, pow(u, 0.85)), u, off);
 }
 
-/** Smoke density at q, a position relative to the vent. */
+/** Smoke density at q, a position in plume space. */
 float density(vec3 q, int octaves) {
     vec4 c = column(q);
     float r = c.x;

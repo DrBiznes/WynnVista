@@ -24,9 +24,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public final class ModConfig implements ModMenuApi {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
@@ -120,7 +122,7 @@ public final class ModConfig implements ModMenuApi {
     public static boolean effectPackClouds() { return config.effectPackClouds; }
     /** Whether effects are mirrored in the water of a shader pack that draws reflections on it. */
     public static boolean effectPackReflections() { return config.effectPackReflections; }
-    /** Rendering style of the Mount Wynn smoke plume; an unknown value means the default. */
+    /** Rendering style of every smoke plume; an unknown value means the default. */
     public static SmokePlume.Style smokePlumeStyle() {
         try {
             return SmokePlume.Style.valueOf(config.smokePlumeStyle.toUpperCase(Locale.ROOT));
@@ -232,7 +234,9 @@ public final class ModConfig implements ModMenuApi {
                         config.effectPackReflections = value;
                         save();
                     }).build());
+            Set<String> listed = new HashSet<>();
             for (WorldEffect effect : WorldEffects.all()) {
+                if (!listed.add(effect.id())) continue;
                 effects.addEntry(entries.startBooleanToggle(Text.literal(effect.name()), effectEnabled(effect.id()))
                         .setDefaultValue(true)
                         .setTooltip(Text.literal(effect.description()))
