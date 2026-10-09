@@ -146,6 +146,9 @@ class SkyIslandsVoidTest {
         assertEquals(SkyIslandsVoid.wrap(-4690.25), SkyIslandsVoid.wrap(-4690.25 + SkyIslandsVoid.NOISE_PERIOD), 1e-3);
         assertTrue(SkyIslandsVoid.wrap(-0.5) >= 0 && SkyIslandsVoid.wrap(-0.5) < SkyIslandsVoid.NOISE_PERIOD);
         assertEquals(SkyIslandsVoid.phase(0, 0.5f), SkyIslandsVoid.phase(SkyIslandsVoid.CYCLE_TICKS, 0.5f), 1e-7);
+        assertEquals(SkyIslandsVoid.cloudPhase(0, 0.5f), SkyIslandsVoid.cloudPhase(SkyIslandsVoid.CLOUD_CYCLE_TICKS, 0.5f), 1e-7);
+        // The cloud is the slower of the two.
+        assertTrue(SkyIslandsVoid.cloudPhase(1000, 0) < SkyIslandsVoid.phase(1000, 0));
         for (long time = -40000; time < 40000; time += 777) {
             float phase = SkyIslandsVoid.phase(time, 0);
             assertTrue(phase >= 0 && phase < 1, "time " + time);

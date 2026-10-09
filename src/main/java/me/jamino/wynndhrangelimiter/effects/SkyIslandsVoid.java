@@ -51,6 +51,12 @@ public final class SkyIslandsVoid implements WorldEffect {
     public static final double NOISE_PERIOD = 2048;
     public static final long CYCLE_TICKS = 32000;
 
+    /**
+     * The same for the cloud, which drifts one repeat of the noise in that time: 0.32 blocks per second, half
+     * the pace of vanilla clouds.
+     */
+    public static final long CLOUD_CYCLE_TICKS = 4 * CYCLE_TICKS;
+
     /** How the void is drawn; both styles share where its clouds, nebulae and fallen islands are. */
     public enum Style {
         /** Soft ray-marched clouds over smooth nebulae. */
@@ -97,6 +103,7 @@ public final class SkyIslandsVoid implements WorldEffect {
         program.set("uLevels", (float) (ABYSS_Y - frame.cameraY()), (float) (CLOUD_Y - frame.cameraY()), 0);
         program.set("uNoiseOrigin", wrap(frame.cameraX()), wrap(frame.cameraZ()));
         program.set("uPhase", phase(frame.worldTime(), frame.tickProgress()));
+        program.set("uCloudPhase", cloudPhase(frame.worldTime(), frame.tickProgress()));
         program.set("uLightDir", light.dirX(), light.dirY(), light.dirZ());
         program.set("uLightColor", light.red(), light.green(), light.blue());
         program.set("uAmbient", light.ambientRed(), light.ambientGreen(), light.ambientBlue());
@@ -117,5 +124,10 @@ public final class SkyIslandsVoid implements WorldEffect {
      */
     public static float phase(long worldTime, float tickProgress) {
         return (float) ((Math.floorMod(worldTime, CYCLE_TICKS) + tickProgress) / CYCLE_TICKS);
+    }
+
+    /** Phase of the cloud's drift and change, 0..1, used the same way. */
+    public static float cloudPhase(long worldTime, float tickProgress) {
+        return (float) ((Math.floorMod(worldTime, CLOUD_CYCLE_TICKS) + tickProgress) / CLOUD_CYCLE_TICKS);
     }
 }

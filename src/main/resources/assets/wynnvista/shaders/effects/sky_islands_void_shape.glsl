@@ -4,6 +4,7 @@
 uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cloud, both camera-relative
 uniform vec2 uNoiseOrigin;      // the camera's place within one repeat of the noise pattern, in blocks
 uniform float uPhase;           // 0..1 over the time after which the moving patterns repeat
+uniform float uCloudPhase;      // the same for the cloud, which moves and changes more slowly, over a longer time
 uniform vec3 uLightDir;         // unit direction towards the sun or moon
 uniform vec3 uLightColor;
 uniform vec3 uAmbient;
@@ -14,8 +15,9 @@ const float PERIOD = 2048.0;            // blocks per repeat of the noise; one o
 const float CELL = 4.0;                 // blocks between the two levels a clump can float at
 const int LAYERS = 4;                   // CELLs above the top of the lowest that cloud can reach
 const float COVER = 0.60;               // noise above which a place holds cloud; higher is fewer and smaller clumps
-const float COVER_STEP = 0.05;          // noise past that over which the blocky clumps grow 3 blocks higher
 const float CRUMB_MARGIN = 0.035;       // noise this far short of that still holds the thin rim of a soft cloud
+const float CHURN = 8.0;                // noise repeats the clumps change through per cycle of uCloudPhase; a whole number
+const float GATHER = 4.0;               // and the groups of clumps; a whole number
 const float CELLS_NEAR = 220.0;         // blocks from the camera at which the clumps start to give way to the haze
 const float CELLS_FAR = 520.0;          // and where they are gone
 
@@ -60,9 +62,31 @@ vec3 hash3(vec3 p) {
 /**
  * How much cloud stands at p, a place in noise repeats: cloud where it is above COVER, and taller the further
  * past. It has peaks about 16 blocks apart, each a clump, and a slow part that gathers the clumps into groups.
+ * Both change with time, the clumps faster than the groups, so the cloud swells, thins and forms anew.
  */
 float clumpCover(vec2 p) {
-    return 0.62 * noise(vec3(p * 4.0, 0.37)) + 0.38 * noise(vec3(p, 0.71));
+    return 0.62 * noise(vec3(p * 4.0, 0.37 + CHURN * uCloudPhase)) + 0.38 * noise(vec3(p, 0.71 + GATHER * uCloudPhase));
+}
+
+/**
+ * noise() at xy and z, with the blend between the two slices of z done here. The texture filter blends in 256
+ * steps from one texel to the next, which is not seen across space but jerks whatever follows one value over
+ * time, such as the size of a cuboid. Two lookups.
+ */
+float noiseOver(vec2 xy, float z) {
+    vec2 q = xy * NOISE_SIZE;
+    vec2 f = fract(q);
+    vec2 uv = (floor(q) + f * f * (3.0 - 2.0 * f) + 0.5) / NOISE_SIZE;
+    z *= NOISE_SIZE;
+    float slice = floor(z);
+    float a = textureLod(uNoise, vec3(uv, (slice + 0.5) / NOISE_SIZE), 0.0).r;
+    float b = textureLod(uNoise, vec3(uv, (slice + 1.5) / NOISE_SIZE), 0.0).r;
+    return mix(a, b, z - slice);
+}
+
+/** clumpCover for what must change evenly with time; it differs from it by less than the filter's steps and a little in its timing. */
+float clumpCoverSteady(vec2 p) {
+    return 0.62 * noiseOver(p * 4.0, 0.37 + CHURN * uCloudPhase) + 0.38 * noiseOver(p, 0.71 + GATHER * uCloudPhase);
 }
 
 /** Above 0.5 where the clump at p begins one layer higher, so that clumps float at two heights. */

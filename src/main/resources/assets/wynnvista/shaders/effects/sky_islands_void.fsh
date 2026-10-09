@@ -58,7 +58,7 @@ vec2 puff(vec3 q) {
  */
 float billow(vec3 q, float body, int octaves) {
     // The fine noise rises slowly through the cloud, so its surface is never still.
-    float detail = fbm(q * (DETAIL / PERIOD) - vec3(0.0, uPhase * 4.0, 0.0), octaves);
+    float detail = fbm(q * (DETAIL / PERIOD) - vec3(0.0, uCloudPhase * 16.0, 0.0), octaves);
     return clamp((body - 0.1 - EROSION * (1.0 - clamp(detail * 2.5 - 0.75, 0.0, 1.0))) * 2.0, 0.0, 1.0);
 }
 
@@ -87,7 +87,7 @@ vec3 puffColour(vec3 q, float shade, vec3 dir, vec3 lit) {
  */
 void clouds(vec3 dir, float from, float to, vec3 lit) {
     int steps = min(uSteps, MAX_STEPS);
-    vec3 origin = vec3(uNoiseOrigin.x + uPhase * PERIOD, CELL - uLevels.y, uNoiseOrigin.y);
+    vec3 origin = vec3(uNoiseOrigin.x + uCloudPhase * PERIOD, CELL - uLevels.y, uNoiseOrigin.y);
     float grow = exp(log((to + STEP_ORIGIN) / (from + STEP_ORIGIN)) / float(steps));
     float at = (from + STEP_ORIGIN) * pow(grow, dither(gl_FragCoord.xy));
     float shade = 1.0;
