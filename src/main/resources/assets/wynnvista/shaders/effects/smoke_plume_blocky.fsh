@@ -20,13 +20,14 @@ layout(location = 1) out float fragDistance;   // terrain distance, as the other
 // The smoke leaves the vent as many small cubes and ends as few large ones: four lattices, each twice as
 // coarse as the one below, each owning a band of heights. NOISE_PERIOD is a whole number of cells of each.
 const int LEVELS = 4;
-const float CELL[LEVELS] = float[](2.0, 4.0, 8.0, 16.0);         // lattice spacing in blocks
+const float CELL[LEVELS] = float[](2.0, 4.0, 8.0, 16.0);         // lattice spacing, in plume space as all sizes here
 const float BAND[LEVELS] = float[](0.0, 24.0, 72.0, 200.0);      // height above the vent where a level takes over
 const float BLEND = 1.5;                // cells of the coarser lattice, each way, over which two levels swap
 const int MAX_CELLS = 80;               // more than a ray can cross inside one level's box
 const float CUBE_OPACITY = 0.28;        // of a full-size cube of the coarsest level
 const float MIN_SIZE = 0.25;            // smaller cubes are left out rather than drawn as specks
 const float MIN_PIXELS = 1.5;           // a lattice whose cells are smaller than this on screen is not used
+const float MIN_BLOCKS = 1.0;           // nor one whose cells a scaled-down plume makes smaller than this
 
 vec3 hash3(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
@@ -37,6 +38,7 @@ vec3 hash3(vec3 p) {
 /**
  * Walks one level's lattice front to back along the ray and composites its cubes. The level draws cubes whose
  * centres are between bottom and top (heights above the vent); a negative fade means that end is not faded.
+ * The walk is in plume space, limit included; firstHit and the cloud layer's distance are in blocks.
  * front receives the part of them in front of the cloud layer.
  */
 void marchLevel(int level, vec3 dir, float limit, float bottom, float bottomFade, float top,
@@ -55,17 +57,19 @@ void marchLevel(int level, vec3 dir, float limit, float bottom, float bottomFade
     vec3 boxMax = vec3(max(axis0.x, axis1.x) + radius, y1 + size, max(axis0.y, axis1.y) + radius);
 
     vec3 safe = mix(dir, vec3(1.0e-7), lessThan(abs(dir), vec3(1.0e-7)));
-    vec3 a = (boxMin + uVent - rayOrigin) / safe;
-    vec3 b = (boxMax + uVent - rayOrigin) / safe;
+    vec3 eye = plumeSpace(rayOrigin);
+    float near = rayStart / uScale;
+    vec3 a = (boxMin - eye) / safe;
+    vec3 b = (boxMax - eye) / safe;
     vec3 lo = min(a, b);
     vec3 hi = max(a, b);
-    float from = max(max(lo.x, lo.y), max(lo.z, rayStart));
+    float from = max(max(lo.x, lo.y), max(lo.z, near));
     float to = min(min(min(hi.x, hi.y), hi.z), limit);
     if (to <= from) return;
 
     // Lattice space: one unit per cell, origin at the vent, sliding upward with the smoke.
     vec3 lift = vec3(0.0, uScroll, 0.0);
-    vec3 origin = (rayOrigin - uVent - lift) / size;
+    vec3 origin = (eye - lift) / size;
     vec3 inv = size / safe;
     vec3 stride = sign(safe);
     vec3 start = origin + safe * from / size;
@@ -91,17 +95,17 @@ void marchLevel(int level, vec3 dir, float limit, float bottom, float bottomFade
             b = (centre + 0.5 * scale - origin) * inv;
             lo = min(a, b);
             hi = max(a, b);
-            float enter = max(max(lo.x, lo.y), max(lo.z, rayStart));
+            float enter = max(max(lo.x, lo.y), max(lo.z, near));
             float leave = min(min(hi.x, hi.y), hi.z);
             if (leave > enter && enter < limit) {
-                if (firstHit < 0.0) firstHit = enter;
-                gather(front, colour, transmittance, enter, cloudAt);
+                if (firstHit < 0.0) firstHit = enter * uScale;
+                gather(front, colour, transmittance, enter * uScale, cloudAt);
                 vec4 c = column(q);
                 float u = c.y;
                 // One flat colour per cube: lit by the sky at the cube's own elevation, brighter on the side
                 // of the column that faces the light, darker ash low down, and a little variation from
                 // cube to cube.
-                vec3 place = centre * size + lift + uVent;
+                vec3 place = (centre * size + lift) * uScale + uVent;
                 vec3 ambient = skyLight(uAmbient, uLightColor, place.y / max(length(place), 1.0e-3));
                 float side = dot(c.zw, uLightDir.xz) * c.x / max(length(c.zw), 1.0e-3);
                 float shade = clamp(0.5 + 0.5 * side + 0.3 * uLightDir.y, 0.0, 1.0);
@@ -139,9 +143,10 @@ void main() {
     float limit = min(span.y, fragDistance);
     if (limit <= span.x) return;
 
-    // From far away the finest lattices are smaller than a pixel; the first one that is not takes their place.
+    // From far away the finest lattices are smaller than a pixel, and in a small plume smaller than a block;
+    // the first one that is not takes their place.
     int first = 0;
-    while (first < LEVELS - 1 && CELL[first] < MIN_PIXELS * uPixelSize) first++;
+    while (first < LEVELS - 1 && CELL[first] * uScale < max(MIN_PIXELS * uPixelSize, MIN_BLOCKS)) first++;
 
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
@@ -155,7 +160,7 @@ void main() {
         if (level < first || transmittance < 0.03) continue;
         bool lowest = level == first;
         bool highest = level == LEVELS - 1;
-        marchLevel(level, dir, limit,
+        marchLevel(level, dir, limit / uScale,
                 lowest ? 0.0 : BAND[level], lowest ? -1.0 : CELL[level] * BLEND,
                 highest ? uShape.x : BAND[level + 1], highest ? -1.0 : CELL[level + 1] * BLEND,
                 cloudAt, colour, transmittance, firstHit, front);

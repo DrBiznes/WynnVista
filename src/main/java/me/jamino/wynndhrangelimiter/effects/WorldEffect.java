@@ -5,7 +5,7 @@ package me.jamino.wynndhrangelimiter.effects;
  * where it exists. Register implementations in {@link WorldEffects}; each gets its own config toggle.
  */
 public interface WorldEffect {
-    /** Stable key used in the config file. */
+    /** Stable key used in the config file. Effects with the same id are switched by one config toggle. */
     String id();
 
     /** Label and tooltip of this effect's config toggle. */

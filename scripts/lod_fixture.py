@@ -369,7 +369,7 @@ def main() -> None:
             p.add_argument("--no-effects", action="store_true", help="turn the world-effects master switch off")
             p.add_argument("--disable-effects", default="", help="comma-separated effect ids to switch off")
             p.add_argument("--plume-style", default="REALISTIC", choices=["REALISTIC", "BLOCKY"],
-                           help="rendering style of the Mount Wynn smoke plume")
+                           help="rendering style of the smoke plumes")
             p.add_argument("--fog-style", default="REALISTIC", choices=["REALISTIC", "BLOCKY"],
                            help="rendering style of the Roots of Corruption lava fog")
             p.add_argument("--void-style", default="BLOCKY", choices=["REALISTIC", "BLOCKY"],

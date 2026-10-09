@@ -2,24 +2,35 @@ package me.jamino.wynndhrangelimiter.effects;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
 
-/** The smoke column rising from Mount Wynn's crater: placement, shape and lighting rules. */
+import java.util.List;
+
+/**
+ * A smoke column rising from a volcano's crater: placement, shape and lighting rules. The column is Mount
+ * Wynn's; a smaller volcano has the same one scaled down to its crater.
+ */
 public final class SmokePlume implements WorldEffect {
     public static final String ID = "smoke_plume";
+    /** The three plumes of the Volcanic Isles share one config toggle. */
+    public static final String VOLCANIC_ISLES_ID = "volcanic_isles_plumes";
 
     /** Peak of Mount Wynn; the smoke starts just below the rim, inside the crater. */
     public static final double PEAK_X = -183;
     public static final double PEAK_Y = 205;
     public static final double PEAK_Z = -1964;
-    public static final double VENT_Y = PEAK_Y - 12;
+    public static final double VENT_DEPTH = 12;
+    public static final double VENT_Y = PEAK_Y - VENT_DEPTH;
 
-    /** Column height, radius at the vent and at the top, and how far the top has blown downwind (east, slightly south). */
+    /**
+     * Column height, radius at the vent and at the top, and how far the top has blown downwind (east, slightly
+     * south), at Mount Wynn's size. Every length of a scaled plume is its scale times these.
+     */
     public static final float HEIGHT = 520;
     public static final float VENT_RADIUS = 14;
     public static final float TOP_RADIUS = 170;
     public static final float DRIFT_X = 150;
     public static final float DRIFT_Z = 70;
 
-    /** Blocks the noise pattern climbs per second, and the distance after which it repeats exactly. */
+    /** Blocks the noise pattern climbs per second at Mount Wynn's size, and the distance after which it repeats exactly. */
     public static final double RISE_SPEED = 4.8;
     public static final double SCROLL_PERIOD = 1280;
 
@@ -41,8 +52,50 @@ public final class SmokePlume implements WorldEffect {
         public String shader() { return shader; }
     }
 
-    private static final Bounds BOUNDS = new Bounds(PEAK_X - TOP_RADIUS, VENT_Y, PEAK_Z - TOP_RADIUS,
-            PEAK_X + DRIFT_X + TOP_RADIUS, VENT_Y + HEIGHT, PEAK_Z + DRIFT_Z + TOP_RADIUS);
+    public static final SmokePlume MOUNT_WYNN = new SmokePlume(ID, "Mount Wynn Smoke Plume",
+            "Smoke rising from the crater of Mount Wynn", PEAK_X, PEAK_Y, PEAK_Z, 1);
+
+    /** The Volcanic Isles' three volcanoes, each by the centre of its crater and the crater's diameter. */
+    public static final List<SmokePlume> VOLCANIC_ISLES = List.of(
+            volcanicIsle(-1032, 135, -3666, 15),
+            volcanicIsle(-826, 95, -3663, 18),
+            volcanicIsle(-860, 84, -3768, 10));
+
+    private final String id;
+    private final String name;
+    private final String description;
+    private final double peakX;
+    private final double ventY;
+    private final double peakZ;
+    private final float scale;
+    private final Bounds bounds;
+
+    /** @param scale size of the whole plume as a share of Mount Wynn's */
+    private SmokePlume(String id, String name, String description, double peakX, double peakY, double peakZ,
+                       float scale) {
+        this.id = id;
+        this.name = name;
+        this.description = description;
+        this.peakX = peakX;
+        this.ventY = peakY - VENT_DEPTH * scale;
+        this.peakZ = peakZ;
+        this.scale = scale;
+        this.bounds = new Bounds(peakX - TOP_RADIUS * scale, ventY, peakZ - TOP_RADIUS * scale,
+                peakX + (DRIFT_X + TOP_RADIUS) * scale, ventY + HEIGHT * scale,
+                peakZ + (DRIFT_Z + TOP_RADIUS) * scale);
+    }
+
+    private static SmokePlume volcanicIsle(double x, double y, double z, float craterDiameter) {
+        return new SmokePlume(VOLCANIC_ISLES_ID, "Volcanic Isles Smoke Plumes",
+                "Smoke rising from the three volcanoes of the Volcanic Isles", x, y, z, scaleFor(craterDiameter));
+    }
+
+    /** The scale at which the smoke leaves the vent as wide as a crater of this diameter. */
+    public static float scaleFor(float craterDiameter) {
+        return craterDiameter / (2 * VENT_RADIUS);
+    }
+
+    public float scale() { return scale; }
 
     /** Light arriving at the plume: a unit direction towards the light, its colour, the sky ambient and the crater glow. */
     public record Lighting(float dirX, float dirY, float dirZ,
@@ -50,25 +103,29 @@ public final class SmokePlume implements WorldEffect {
                            float ambientRed, float ambientGreen, float ambientBlue,
                            float glow) {}
 
-    @Override public String id() { return ID; }
-    @Override public String name() { return "Mount Wynn Smoke Plume"; }
-    @Override public String description() { return "Smoke rising from the crater of Mount Wynn"; }
+    @Override public String id() { return id; }
+    @Override public String name() { return name; }
+    @Override public String description() { return description; }
     @Override public String shader() { return ModConfig.smokePlumeStyle().shader(); }
     /** Half resolution would blur the cube edges the blocky style is made of. */
     @Override public boolean halfResolution() { return ModConfig.smokePlumeStyle() != Style.BLOCKY; }
-    @Override public double anchorX() { return PEAK_X; }
-    @Override public double anchorZ() { return PEAK_Z; }
-    @Override public Bounds bounds() { return BOUNDS; }
+    @Override public double anchorX() { return peakX; }
+    @Override public double anchorZ() { return peakZ; }
+    @Override public Bounds bounds() { return bounds; }
 
-    /** Beyond this the plume is a few pixels wide; the main map is at most about 4,300 blocks from the peak. */
-    @Override public double maxViewDistance() { return 9000; }
+    /**
+     * Beyond this the plume is a few pixels wide; the main map is at most about 4,300 blocks from Mount
+     * Wynn's peak.
+     */
+    @Override public double maxViewDistance() { return 9000 * scale; }
 
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
         Lighting light = lighting(frame);
         program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
-        program.set("uVent", (float) (PEAK_X - frame.cameraX()), (float) (VENT_Y - frame.cameraY()),
-                (float) (PEAK_Z - frame.cameraZ()));
+        program.set("uVent", (float) (peakX - frame.cameraX()), (float) (ventY - frame.cameraY()),
+                (float) (peakZ - frame.cameraZ()));
+        program.set("uScale", scale);
         program.set("uShape", HEIGHT, VENT_RADIUS, TOP_RADIUS);
         program.set("uDrift", DRIFT_X, DRIFT_Z);
         program.set("uScroll", scroll(frame.worldTime(), frame.tickProgress()));
