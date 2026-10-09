@@ -15,12 +15,12 @@ The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay
 - Configurable settings via Mod Menu or config file
 
 ## See It
-
+<img width="640" height="360" alt="world-effects-timelapse" src="https://github.com/user-attachments/assets/4363d32c-088f-42ee-a5ad-05f6a82c0579" />
 ### Smoke Plume
-
+<img width="720" height="268" alt="smoke-plume-realistic-vs-blocky" src="https://github.com/user-attachments/assets/a634705f-e714-4163-8d43-675f39cf364c" />
 SUPER SMOKE PLUME!!
 ### Roots of Corruption Fog
-
+<img width="720" height="268" alt="roots-of-corruption-fog-realistic-vs-blocky" src="https://github.com/user-attachments/assets/06803fd6-deec-467b-8edf-eea23b16d75f" />
 Doesn't obscure annie do not worrie!!
 ## Installation
 
