@@ -384,6 +384,17 @@ Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking -
 - **Realistic void style.** Run only in the Voxy fixture without a shader pack, at 854x480, in still frames: the drift, the rising fine noise, the twinkle and the parallax between a nebula's two clouds have not been watched, and a nebula at its normal rarity, the stars at half resolution and the view at 1920x1080 have not been seen. Under a pack it takes the pack's sky brightness as the cubes do but not the per-face sun rule; whether it is dim under BSL and Photon by day, as the flat sheets were, is not known. Shape, density, erosion and shading were set by eye in four runs. The clouds are soft puffs rather than towering cumulus: the noise texture is 32 texels a side and smooth, so the fine billows are faint. The updrafts and spray still rise from y 10, which the realistic cloud tops (up to about y 18) can stand above.
 - **Sky Islands updrafts and motes.** They need the terrain map and so stop at the mask's box (x 704..1535, z -5008..-4369): south, east and south-west of it the void has its sea but no streaks, motes or spray. That is intended: the larger box is there to put the sea under the edges of the area, and the mask is not to be recorded again for it. The GPU times in Results are from before the cube test and were not taken again: a run on 2026-10-08 logged 0.7 to 10 ms while the frame rate of the whole client was a sixth of the usual, which is not a measurement of this pass. Run only in the Voxy fixture, in still frames: the speed of the streaks, the gusts moving across the area and the blinking have not been watched, and how much of it is too much while flying is not known. A streak stands over a column that is empty all the way up; it is not stopped by a bridge or branch in a neighbouring column, only hidden by what is in front of it. The three places use one point and a radius each, taken from territory banners and one discovery, not fitted to the builds. Not measured with a shader pack.
 
+## Update path
+
+The content updates in the order they are planned to ship. Each update's world effects are scoped, and its locations added to [Future locations](#future-locations), before it is ticked off. Ticking one off uses the same bar: an anchor, bounds and a fixture run.
+
+1. [x] **Sky Islands**: the void, updrafts, motes and three named places (see the Sky Islands sections above).
+2. [ ] **Nessak Blizzard**: effects not yet scoped.
+3. [ ] **Ocean Update**: effects not yet scoped.
+4. [ ] **Silent Expanse**: effects not yet scoped.
+5. [ ] **Gavel Plains + Canyon of the Lost**: effects not yet scoped.
+6. [ ] **Fruma**: effects not yet scoped.
+
 ## Future locations
 
 Places to add world effects to. None is started; each needs its anchor, bounds and a fixture run before it is listed as done.
