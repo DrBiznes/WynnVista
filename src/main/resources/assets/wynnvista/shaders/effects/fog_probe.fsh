@@ -12,7 +12,9 @@
 // the colour of a modelled fog. Under a shader pack the effects' own lighting is matched to the band each
 // part of an effect is seen in (skyLight() in scene.glsl), so an effect looked up at from nearby has the
 // colours of the sky behind it and not those of a horizon that may not even be in view. The second row holds
-// the colour of each band's bright parts: where a pack has drawn clouds, those are their lit sides.
+// the colour of each band's bright parts: where a pack has drawn clouds, those are their lit sides. The
+// alpha of each is how bright the effect's own light model was when that sky was seen: a sky that has been out
+// of view since another time of day is scaled by how much the model has changed since.
 
 #include "scene.glsl"
 
@@ -25,7 +27,7 @@ uniform float uRate;          // share of this frame's measurement blended in; 1
 uniform int uProbeMode;       // 0: measure the fog, 1: a model knows it
 
 out vec4 fragColor;           // texel 0: rgb colour of terrain at the effect's distance, a: how much detail it keeps
-                              // others: rgb colour of the sky in that band, negative while none was seen, a: 1
+                              // others: rgb colour of the sky in that band, negative while none was seen, a: uReference when it was
                               // second row: unused, then the colour of each band's bright parts
 
 const int COLUMNS = 32;
@@ -81,10 +83,11 @@ void sky(int band, bool bright) {
     vec4 previous = texelFetch(uPrevious, ivec2(1 + band, bright ? 1 : 0), 0);
     bool fresh = uRate >= 1.0 || previous.r < 0.0;
     if (count <= 0.0) {
-        fragColor = uRate >= 1.0 ? vec4(-1.0, -1.0, -1.0, 1.0) : vec4(previous.rgb, 1.0);
+        fragColor = uRate >= 1.0 ? vec4(-1.0, -1.0, -1.0, 1.0) : previous;
         return;
     }
-    fragColor = vec4(fresh ? colour / count : mix(previous.rgb, colour / count, uRate), 1.0);
+    vec4 seen = vec4(colour / count, uReference);
+    fragColor = fresh ? seen : mix(previous, seen, uRate);
 }
 
 void main() {

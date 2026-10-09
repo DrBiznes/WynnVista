@@ -12,37 +12,47 @@ public final class EffectCulling {
 
     private EffectCulling() {}
 
+    /** Clip-space w nearer than which a point counts as behind the camera. */
+    private static final float NEAR = 0.05f;
+
     /**
-     * Projects a camera-relative box. Returns null when the box is entirely outside the view, the whole view
-     * when it reaches behind the camera (the camera is in or beside it), and otherwise its screen rectangle.
+     * Projects a camera-relative box. Returns null when the box is entirely outside the view, and otherwise
+     * the screen rectangle of the part of it in front of the camera: the whole view when the camera is inside
+     * it, less when it only reaches behind the camera (a layer below the camera ends at the horizon).
      * The far plane is ignored: effects are ray-marched and are not limited by it.
      */
     public static ScreenRect project(Matrix4fc viewProjection, float minX, float minY, float minZ,
                                      float maxX, float maxY, float maxZ) {
-        Vector4f clip = new Vector4f();
-        boolean allLeft = true, allRight = true, allBelow = true, allAbove = true, allBehind = true;
-        boolean anyBehind = false;
-        float x0 = 1, y0 = 1, x1 = -1, y1 = -1;
+        Vector4f[] corners = new Vector4f[8];
         for (int corner = 0; corner < 8; corner++) {
-            clip.set((corner & 1) == 0 ? minX : maxX, (corner & 2) == 0 ? minY : maxY,
+            corners[corner] = new Vector4f((corner & 1) == 0 ? minX : maxX, (corner & 2) == 0 ? minY : maxY,
                     (corner & 4) == 0 ? minZ : maxZ, 1).mul(viewProjection);
-            allLeft &= clip.x < -clip.w;
-            allRight &= clip.x > clip.w;
-            allBelow &= clip.y < -clip.w;
-            allAbove &= clip.y > clip.w;
-            if (clip.w <= 0.05f) {
-                anyBehind = true;
-                continue;
-            }
-            allBehind = false;
-            x0 = Math.min(x0, clip.x / clip.w);
-            x1 = Math.max(x1, clip.x / clip.w);
-            y0 = Math.min(y0, clip.y / clip.w);
-            y1 = Math.max(y1, clip.y / clip.w);
         }
-        if (allLeft || allRight || allBelow || allAbove || allBehind) return null;
-        if (anyBehind) return ScreenRect.FULL;
-        return new ScreenRect(unit(x0), unit(y0), unit(x1), unit(y1));
+        // The part in front of the camera is bounded by the corners there and by where the edges that cross
+        // the camera's plane meet it.
+        float[] bounds = {Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
+        for (int corner = 0; corner < 8; corner++) {
+            Vector4f from = corners[corner];
+            if (from.w > NEAR) include(bounds, from.x, from.y, from.w);
+            for (int axis = 1; axis < 8; axis <<= 1) {
+                if ((corner & axis) != 0) continue;
+                Vector4f to = corners[corner | axis];
+                if (from.w > NEAR == to.w > NEAR) continue;
+                float t = (NEAR - from.w) / (to.w - from.w);
+                include(bounds, from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t, NEAR);
+            }
+        }
+        // Nothing in front of the camera, or all of that off one side of the view.
+        if (bounds[0] > 1 || bounds[1] > 1 || bounds[2] < -1 || bounds[3] < -1) return null;
+        ScreenRect rect = new ScreenRect(unit(bounds[0]), unit(bounds[1]), unit(bounds[2]), unit(bounds[3]));
+        return rect.equals(ScreenRect.FULL) ? ScreenRect.FULL : rect;
+    }
+
+    private static void include(float[] bounds, float x, float y, float w) {
+        bounds[0] = Math.min(bounds[0], x / w);
+        bounds[1] = Math.min(bounds[1], y / w);
+        bounds[2] = Math.max(bounds[2], x / w);
+        bounds[3] = Math.max(bounds[3], y / w);
     }
 
     /** Tangent of the steepest downward view at which a reflection is still looked for. */

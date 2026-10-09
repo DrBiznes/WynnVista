@@ -84,4 +84,21 @@ class SmokePlumeTest {
         }
         assertEquals(SmokePlume.lighting(6000, 0), SmokePlume.lighting(6000, 0, false, -40), "without a pack the path is fixed");
     }
+
+    @Test
+    void skyReferenceFollowsTheLightSoTheMatchKeepsItsShape() {
+        float noon = SmokePlume.skyReference(SmokePlume.lighting(6000, 0));
+        float midnight = SmokePlume.skyReference(SmokePlume.lighting(18000, 0));
+        assertTrue(noon > 0.7f && noon < 1.1f, "a sunlit plume is about as bright as a daytime horizon: " + noon);
+        assertTrue(midnight > 0.05f && midnight < 0.2f, "and dim under the moon: " + midnight);
+        assertTrue(SmokePlume.skyReference(SmokePlume.lighting(6000, 1)) < noon, "dimmer in rain");
+    }
+
+    @Test
+    void skyIsComparedWithTheReferenceOfTheTimeItWasSeen() {
+        // The probe keeps the reference beside the sky's colour, and the effects divide by that one.
+        String probe = EffectProgram.source("fog_probe.fsh");
+        assertTrue(probe.contains("vec4 seen = vec4(colour / count, uReference);"));
+        assertTrue(EffectProgram.source("smoke_plume.fsh").contains("float follow = uReference / max(sky.a, 1.0e-3);"));
+    }
 }

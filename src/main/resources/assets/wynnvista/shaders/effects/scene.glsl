@@ -4,7 +4,7 @@
 uniform sampler2D uSceneDepth;
 uniform sampler2D uLodDepth;
 uniform sampler3D uNoise;
-uniform sampler2D uFogProbe;  // written by fog_probe.fsh: the fog measurement, then the sky's colour in SKY_BANDS bands of elevation; second row: its bright parts
+uniform sampler2D uFogProbe;  // written by fog_probe.fsh: the fog measurement, then the sky's colour in SKY_BANDS bands of elevation, each with the effect's own brightness when it was seen; second row: its bright parts
 uniform sampler2D uTerrainDepth;  // vanilla depth as it was before a cloud mod drew its clouds into it
 uniform sampler2D uCloudDepth;    // depth of that cloud layer alone, 1 where it wrote none
 uniform sampler2D uCloudColor;    // the cloud layer alone: premultiplied colour, opacity in alpha
@@ -22,6 +22,7 @@ uniform vec4 uFogTableRange;  // x: 1 / ground distance covered, 0 without a tab
 uniform vec4 uFogTableColor;  // rgb: the fog's colour, a: 1 when it is known, 0 to take it from the probe
 uniform mat4 uSceneForward;   // camera-relative world -> vanilla clip space
 uniform float uSkyMatch;      // 1 while a shader pack renders and the effect is lit by the sky that pack drew
+uniform float uReference;     // brightness of a middling part of the effect under its own light, now
 uniform sampler2D uOpaqueDepth;   // vanilla depth as it was before translucents were drawn (a shader pack's depthtex1)
 uniform sampler2D uLodSurface;    // the LOD renderer's depth with its water
 uniform sampler2D uLodOpaque;     // and without it; the same texture as uLodSurface when the two are not kept apart
@@ -112,9 +113,10 @@ bool skyRead = false;
 /**
  * The sky as the probe saw it at an elevation given by its sine: its average colour, or with `bright` the
  * colour of its bright parts. Below the horizon it is the horizon's. A band with no sky in view has the
- * colour of the nearest band that has. Negative while no sky has been seen at all.
+ * colour of the nearest band that has. Negative while no sky has been seen at all. In a: the effect's own
+ * brightness when that sky was seen.
  */
-vec3 skyAt(float up, bool bright) {
+vec4 skyAt(float up, bool bright) {
     if (!skyRead) {
         skyRead = true;
         bool seen[SKY_BANDS];
@@ -130,8 +132,8 @@ vec3 skyAt(float up, bool bright) {
     float band = clamp(up * float(SKY_BANDS) - 0.5, 0.0, float(SKY_BANDS - 1));
     int below = min(int(band), SKY_BANDS - 2);
     int row = bright ? 1 : 0;
-    return mix(texelFetch(uFogProbe, ivec2(1 + skyBands[below], row), 0).rgb,
-            texelFetch(uFogProbe, ivec2(1 + skyBands[below + 1], row), 0).rgb, band - float(below));
+    return mix(texelFetch(uFogProbe, ivec2(1 + skyBands[below], row), 0),
+            texelFetch(uFogProbe, ivec2(1 + skyBands[below + 1], row), 0), band - float(below));
 }
 
 /**
@@ -199,7 +201,7 @@ vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud, vec3 position) 
             haze = fog.x;
             // Fog in front of an effect has the colour of the sky in its direction: at the horizon what
             // distant terrain fades into, higher up what the pack drew there. Nothing yet if none was seen.
-            vec3 seen = skyAt(position.y / max(length(position), 1.0e-3), false);
+            vec3 seen = skyAt(position.y / max(length(position), 1.0e-3), false).rgb;
             hazeColour = uFogTableColor.a > 0.5 ? uFogTableColor.rgb : (seen.r < 0.0 ? uFogColor : seen);
         }
     }
@@ -235,20 +237,23 @@ float luminance(vec3 colour) {
  * game knows nothing about, and the effect is lit by that sky as it is behind it: the sky light has its
  * colour and brightness there, and the sun or moon light the brightness of its bright parts. Where clouds
  * stand out from the sky their lit sides also show the colour of the pack's sun or moon; an even sky does
- * not, and there the model's own sun keeps its colour.
+ * not, and there the model's own sun keeps its colour. A sky that has gone out of view was seen at another
+ * time of day: its brightness is scaled by how much the effect's own has changed since, so the effect goes
+ * on following the time of day.
  */
 vec3 skyLight(vec3 ambient, vec3 sun, float up) {
     sunLight = sun;
     if (uSkyMatch < 0.5) return mix(ambient, uFogColor, 0.45);
-    vec3 sky = skyAt(up, false);
+    vec4 sky = skyAt(up, false);
     if (sky.r < 0.0) return ambient;
-    vec3 bright = max(skyAt(up, true), 0.0);
-    float seen = max(luminance(sky), 1.0e-3);
-    float most = clamp(luminance(bright), seen, BRIGHTEST * seen);
+    vec3 bright = max(skyAt(up, true).rgb, 0.0);
+    float follow = uReference / max(sky.a, 1.0e-3);
+    float seen = max(luminance(sky.rgb), 1.0e-3);
+    float most = clamp(luminance(bright), seen, BRIGHTEST * seen) * follow;
     float clouds = smoothstep(1.1, 1.4, most / seen);
     vec3 hue = mix(sun / max(luminance(sun), 1.0e-3), bright / max(luminance(bright), 1.0e-3), clouds);
     sunLight = SUN_SHARE * most * hue;
-    return SKY_SHARE * seen * mix(ambient / max(luminance(ambient), 1.0e-3), sky / seen, SKY_HUE);
+    return SKY_SHARE * seen * follow * mix(ambient / max(luminance(ambient), 1.0e-3), sky.rgb / seen, SKY_HUE);
 }
 
 const float NOISE_SIZE = 32.0;

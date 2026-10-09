@@ -132,6 +132,21 @@ public final class SmokePlume implements WorldEffect {
                 lerp(1.0f, 0.1f, day));
     }
 
+    /**
+     * Brightness of a middling part of an effect under this light, to compare with the sky a shader pack
+     * has drawn: three quarters of the sky light and somewhat under half of the sun or moon. The fog probe
+     * keeps it beside each band of sky it saw, and a sky that has gone out of view is scaled by how much it
+     * has changed since.
+     */
+    public static float skyReference(Lighting light) {
+        return 0.75f * luminance(light.ambientRed(), light.ambientGreen(), light.ambientBlue())
+                + 0.45f * luminance(light.red(), light.green(), light.blue());
+    }
+
+    private static float luminance(float red, float green, float blue) {
+        return 0.2126f * red + 0.7152f * green + 0.0722f * blue;
+    }
+
     private static float clamp(float value) {
         return Math.max(0, Math.min(1, value));
     }

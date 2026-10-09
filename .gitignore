@@ -41,3 +41,6 @@ nul
 !.env.example
 
 /repomix-output.txt
+
+# Local marketing material, kept out of the repository
+/marketing/

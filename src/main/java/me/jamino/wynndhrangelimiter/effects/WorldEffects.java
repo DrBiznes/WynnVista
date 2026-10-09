@@ -23,12 +23,16 @@ import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL21C;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.opengl.GL33C;
+import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,6 +52,7 @@ import java.util.Set;
 public final class WorldEffects {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista-effects");
     private static final int NOISE_SIZE = 32;
+    private static final String TEXTURES = "/assets/wynnvista/textures/effects/";
     /** {@code -Dwynnvista.effects.profile=true} logs the GPU time of the effect pass. */
     private static final boolean PROFILE = Boolean.getBoolean("wynnvista.effects.profile");
     private static final int PROFILE_FRAMES = 100;
@@ -58,7 +63,8 @@ public final class WorldEffects {
     /** Ticks after which they repeat in time: the same size, at half a noise cell per second. */
     private static final long RIPPLE_TICKS = NOISE_SIZE * 2 * 20;
 
-    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog());
+    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog(), new SkyIslandsVoid(),
+            new SkyIslandsAir());
 
     private static boolean failed;
     private static boolean created;
@@ -91,6 +97,8 @@ public final class WorldEffects {
     private static EffectProgram fogProgram;
     private static boolean fogBroken;
     private static final Set<String> BROKEN = new HashSet<>();
+    /** Terrain maps by file name; 0 for one that could not be loaded. */
+    private static final Map<String, Integer> TERRAIN_MAPS = new HashMap<>();
     private static String loggedState = "";
     private static int timerQuery;
     private static boolean timerPending;
@@ -228,14 +236,14 @@ public final class WorldEffects {
             if (!ModConfig.effectEnabled(effect.id()) || BROKEN.contains(effect.shader())) continue;
             if (!EffectRegion.shows(snapshot, true, dimension, client.player.getX(), client.player.getZ(),
                     effect.anchorX(), effect.anchorZ())) continue;
+            if (!effect.inRange(cameraPos.x, cameraPos.y, cameraPos.z)) continue;
             double distance = Math.hypot(effect.anchorX() - cameraPos.x, effect.anchorZ() - cameraPos.z);
-            if (distance > effect.maxViewDistance()) continue;
             WorldEffect.Bounds box = effect.bounds();
             EffectCulling.ScreenRect rect = EffectCulling.project(viewProjection,
                     (float) (box.minX() - cameraPos.x), (float) (box.minY() - cameraPos.y),
                     (float) (box.minZ() - cameraPos.z), (float) (box.maxX() - cameraPos.x),
                     (float) (box.maxY() - cameraPos.y), (float) (box.maxZ() - cameraPos.z));
-            EffectCulling.ScreenRect mirror = !reflections ? null : EffectCulling.reflection(viewProjection,
+            EffectCulling.ScreenRect mirror = !reflections || !effect.reflects() ? null : EffectCulling.reflection(viewProjection,
                     (float) (box.minX() - cameraPos.x), (float) (box.minZ() - cameraPos.z),
                     (float) (box.maxX() - cameraPos.x), (float) (box.maxZ() - cameraPos.z));
             if (rect != null || mirror != null) visible.add(new Visible(effect, rect, mirror, distance));
@@ -305,7 +313,8 @@ public final class WorldEffects {
             // The fog already in the image is measured before anything is drawn over it.
             GL11C.glDisable(GL11C.GL_BLEND);
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
-            for (Visible entry : visible) measureFog(entry, scene, color);
+            float reference = SmokePlume.skyReference(SmokePlume.lighting(frame));
+            for (Visible entry : visible) measureFog(entry, scene, color, reference);
             GL11C.glEnable(GL11C.GL_BLEND);
 
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
@@ -322,13 +331,15 @@ public final class WorldEffects {
             if (mirrored) {
                 for (Visible entry : visible) {
                     if (entry.mirror() != null) {
-                        shade(entry, entry.mirror(), water, scene, frame, env, fogColor, projectionScaleY, width, height);
+                        shade(entry, entry.mirror(), water, scene, frame, env, fogColor, reference, projectionScaleY,
+                                width, height);
                     }
                 }
             }
             for (Visible entry : visible) {
                 if (entry.rect() != null) {
-                    shade(entry, entry.rect(), null, scene, frame, env, fogColor, projectionScaleY, width, height);
+                    shade(entry, entry.rect(), null, scene, frame, env, fogColor, reference, projectionScaleY, width,
+                            height);
                 }
             }
             endProfile();
@@ -339,14 +350,17 @@ public final class WorldEffects {
 
     /**
      * Draws one effect into {@code rect} of the world image, or with {@code water} its reflection in the
-     * water there. The world image is bound and blending is set for premultiplied colour.
+     * water there. The world image is bound and blending is set for premultiplied colour. {@code reference}
+     * is the effects' own brightness now ({@link SmokePlume#skyReference}).
      */
     private static void shade(Visible entry, EffectCulling.ScreenRect rect, PackWater water, Scene scene,
-                              EffectFrame frame, FogModel.Env env, Vector4f fogColor, float projectionScaleY,
-                              int width, int height) {
+                              EffectFrame frame, FogModel.Env env, Vector4f fogColor, float reference,
+                              float projectionScaleY, int width, int height) {
         WorldEffect effect = entry.effect();
         EffectProgram program = program(effect);
         if (program == null) return;
+        int terrainMap = effect.terrainMap() == null ? 0 : terrainMap(effect);
+        if (effect.terrainMap() != null && terrainMap == 0) return;
         // Only the pixels the effect's box can cover are shaded at all.
         int x0 = Math.max(0, (int) Math.floor(rect.minX() * width) - 1);
         int y0 = Math.max(0, (int) Math.floor(rect.minY() * height) - 1);
@@ -377,6 +391,7 @@ public final class WorldEffects {
         FogProbe probe = FOG_PROBES.get(effect.id());
         bind(6, GL11C.GL_TEXTURE_2D, probe.textures[probe.current]);
         program.set("uFogProbe", 6);
+        program.set("uReference", reference);
         program.set("uFogColor", fogColor.x, fogColor.y, fogColor.z);
         program.set("uSteps", steps);
         program.set("uOctaves", octaves);
@@ -387,6 +402,10 @@ public final class WorldEffects {
         program.set("uBoxMax", (float) (box.maxX() - frame.cameraX()), (float) (box.maxY() - frame.cameraY()),
                 (float) (box.maxZ() - frame.cameraZ()));
         effect.upload(program, frame);
+        if (terrainMap != 0) {
+            bind(14, GL11C.GL_TEXTURE_2D, terrainMap);
+            program.set("uTerrainMap", 14);
+        }
         if (half) {
             drawHalfResolution(scene, width, height, x0, y0, x1, y1);
         } else {
@@ -439,10 +458,11 @@ public final class WorldEffects {
 
     /**
      * Updates an effect's fog probe from the finished world image: how much detail the terrain at the
-     * effect's distance still has, and its colour. If the probe shader is unusable the probe keeps its
-     * initial "clear".
+     * effect's distance still has, and its colour, and the sky at the horizon with {@code reference}, the
+     * effects' own brightness now ({@link SmokePlume#skyReference}). If the probe shader is unusable the
+     * probe keeps its initial "clear".
      */
-    private static void measureFog(Visible entry, Scene scene, int color) {
+    private static void measureFog(Visible entry, Scene scene, int color, float reference) {
         FogProbe probe = FOG_PROBES.computeIfAbsent(entry.effect().id(), id -> createFogProbe());
         if (fogBroken) return;
         if (fogProgram == null) {
@@ -474,6 +494,7 @@ public final class WorldEffects {
         fogProgram.set("uBand", band.near(), band.far());
         fogProgram.set("uContrast", EffectFog.CONTRAST_GONE, EffectFog.CONTRAST_CLEAR);
         fogProgram.set("uRate", rate);
+        fogProgram.set("uReference", reference);
         // With a model the amount of fog is known and is not measured.
         fogProgram.set("uProbeMode", scene.fog() != null && !scene.fog().measured() ? 1 : 0);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
@@ -698,6 +719,43 @@ public final class WorldEffects {
         }
     }
 
+    /**
+     * Loads an effect's terrain map on first use. A map that cannot be read disables only the effects using it.
+     */
+    private static int terrainMap(WorldEffect effect) {
+        String name = effect.terrainMap();
+        Integer known = TERRAIN_MAPS.get(name);
+        if (known != null) return known;
+        int texture = 0;
+        ByteBuffer file = null;
+        try (InputStream in = WorldEffects.class.getResourceAsStream(TEXTURES + name);
+             MemoryStack stack = MemoryStack.stackPush()) {
+            if (in == null) throw new IOException("missing");
+            byte[] bytes = in.readAllBytes();
+            file = MemoryUtil.memAlloc(bytes.length).put(bytes).flip();
+            IntBuffer width = stack.mallocInt(1);
+            IntBuffer height = stack.mallocInt(1);
+            ByteBuffer pixels = STBImage.stbi_load_from_memory(file, width, height, stack.mallocInt(1), 4);
+            if (pixels == null) throw new IOException(STBImage.stbi_failure_reason());
+            texture = GL11C.glGenTextures();
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE14);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+            resetUnpack();
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL11C.GL_RGBA8, width.get(0), height.get(0), 0,
+                    GL11C.GL_RGBA, GL11C.GL_UNSIGNED_BYTE, pixels);
+            STBImage.stbi_image_free(pixels);
+            LOGGER.info("World effect '{}' loaded its terrain map {} ({} x {})", effect.id(), name, width.get(0),
+                    height.get(0));
+        } catch (IOException e) {
+            LOGGER.error("World effect '{}' disabled: its terrain map {} is unusable", effect.id(), name, e);
+        } finally {
+            if (file != null) MemoryUtil.memFree(file);
+        }
+        TERRAIN_MAPS.put(name, texture);
+        return texture;
+    }
+
     private static void logState(String state) {
         if (state.equals(loggedState)) return;
         loggedState = state;
@@ -791,12 +849,13 @@ public final class WorldEffects {
         private static final int[] TARGETS = {GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_3D,
                 GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
                 GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
-                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
         private static final int[] BINDINGS = {GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
-                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
+                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
+                GL11C.GL_TEXTURE_BINDING_2D};
         private static final int[] PIXEL_STORE = {GL11C.GL_UNPACK_ALIGNMENT, GL11C.GL_UNPACK_ROW_LENGTH,
                 GL11C.GL_UNPACK_SKIP_PIXELS, GL11C.GL_UNPACK_SKIP_ROWS, GL12C.GL_UNPACK_IMAGE_HEIGHT,
                 GL12C.GL_UNPACK_SKIP_IMAGES};

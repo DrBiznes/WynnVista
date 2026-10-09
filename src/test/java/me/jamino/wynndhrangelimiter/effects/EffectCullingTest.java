@@ -39,6 +39,23 @@ class EffectCullingTest {
     }
 
     @Test
+    void layerBelowTheCameraEndsAtTheHorizon() {
+        // The camera stands 80 blocks over the middle of a wide, flat layer and looks level along it.
+        EffectCulling.ScreenRect rect = EffectCulling.project(CAMERA, -600, -120, -400, 600, -80, 400);
+        assertNotNull(rect);
+        assertEquals(0f, rect.minX(), 0f);
+        assertEquals(1f, rect.maxX(), 0f);
+        assertEquals(0f, rect.minY(), 0f, "it passes under the camera");
+        assertTrue(rect.maxY() > 0.3f && rect.maxY() < 0.5f, "its far edge is just below the horizon: " + rect);
+        // Looking up, away from it, there is nothing of it in view.
+        Matrix4f up = new Matrix4f(CAMERA).rotateX((float) Math.toRadians(-60));
+        assertNull(EffectCulling.project(up, -600, -120, -400, 600, -80, 400));
+        // Looking straight down it fills the view.
+        Matrix4f down = new Matrix4f(CAMERA).rotateX((float) Math.toRadians(90));
+        assertSame(EffectCulling.ScreenRect.FULL, EffectCulling.project(down, -600, -120, -400, 600, -80, 400));
+    }
+
+    @Test
     void boxCutByTheScreenEdgeIsClamped() {
         EffectCulling.ScreenRect rect = EffectCulling.project(CAMERA, 500, -50, -1100, 3000, 300, -900);
         assertNotNull(rect);
@@ -58,8 +75,8 @@ class EffectCullingTest {
 
         assertNull(EffectCulling.reflection(CAMERA, -100, 1900, 100, 2100), "behind the camera");
         assertNull(EffectCulling.reflection(CAMERA, 5000, -1100, 5200, -900), "off to the right");
-        assertSame(EffectCulling.ScreenRect.FULL, EffectCulling.reflection(CAMERA, -100, -100, 100, 100),
-                "standing under the box");
+        assertEquals(new EffectCulling.ScreenRect(0, 0, 1, 0.5f), EffectCulling.reflection(CAMERA, -100, -100, 100, 100),
+                "standing under the box: all of the view below the horizon");
     }
 
     @Test
