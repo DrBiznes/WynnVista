@@ -179,8 +179,8 @@ In `scene.glsl`, `sceneDistance()` uses the copied depth wherever the vanilla de
 
 "Smoke Plume Style" on the World Effects config page (`smokePlumeStyle` in the config file) chooses how the plume is drawn. Placement, shape, density (`plume_shape.glsl`) and the sun and moon lighting are the same in both; switching takes effect on the next frame.
 
-- **Realistic** (`REALISTIC`, the default, `smoke_plume.fsh`): the soft ray-marched volume described in the rest of this document.
-- **Blocky** (`BLOCKY`, `smoke_plume_blocky.fsh`): translucent, flat-shaded cubes whose overlap adds up to the opacity, after the look of the [Better Clouds](https://github.com/Qendolin/better-clouds) mod. Only the technique follows that mod; none of its code or assets are included.
+- **Realistic** (`REALISTIC`, `smoke_plume.fsh`): the soft ray-marched volume described in the rest of this document.
+- **Blocky** (`BLOCKY`, the default, `smoke_plume_blocky.fsh`): translucent, flat-shaded cubes whose overlap adds up to the opacity, after the look of the [Better Clouds](https://github.com/Qendolin/better-clouds) mod. Only the technique follows that mod; none of its code or assets are included.
 
 Better Clouds draws instanced cube geometry. Here the cubes are found per pixel instead, so the style uses the same pass, depth sources, culling and fog probe as every other effect.
 
@@ -212,7 +212,7 @@ Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever t
 
 ### Blocky style
 
-"Lava Fog Style" on the World Effects config page (`netherFogStyle` in the config file) is separate from the plume's setting. **Realistic** (`REALISTIC`, the default) is the fog described above. **Blocky** (`BLOCKY`, `nether_fog_blocky.fsh`) uses the plume's cube technique, with the layer's shape, drifting noise and glow shared through `nether_fog_shape.glsl`. What differs from the plume:
+"Lava Fog Style" on the World Effects config page (`netherFogStyle` in the config file) is separate from the plume's setting. **Realistic** (`REALISTIC`) is the fog described above. **Blocky** (`BLOCKY`, the default, `nether_fog_blocky.fsh`) uses the plume's cube technique, with the layer's shape, drifting noise and glow shared through `nether_fog_shape.glsl`. What differs from the plume:
 
 - **Slabs on a fixed lattice.** Cells are flat: 6 x 3 x 6 blocks up to 36 blocks above the floor, 12 x 6 x 12 above that. The lattice does not move; the noise drifts through it, so slabs swell and shrink in place. A slab's size follows the billow and wisp noise at the cell centre, scaled by the square root of how much fog the layer allows there.
 - **Haze per cell.** The even haze is not made of slabs. Each cell the ray crosses adds haze for the length of ray inside it, at the density of the cell centre, with the same extinction as the realistic haze. It is therefore constant within a cell.

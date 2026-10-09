@@ -46,8 +46,8 @@ public final class ModConfig implements ModMenuApi {
         boolean effectPackReflections = true;
         /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
         Map<String, Boolean> effects = new LinkedHashMap<>();
-        String smokePlumeStyle = "REALISTIC";
-        String netherFogStyle = "REALISTIC";
+        String smokePlumeStyle = "BLOCKY";
+        String netherFogStyle = "BLOCKY";
         boolean fixtureEnabled = false;
         String fixtureSavePath = "";
         String fixtureOverride = "AUTO";
@@ -125,7 +125,7 @@ public final class ModConfig implements ModMenuApi {
         try {
             return SmokePlume.Style.valueOf(config.smokePlumeStyle.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            return SmokePlume.Style.REALISTIC;
+            return SmokePlume.Style.BLOCKY;
         }
     }
 
@@ -134,7 +134,7 @@ public final class ModConfig implements ModMenuApi {
         try {
             return NetherFog.Style.valueOf(config.netherFogStyle.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            return NetherFog.Style.REALISTIC;
+            return NetherFog.Style.BLOCKY;
         }
     }
 
@@ -243,7 +243,7 @@ public final class ModConfig implements ModMenuApi {
             }
             effects.addEntry(entries.startEnumSelector(Text.literal("Smoke Plume Style"), SmokePlume.Style.class,
                             smokePlumeStyle())
-                    .setDefaultValue(SmokePlume.Style.REALISTIC)
+                    .setDefaultValue(SmokePlume.Style.BLOCKY)
                     .setEnumNameProvider(style -> Text.literal(((SmokePlume.Style) style).label()))
                     .setTooltip(Text.literal("Realistic: soft volumetric smoke. Blocky: translucent cubes"))
                     .setSaveConsumer(value -> {
@@ -252,7 +252,7 @@ public final class ModConfig implements ModMenuApi {
                     }).build());
             effects.addEntry(entries.startEnumSelector(Text.literal("Lava Fog Style"), NetherFog.Style.class,
                             netherFogStyle())
-                    .setDefaultValue(NetherFog.Style.REALISTIC)
+                    .setDefaultValue(NetherFog.Style.BLOCKY)
                     .setEnumNameProvider(style -> Text.literal(((NetherFog.Style) style).label()))
                     .setTooltip(Text.literal("Realistic: soft glowing fog. Blocky: translucent slabs"))
                     .setSaveConsumer(value -> {

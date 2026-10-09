@@ -6,7 +6,7 @@
 - Better Clouds support (optional): world effects are now seen through its translucent clouds. Before, a cloud in front of the smoke plume showed the sky behind the plume instead of the smoke.
 
 **Changed**
-- Config: "Smoke Plume Style" chooses how the Mount Wynn smoke plume is drawn. "Blocky" builds it from translucent cubes in the style of the Better Clouds mod; "Realistic" (the default) is the existing soft smoke.
+- Config: "Smoke Plume Style" chooses how the Mount Wynn smoke plume is drawn. "Blocky" (the default) builds it from translucent cubes in the style of the Better Clouds mod; "Realistic" is the existing soft smoke.
 - Config: "Lava Fog Style" does the same for the Roots of Corruption lava fog, independently of the plume: "Blocky" draws its billows and wisps as translucent slabs.
 - World effects now sit behind the fog of the active shader pack, including WynnIris ambiance presets: the smoke plume fades into fog the same way the mountain under it does.
 - World effects now follow the fog settings of the shader pack in use: Complementary Reimagined/Unbound, BSL and Photon. The amount of fog on the smoke plume and lava fog is worked out from the pack's own fog options (including any you changed), and with Distant Horizons or Voxy they fade out towards the LOD render distance the way the pack fades the terrain there. Other packs are still measured from the picture as before.
