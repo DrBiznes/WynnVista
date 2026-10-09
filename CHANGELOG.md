@@ -3,13 +3,14 @@
 ## Unreleased
 
 **Added**
-- World effect: the void under the Sky Islands. Clumps of cloud built from whole cubes, in the style of the clouds that launch you between the islands, float around the lowest spikes, over a dark void where here and there a glowing pixel-art nebula in purples, indigo and blue drifts by far below, and a few fallen islands fade into the dark at different depths. It has its own toggle ("Sky Islands Void") on the World Effects config page.
+- World effect: the void under the Sky Islands. Clumps of cloud built from a few large blocks each, in the style of the clouds that launch you between the islands, float around the lowest spikes, over a dark void where here and there a glowing pixel-art nebula in purples, indigo and blue drifts by far below, and a few fallen islands fade into the dark at different depths. It has its own toggle ("Sky Islands Void") on the World Effects config page.
 - World effect: updrafts and motes in the Sky Islands ("Sky Islands Updrafts and Motes"). Near you, white streaks of rising wind blow in gusts through the gaps between the islands, strongest around Windwalker Temple, small violet motes rise under the islands, and spray rises where a waterfall lands in the cloud. Astraulus' Tower has motes of starlight around it and Wybel Island pastel sparkles.
 - Better Clouds support (optional): world effects are now seen through its translucent clouds. Before, a cloud in front of the smoke plume showed the sky behind the plume instead of the smoke.
 
 **Changed**
 - Config: "Smoke Plume Style" chooses how the Mount Wynn smoke plume is drawn. "Blocky" builds it from translucent cubes in the style of the Better Clouds mod; "Realistic" (the default) is the existing soft smoke.
 - Config: "Lava Fog Style" does the same for the Roots of Corruption lava fog, independently of the plume: "Blocky" draws its billows and wisps as translucent slabs.
+- Config: "Sky Islands Void Style" does the same for the Sky Islands void. "Blocky" (the default) is the cloud cubes and pixel-art nebulae; "Realistic" draws soft volumetric clouds in the same white, rose and blue, in the same places, over smooth nebulae with point stars and soft-edged fallen islands. The updrafts and motes are the same in both.
 - World effects now sit behind the fog of the active shader pack, including WynnIris ambiance presets: the smoke plume fades into fog the same way the mountain under it does.
 - World effects now follow the fog settings of the shader pack in use: Complementary Reimagined/Unbound, BSL and Photon. The amount of fog on the smoke plume and lava fog is worked out from the pack's own fog options (including any you changed), and with Distant Horizons or Voxy they fade out towards the LOD render distance the way the pack fades the terrain there. Other packs are still measured from the picture as before.
 - Without a shader pack, world effects now follow Distant Horizons' own fog settings and Voxy's environmental fog, instead of measuring them.

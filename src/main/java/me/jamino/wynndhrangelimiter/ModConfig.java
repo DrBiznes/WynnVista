@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
 import me.jamino.wynndhrangelimiter.effects.NetherFog;
+import me.jamino.wynndhrangelimiter.effects.SkyIslandsVoid;
 import me.jamino.wynndhrangelimiter.effects.SmokePlume;
 import me.jamino.wynndhrangelimiter.effects.WorldEffect;
 import me.jamino.wynndhrangelimiter.effects.WorldEffects;
@@ -47,6 +48,7 @@ public final class ModConfig implements ModMenuApi {
         Map<String, Boolean> effects = new LinkedHashMap<>();
         String smokePlumeStyle = "REALISTIC";
         String netherFogStyle = "REALISTIC";
+        String skyIslandsVoidStyle = "BLOCKY";
         boolean fixtureEnabled = false;
         String fixtureSavePath = "";
         String fixtureOverride = "AUTO";
@@ -75,6 +77,7 @@ public final class ModConfig implements ModMenuApi {
                 }
                 if (json.has("smokePlumeStyle")) result.smokePlumeStyle = json.get("smokePlumeStyle").getAsString();
                 if (json.has("netherFogStyle")) result.netherFogStyle = json.get("netherFogStyle").getAsString();
+                if (json.has("skyIslandsVoidStyle")) result.skyIslandsVoidStyle = json.get("skyIslandsVoidStyle").getAsString();
                 if (json.has("fixtureEnabled")) result.fixtureEnabled = json.get("fixtureEnabled").getAsBoolean();
                 if (json.has("fixtureSavePath")) result.fixtureSavePath = json.get("fixtureSavePath").getAsString();
                 if (json.has("fixtureOverride")) result.fixtureOverride = json.get("fixtureOverride").getAsString();
@@ -131,6 +134,15 @@ public final class ModConfig implements ModMenuApi {
             return NetherFog.Style.valueOf(config.netherFogStyle.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return NetherFog.Style.REALISTIC;
+        }
+    }
+
+    /** Rendering style of the Sky Islands void; an unknown value means the default. */
+    public static SkyIslandsVoid.Style skyIslandsVoidStyle() {
+        try {
+            return SkyIslandsVoid.Style.valueOf(config.skyIslandsVoidStyle.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return SkyIslandsVoid.Style.BLOCKY;
         }
     }
 
@@ -246,6 +258,16 @@ public final class ModConfig implements ModMenuApi {
                             + "in the style of the Better Clouds mod"))
                     .setSaveConsumer(value -> {
                         config.netherFogStyle = value.name();
+                        save();
+                    }).build());
+            effects.addEntry(entries.startEnumSelector(Text.literal("Sky Islands Void Style"),
+                            SkyIslandsVoid.Style.class, skyIslandsVoidStyle())
+                    .setDefaultValue(SkyIslandsVoid.Style.BLOCKY)
+                    .setEnumNameProvider(style -> Text.literal(((SkyIslandsVoid.Style) style).label()))
+                    .setTooltip(Text.literal("Blocky: clouds of whole cubes over pixel-art nebulae. "
+                            + "Realistic: soft volumetric clouds over smooth nebulae"))
+                    .setSaveConsumer(value -> {
+                        config.skyIslandsVoidStyle = value.name();
                         save();
                     }).build());
             ConfigCategory fixture = builder.getOrCreateCategory(Text.literal("Local Fixture"));

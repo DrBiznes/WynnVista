@@ -19,13 +19,18 @@ class SkyIslandsVoidTest {
     private static final String OVERWORLD = "minecraft:overworld";
 
     @Test
-    void shaderIsCompleteAndDrawnAtFullResolution() {
-        SkyIslandsVoid effect = new SkyIslandsVoid();
-        String source = EffectProgram.source(effect.shader());
-        assertTrue(source.contains("void cloudSea(vec3 dir, float from, float to, vec3 lit)"));
-        assertTrue(source.contains("vec3 depths(vec3 dir, float t, vec3 lit)"));
-        assertFalse(source.contains("#include"));
-        assertFalse(effect.halfResolution(), "the cloud cubes keep their edges");
+    void everyStyleHasAShaderBuiltOnTheSharedPlacement() {
+        for (SkyIslandsVoid.Style style : SkyIslandsVoid.Style.values()) {
+            String source = EffectProgram.source(style.shader());
+            assertTrue(source.contains("float clumpCover(vec2 p)"), style.name());
+            assertTrue(source.contains("vec4 hazeAlong(vec3 dir, float from, float to, vec3 pale, vec3 dusk)"), style.name());
+            assertTrue(source.contains("vec3 depths(vec3 dir, float t, vec3 lit)"), style.name());
+            assertFalse(source.contains("#include"), style.name());
+        }
+        String blocky = EffectProgram.source(SkyIslandsVoid.Style.BLOCKY.shader());
+        assertTrue(blocky.contains("void cloudSea(vec3 dir, float from, float to, vec3 lit)"));
+        String realistic = EffectProgram.source(SkyIslandsVoid.Style.REALISTIC.shader());
+        assertTrue(realistic.contains("void clouds(vec3 dir, float from, float to, vec3 lit)"));
     }
 
     @Test
@@ -95,8 +100,10 @@ class SkyIslandsVoidTest {
         assertTrue(effect.inRange(1300, 150, SkyIslandsVoid.NORTH_Z - 600), "from Molten Heights");
         assertFalse(effect.inRange(SkyIslandsVoid.MIN_X - 650, 150, -4600));
         assertFalse(effect.inRange(SkyIslandsVoid.MIN_X - 500, 150, SkyIslandsVoid.NORTH_Z - 500), "measured to the corner");
-        // The cubes show from as far as the shader draws them.
-        assertTrue(EffectProgram.source(effect.shader()).contains("const float CELLS_FAR = 520.0;"));
+        // The clouds show from as far as the shaders draw them.
+        for (SkyIslandsVoid.Style style : SkyIslandsVoid.Style.values()) {
+            assertTrue(EffectProgram.source(style.shader()).contains("const float CELLS_FAR = 520.0;"), style.name());
+        }
         assertTrue(SkyIslandsVoid.REACH > 520);
     }
 
@@ -108,7 +115,7 @@ class SkyIslandsVoidTest {
     void boxCoversTheVoidFromTheAbyssToTheTopOfTheHaze() {
         WorldEffect.Bounds box = new SkyIslandsVoid().bounds();
         assertEquals(SkyIslandsVoid.ABYSS_Y, box.minY(), "the abyss is the floor of the box");
-        // Four lattice layers of 4 blocks above the lowest cubes' tops, and eight times the haze's 8 blocks over its level.
+        // The 16 blocks above CLOUD_Y that cloud can reach, and eight times the haze's 8 blocks over its level.
         assertTrue(box.maxY() >= SkyIslandsVoid.CLOUD_Y + 4 * 4 && box.maxY() >= SkyIslandsVoid.CLOUD_Y + 4 + 8 * 8);
         assertTrue(box.maxY() < 100, "the islands above are not part of it: looking up from them culls it");
         assertTrue(SkyIslandsVoid.ABYSS_Y < 0 && SkyIslandsVoid.CLOUD_Y > 0, "the world's lowest blocks are at y 0");

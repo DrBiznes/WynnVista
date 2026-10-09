@@ -1,95 +1,47 @@
 #version 330 core
 
-// The void under the Sky Islands: clumps of cloud built from whole cubes, after the cloud models that launch
-// the player between the islands, a thin haze around them, and below them a dark void with a few fallen islands and a rare nebula.
-// The cubes sit on a lattice the view ray walks cell by cell, as in the blocky smoke plume, so every edge is
-// exact; the haze is worked out exactly along the ray.
+// The void under the Sky Islands: clumps of cloud, each a few large cuboids run into each other, after the cloud
+// models that launch the player between the islands, a thin haze around them, and below them a dark void with
+// a few fallen islands and a rare nebula. The cuboids sit in the columns of two lattices the view ray walks
+// column by column, so every edge is exact; the haze is worked out exactly along the ray.
 
 #include "scene.glsl"
 
-uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cubes, both camera-relative
-uniform vec2 uNoiseOrigin;      // the camera's place within one repeat of the noise pattern, in blocks
-uniform float uPhase;           // 0..1 over the time after which the moving patterns repeat
-uniform vec3 uLightDir;         // unit direction towards the sun or moon
-uniform vec3 uLightColor;
-uniform vec3 uAmbient;
-uniform float uGlow;            // 1 at night, less by day
+#include "sky_islands_void_shape.glsl"
 
 layout(location = 0) out vec4 fragColor;       // premultiplied colour and opacity
 layout(location = 1) out float fragDistance;   // terrain distance, for the half-resolution path
 
-const float PERIOD = 2048.0;            // blocks per repeat of the noise; one of its cells is 64 blocks at scale 1
-
-const float CELL = 4.0;                 // lattice spacing and side of the largest cube; PERIOD is a whole number of them
-const int LAYERS = 4;                   // lattice layers a clump can reach into
-const int STACK = 3;                    // cubes a clump can stand high
-const float COVER = 0.60;               // noise above which a column holds a cube; higher is fewer and smaller clumps
-const float COVER_STEP = 0.05;          // how much higher that is for each cube above the first
-const float SWELL = 0.07;               // rise of the noise over which a cube grows from its smallest to a whole cell
-const float SMALLEST = 0.5;             // side of the smallest cube, in cells
-const float CRUMB_MARGIN = 0.035;       // a cell this far short of holding a cube holds crumbs: small cubes around the large
-const float CRUMB_HANG = 0.03;          // and crumbs hang under a column this far past holding one
-const float CRUMBS_NEAR = 110.0;        // blocks from the camera at which the crumbs start to fade
-const float CRUMBS_FAR = 170.0;         // and where they are gone
-const float CELLS_NEAR = 220.0;         // the same for the cubes, which give way to the haze
-const float CELLS_FAR = 520.0;
-const int MAX_CELLS = 96;               // lattice cells walked; a ray that needs more is deep in the haze by then
-
-const float HAZE_HEIGHT = 8.0;          // blocks above the cloud over which the haze thins to 1/e
-const float HAZE_SINK = 10.0;           // and below it, where it takes the colour of the depths
-const float HAZE_DENSITY = 0.011;       // extinction per block at its level
-const float HAZE_MAX = 0.95;
-const float EDGE = 96.0;                // blocks from the sides of the box over which everything fades out
+const float PUFF = 8.0;                 // side of one column of a lattice, which holds at most one cuboid
+const vec3 PUFF_SHIFT = vec3(4.5, 2.5, 4.5);    // the second lattice against the first; no two faces share a plane
+const float PUFF_NARROW = 5.0;          // width of a cuboid at the rim of a clump; a whole column in its middle
+const float PUFF_LOW = 3.0;             // height of a cuboid at the rim of a clump
+const float PUFF_HIGH = 8.0;            // and the most it grows to, 3 blocks for every COVER_STEP of noise
+const float SWELL = 0.07;               // rise of the noise over which a cuboid widens to a whole column
+const float CLEAR = 1.0;                // blocks from the camera within which no cuboid is drawn
+const float CLEAR_FAR = 5.0;            // and where one is whole
+const int MAX_CELLS = 96;               // columns walked per lattice: the 520 blocks the clumps show to, on a diagonal
 const float SUN_FACING = 1.5;           // under a shader pack, the sun's light on a face turned straight to it, against its even share
 
-const float NEBULA_DEPTH = 220.0;       // how far below where the void begins its nebulae appear to lie
-const float NEBULA_CELL = 4.0;          // side of one square of a nebula, at its depth
-const float NEBULA_RARE = 0.64;         // noise above which a place holds a nebula; higher is fewer
 const float NEBULA_SHADES = 5.0;        // steps of brightness a nebula's clouds are drawn in
 const float NEBULA_STARS = 0.03;        // share of a nebula's squares that hold a star
-const float NEBULA_WARP = 0.02;         // how far a nebula's pattern is bent, in noise repeats
-const float NEBULA_STRENGTH = 0.9;      // its brightness at night, before the dark in front of it
-const float MURK = 0.0035;              // extinction per block of that dark
-const int ISLES = 3;                    // layers of fallen islands
-const float ISLE_DEPTH[ISLES] = float[](60.0, 130.0, 210.0);    // blocks below where the void begins, all above the nebulae
 const float ISLE_CELL[ISLES] = float[](4.0, 4.0, 8.0);          // side of one square of a layer's islands
-const float ISLE_SHOWS[ISLES] = float[](1.0, 0.7, 0.45);        // how much of a layer shows, before the dark in front of it
-const float ISLE_COVER = 0.70;          // noise above which a layer holds land; higher is fewer islands
-const float ISLE_THICK = 0.3;           // an island's thickness as a share of its layer's depth
-const float CRYSTAL_CELL = 4.0;         // side of one square that may hold a crystal's glint
-const float CRYSTAL_SHARE = 0.004;      // share of them that do
-
-const vec3 VIOLET = vec3(0.46, 0.17, 0.95);
-const vec3 DARK = vec3(0.012, 0.009, 0.024);
 
 vec3 gathered = vec3(0.0);      // premultiplied colour of what the ray has met, front to back
 float through = 1.0;            // how much still shows through it
 float first = -1.0;             // where the ray first met something, negative until then
-vec3 sunlight = vec3(0.0);      // the sun's or moon's share of the light the cloud is lit by
 
-vec3 hash3(vec3 p) {
-    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
-    p += dot(p, p.yxz + 33.33);
-    return fract((p.xxy + p.yxx) * p.zyx);
-}
+/** A cuboid of cloud the ray enters t blocks along: its low corner from the camera, its size, by which face (see hitBox), its own random. */
+struct Puff {
+    float t;
+    vec3 low;
+    vec3 size;
+    vec3 lo;
+    vec3 h;
+};
 
-/** Haze between its level and h blocks from it (negative below), for an even climb of one block per block. */
-float hazeColumn(float h) {
-    return h >= 0.0 ? HAZE_HEIGHT * (1.0 - exp(-h / HAZE_HEIGHT)) : -HAZE_SINK * (1.0 - exp(h / HAZE_SINK));
-}
-
-/**
- * Optical depth of the haze along a straight piece of ray of length len that starts a blocks above the
- * haze's level and ends b above it. The haze is densest at its level and thins exponentially above and below.
- */
-float hazeDepth(float a, float b, float len) {
-    float rise = abs(b - a);
-    if (rise > 1.0e-3) return HAZE_DENSITY * len * abs(hazeColumn(b) - hazeColumn(a)) / rise;
-    return HAZE_DENSITY * len * exp(a >= 0.0 ? -a / HAZE_HEIGHT : a / HAZE_SINK);
-}
-
-/** Where the ray enters the cube with corner `low` and side `size` (lattice units), per axis and at all. */
-bool hitCube(vec3 low, float size, vec3 origin, vec3 inv, out vec3 lo, out float enter) {
+/** Where the ray enters the box with corner `low` and the given size, per axis and at all. */
+bool hitBox(vec3 low, vec3 size, vec3 origin, vec3 inv, out vec3 lo, out float enter) {
     vec3 a = (low - origin) * inv;
     vec3 b = (low + size - origin) * inv;
     lo = min(a, b);
@@ -99,13 +51,14 @@ bool hitCube(vec3 low, float size, vec3 origin, vec3 inv, out vec3 lo, out float
 }
 
 /**
- * Colour of a cloud cube where the ray enters it. `local` is that point within the cube, 0..1 each way, `lo`
- * says by which face, `h` is the cube's own random. Like the launch clouds: white, some cubes faintly rose or
- * blue, a blush along the foot of the sides and over the underside, lighter texels, and a block's face shading.
- * A shader pack lights its blocks from where its sun is, so under one the sun's share of the light goes to
- * the faces turned to it.
+ * Colour of a cuboid of cloud where the ray enters it. `local` is that point within it in blocks. Like the
+ * launch clouds: white, some cuboids faintly rose or blue, a ragged blush along the foot of the sides and over
+ * the underside, lighter texels of half a block, and a block's face shading. A shader pack lights its blocks
+ * from where its sun is, so under one the sun's share of the light goes to the faces turned to it.
  */
-vec3 cubeColour(vec3 local, vec3 lo, vec3 dir, vec3 h, vec3 lit) {
+vec3 puffColour(Puff puff, vec3 local, vec3 dir, vec3 lit) {
+    vec3 lo = puff.lo;
+    vec3 h = puff.h;
     bool level = lo.y >= max(lo.x, lo.z);
     bool rising = dir.y > 0.0;
     bool under = level && rising;
@@ -115,115 +68,109 @@ vec3 cubeColour(vec3 local, vec3 lo, vec3 dir, vec3 h, vec3 lit) {
                 : (lo.x >= lo.z ? vec3(-sign(dir.x), 0.0, 0.0) : vec3(0.0, 0.0, -sign(dir.z)));
         lit += sunlight * (SUN_FACING * max(dot(normal, uLightDir), 0.0) - 1.0);
     }
-    vec3 albedo = h.z < 0.62 ? vec3(0.97, 0.97, 0.99) : (h.z < 0.82 ? vec3(0.98, 0.91, 0.95) : vec3(0.89, 0.94, 1.0));
-    if (under) albedo = mix(albedo, vec3(0.96, 0.80, 0.90), 0.7);
-    else if (!level && local.y < 0.3125) albedo = mix(albedo, vec3(0.96, 0.80, 0.90), 0.55);
-    vec3 texel = floor(clamp(local, 0.001, 0.999) * 8.0);
+    vec3 texel = floor(clamp(local, vec3(0.001), puff.size - 0.001) * 2.0);
+    vec3 albedo = h.z < 0.62 ? CLOUD_WHITE : (h.z < 0.82 ? CLOUD_ROSE : CLOUD_BLUE);
+    if (under) {
+        albedo = mix(albedo, CLOUD_BLUSH, 0.7);
+    } else if (!level) {
+        // The blush is two or three texels high, by the column of texels.
+        float along = lo.x >= lo.z ? texel.z : texel.x;
+        float foot = hash3(vec3(along, h.xy * 40.0)).x < 0.5 ? 1.0 : 1.5;
+        if (local.y < foot) albedo = mix(albedo, CLOUD_BLUSH, 0.55);
+    }
     if (hash3(texel + h * 40.0).x < 0.75) albedo *= 0.955;
-    // At night the cubes keep a little light of their own, so their faces can still be told apart.
-    return albedo * face * (lit + vec3(0.11, 0.10, 0.17) * uGlow) + VIOLET * (under ? 0.05 : 0.0) * uGlow;
+    // At night the cloud keeps a little light of its own, so its faces can still be told apart.
+    return albedo * face * (lit + NIGHT_LIGHT * uGlow) + VIOLET * (under ? 0.05 : 0.0) * uGlow;
 }
 
 /**
- * x: the noise value of a column of the lattice, which decides how many cubes stand there. It has peaks about
- * 16 blocks apart, each a clump, and a slow part that gathers the clumps into groups. y: the layer the
- * column's clump begins on, so that clumps float at two heights.
+ * The cuboid in a column of lattice `set`, in that lattice's blocks; false where the column holds none. It is
+ * wider and higher the further the column's noise is past COVER, measures whole blocks, and sits at a random
+ * whole block inside its column, its foot on the level its clump floats at or a block above.
  */
-vec2 clump(vec2 column) {
-    vec2 p = (column + 0.5) * CELL / PERIOD;
-    float n = 0.62 * noise(vec3(p * 4.0, 0.37)) + 0.38 * noise(vec3(p, 0.71));
-    return vec2(n, step(0.5, noise(vec3(p * 2.0, 0.13))));
+bool puffAt(vec2 cell, int set, out vec3 low, out vec3 size, out vec3 h) {
+    // The index wraps where the pattern repeats, so a cuboid keeps its look across the wrap.
+    vec2 column = mod(cell, PERIOD / PUFF);
+    vec2 p = ((column + 0.5) * PUFF + (set == 0 ? vec2(0.0) : PUFF_SHIFT.xz)) / PERIOD;
+    float past = clumpCover(p) - COVER;
+    if (past < 0.0) return false;
+    vec3 seed = vec3(column, 3.0 + 17.0 * float(set));
+    h = hash3(seed);
+    vec3 grow = hash3(seed + 60.0);
+    vec3 place = hash3(seed + 91.0);
+    size.xz = min(floor(mix(PUFF_NARROW, PUFF, clamp(past / SWELL, 0.0, 1.0)) + 2.0 * grow.xz), PUFF);
+    size.y = min(floor(PUFF_LOW + 3.0 * past / COVER_STEP + 2.0 * grow.y), PUFF_HIGH);
+    low.xz = cell * PUFF + floor((PUFF - size.xz) * place.xz + 0.5);
+    low.y = CELL * step(0.5, clumpLevel(p)) + floor(2.0 * place.y);
+    return true;
 }
 
 /**
- * Walks the cloud lattice along the ray between `from` and `to` and gathers its cubes. A cell holds at most
- * one cube, as in the blocky smoke plume: larger the further the column's noise is past what the cell needs,
- * so a clump has whole cells in its middle and half-size cubes at its rim, and placed at random inside its
- * cell, except that a cube above another rests on the floor of its cell. A cell that falls just short of
- * holding a cube holds crumbs: up to eight cubes of a quarter cell to half a cell that rest on the cube below,
- * and under a clump they hang from it. The whole lattice drifts as vanilla clouds do.
+ * Walks the columns of lattice `set` along the ray between `from` and `to` and returns the first cuboid the
+ * ray enters later than `after`; its t is INF where there is none. A cuboid stays inside its column, so the
+ * first one met is the nearest of its lattice.
+ */
+Puff nearestPuff(int set, vec3 dir, float from, float to, float after) {
+    vec3 safe = mix(dir, vec3(1.0e-7), lessThan(abs(dir), vec3(1.0e-7)));
+    // The lattice's own blocks: y 0 is the foot of the lowest clumps, and the whole lattice drifts as vanilla clouds do.
+    vec3 origin = vec3(uNoiseOrigin.x + uPhase * PERIOD, CELL - uLevels.y, uNoiseOrigin.y);
+    if (set != 0) origin -= PUFF_SHIFT;
+    vec3 inv = 1.0 / safe;
+    vec2 stride = sign(safe.xz);
+    vec2 start = (origin.xz + safe.xz * from) / PUFF;
+    vec2 cell = floor(start);
+    vec2 next = from + (cell + max(stride, 0.0) - start) * PUFF * inv.xz;
+    vec2 delta = abs(inv.xz) * PUFF;
+    Puff puff = Puff(INF, vec3(0.0), vec3(1.0), vec3(0.0), vec3(0.0));
+    for (int i = 0; i < MAX_CELLS; i++) {
+        float enter;
+        if (puffAt(cell, set, puff.low, puff.size, puff.h)
+                && hitBox(puff.low, puff.size, origin, inv, puff.lo, enter) && enter > after && enter < to) {
+            puff.t = enter;
+            puff.low -= origin;
+            return puff;
+        }
+        if (min(next.x, next.y) >= to) break;
+        if (next.x < next.y) {
+            next.x += delta.x;
+            cell.x += stride.x;
+        } else {
+            next.y += delta.y;
+            cell.y += stride.y;
+        }
+    }
+    return puff;
+}
+
+/**
+ * Gathers the cloud along the ray between `from` and `to`. A clump is a few large cuboids that run into each
+ * other, as the launch clouds are modelled: two lattices of 8-block columns, the second half a column across
+ * and 2.5 blocks above the first, each column holding at most one cuboid, so a cuboid of one lattice sits
+ * across the seams of the other. The nearest cuboid of either hides the rest; only just in front of the
+ * camera, where a cuboid fades out instead of filling the view with one face, the ones behind it are looked
+ * for as well.
  */
 void cloudSea(vec3 dir, float from, float to, vec3 lit) {
-    vec3 safe = mix(dir, vec3(1.0e-7), lessThan(abs(dir), vec3(1.0e-7)));
-    // Lattice space: one unit per cell, layer 0 the lowest a clump begins on.
-    vec3 origin = vec3(uNoiseOrigin.x + uPhase * PERIOD, CELL - uLevels.y, uNoiseOrigin.y) / CELL;
-    vec3 inv = CELL / safe;
-    vec3 stride = sign(safe);
-    vec3 start = origin + safe * from / CELL;
-    vec3 cell = floor(start);
-    vec3 next = from + (cell + max(stride, 0.0) - start) * inv;
-    vec3 delta = abs(inv);
-    float at = from;
-    for (int i = 0; i < MAX_CELLS; i++) {
-        float layer = cell.y;
-        if (layer >= -1.0 && layer <= float(LAYERS)) {
-            // The index wraps where the pattern repeats, so a cube keeps its look across the wrap.
-            vec2 column = mod(cell.xz, PERIOD / CELL);
-            vec2 c = clump(column);
-            float rank = layer - c.y;       // which cube of its clump this cell would hold, from 0 up
-            float need = COVER + COVER_STEP * max(rank, 0.0);
-            vec3 low = cell;
-            float size = 1.0;
-            vec3 h = vec3(0.0);
-            vec3 lo = vec3(0.0);
-            float enter = INF;
-            float fade = 1.0;
-            if (rank >= 0.0 && rank < float(STACK) && c.x >= need) {
-                h = hash3(vec3(column, layer) + 3.0);
-                size = mix(SMALLEST, 1.0, clamp((c.x - need) / SWELL, 0.0, 1.0));
-                vec3 place = hash3(vec3(column, layer) + 60.0);
-                if (rank > 0.0) place.y = 0.0;
-                low = cell + (1.0 - size) * place;
-                if (!hitCube(low, size, origin, inv, lo, enter)) enter = INF;
-            } else if (at < CRUMBS_FAR && rank >= -1.0 && rank <= float(STACK)
-                    && c.x >= (rank < 0.0 ? COVER + CRUMB_HANG : need - CRUMB_MARGIN)) {
-                fade = 1.0 - smoothstep(CRUMBS_NEAR, CRUMBS_FAR, at);
-                for (int k = 0; k < 8; k++) {
-                    vec3 sub = vec3(k & 1, (k >> 1) & 1, k >> 2);
-                    vec3 seed = vec3(column, layer) * 2.0 + sub + 31.0;
-                    vec3 r = hash3(seed);
-                    bool resting = sub.y == (rank < 0.0 ? 1.0 : 0.0);
-                    if (r.x >= (resting ? 0.6 : 0.18)) continue;
-                    float side = 0.5 * mix(0.55, 1.0, r.y);
-                    vec3 place = hash3(seed + 57.0);
-                    if (resting) place.y = rank < 0.0 ? 1.0 : 0.0;
-                    vec3 corner = cell + sub * 0.5 + (0.5 - side) * place;
-                    vec3 faces;
-                    float reached;
-                    if (hitCube(corner, side, origin, inv, faces, reached) && reached < enter) {
-                        enter = reached;
-                        lo = faces;
-                        low = corner;
-                        size = side;
-                        h = r;
-                    }
-                }
-            }
-            float t = max(enter, 0.0);
-            if (t < to) {
-                vec3 local = (origin + dir * t / CELL - low) / size;
-                // Cubes fade out just in front of the camera instead of filling the view with one face.
-                float alpha = fade * smoothstep(1.0, 5.0, t) * (1.0 - smoothstep(CELLS_NEAR, CELLS_FAR, t));
-                gathered += through * alpha * cubeColour(local, lo, dir, h, lit);
-                through *= 1.0 - alpha;
-                if (first < 0.0 && alpha > 0.0) first = t;
-                if (through < 0.03) return;
-            }
-        }
-        at = min(next.x, min(next.y, next.z));
-        if (at >= to) return;
-        vec3 axis = step(next.xyz, next.yzx) * step(next.xyz, next.zxy);
-        next += axis * delta;
-        cell += axis * stride;
+    float after = CLEAR;
+    for (int pass = 0; pass < 3; pass++) {
+        Puff puff = nearestPuff(0, dir, max(from, after), to, after);
+        Puff other = nearestPuff(1, dir, max(from, after), min(to, puff.t), after);
+        if (other.t < puff.t) puff = other;
+        float t = puff.t;
+        if (t >= to) return;
+        float alpha = smoothstep(CLEAR, CLEAR_FAR, t) * (1.0 - smoothstep(CELLS_NEAR, CELLS_FAR, t));
+        gathered += through * alpha * puffColour(puff, dir * t - puff.low, dir, lit);
+        through *= 1.0 - alpha;
+        if (first < 0.0 && alpha > 0.0) first = t;
+        if (through < 0.03 || t >= CLEAR_FAR) return;
+        after = t;
     }
 }
 
 /** The noise value of one square of a layer of fallen islands; land where it is above ISLE_COVER. */
 float isle(vec2 xz, int layer) {
     float size = ISLE_CELL[layer];
-    vec2 p = (floor(xz / size) + 0.5) * size / PERIOD;
-    float seed = 0.11 + 0.19 * float(layer);
-    return 0.7 * noise(vec3(p * 2.0, seed)) + 0.3 * noise(vec3(p * 6.0, seed + 0.31));
+    return isleField((floor(xz / size) + 0.5) * size / PERIOD, layer);
 }
 
 /**
@@ -241,21 +188,12 @@ vec4 fallenIsles(vec3 dir, float t, vec3 lit) {
         float depth = ISLE_DEPTH[k];
         float shows = ISLE_SHOWS[k] * exp(-MURK * depth * slope);
         // Daylight reaches less far down than the eye does.
-        vec3 stone = vec3(0.30, 0.29, 0.37) * (lit * 0.5 * exp(-depth / 200.0) + 0.06);
+        vec3 stone = STONE * (lit * 0.5 * exp(-depth / 200.0) + 0.06);
         float land = isle(at + run * depth, k);
         if (land >= ISLE_COVER) return vec4(stone * (land >= ISLE_COVER + 0.03 ? 1.0 : 0.82), shows);
         if (isle(at + run * depth * (1.0 + ISLE_THICK), k) >= ISLE_COVER + 0.04) return vec4(stone * 0.5, shows);
     }
     return vec4(0.0);
-}
-
-/** The colours a nebula can have, all near each other: purple, violet, indigo and two blues, for t in 0..1. */
-vec3 nebulaHue(float t) {
-    const vec3 HUES[5] = vec3[](vec3(0.40, 0.13, 0.78), vec3(0.50, 0.20, 0.95), vec3(0.27, 0.19, 0.88),
-            vec3(0.16, 0.30, 0.92), vec3(0.26, 0.46, 0.95));
-    float x = clamp(t, 0.0, 0.999) * 4.0;
-    int i = int(x);
-    return mix(HUES[i], HUES[i + 1], x - float(i));
 }
 
 /** A cloud's density for noise value n, none below `from` and all 0.3 above, in the steps of pixel art. */
@@ -323,19 +261,17 @@ void main() {
     if (end <= span.x) return;
 
     // By day the cloud is lit by the sky and sun; the haze below it is a dim violet.
-    vec3 ambient = skyLight(uAmbient);
-    sunlight = uLightColor * sunTint * 0.35 * skyGain;
-    vec3 lit = ambient * 0.9 * skyGain + sunlight;
-    vec3 pale = vec3(0.92, 0.91, 0.96) * lit + VIOLET * (0.01 + 0.035 * uGlow);
-    vec3 dusk = pale * vec3(0.42, 0.36, 0.70) + VIOLET * (0.03 + 0.07 * uGlow);
+    vec3 pale;
+    vec3 dusk;
+    vec3 lit = cloudLight(pale, dusk);
 
-    // The cubes, within the slab of heights that can hold them: a cell of crumbs below and above the clumps.
+    // The cloud, within the slab of heights that can hold it.
     float solid = end;
     if (abs(dir.y) > 1.0e-4) {
-        float a = (uLevels.y - 2.0 * CELL) / dir.y;
+        float a = (uLevels.y - CELL) / dir.y;
         float b = (uLevels.y + float(LAYERS) * CELL) / dir.y;
         float from = max(min(a, b), span.x);
-        // No cube shows beyond CELLS_FAR, so the lattice is not walked there.
+        // No cloud shows beyond CELLS_FAR, so the lattices are not walked there.
         float to = min(min(max(a, b), end), CELLS_FAR);
         if (to > from) cloudSea(dir, from, to, lit);
         if (through < 0.03) solid = first;
@@ -349,31 +285,12 @@ void main() {
         if (first < 0.0) first = floorAt;
     }
 
-    // The haze lies among the clumps and is laid over the rest, up to the first solid cube: towards the horizon
-    // it is all there is. What lies below its level is dim, and the void is seen through a veil of it.
-    float level = uLevels.y + CELL;
-    float start = dir.y * span.x - level;
-    float stop = dir.y * solid - level;
-    float high = max(start, stop);
-    float low = min(start, stop);
-    float above = high - low > 1.0e-3 ? (max(high, 0.0) - max(low, 0.0)) / (high - low) : (low > 0.0 ? 1.0 : 0.0);
-    float reach = solid - span.x;
-    float pall = hazeDepth(max(low, 0.0), max(high, 0.0), reach * above);
-    float veil = hazeDepth(min(low, 0.0), min(high, 0.0), reach * (1.0 - above));
-    float haze = min(1.0 - exp(-pall - veil), HAZE_MAX);
-    vec3 hazeColour = (pale * 0.94 * pall + dusk * 0.6 * veil) / max(pall + veil, 1.0e-6);
-    vec3 colour = hazeColour * haze + gathered * (1.0 - haze);
-    float alpha = 1.0 - through * (1.0 - haze);
+    // The haze lies among the clumps and is laid over the rest, up to the first solid cuboid: towards the horizon
+    // it is all there is, and the void is seen through a veil of it.
+    vec4 haze = hazeAlong(dir, span.x, solid, pale, dusk);
+    vec3 colour = haze.rgb * haze.a + gathered * (1.0 - haze.a);
+    float alpha = 1.0 - through * (1.0 - haze.a);
     if (alpha < 0.004) return;
-    if (first < 0.0) first = abs(dir.y) > 1.0e-4 ? clamp(level / dir.y, span.x, end) : span.x;
-
-    vec4 cloud;
-    float cloudAt = cloudDistance(uv, ndc, dir, cloud);
-    vec4 whole = vec4(colour, alpha);
-    // Aerial perspective, a shader pack's fog, and any cloud between the camera and the void.
-    float distant = 1.0 - exp(-first * 0.00022);
-    fragColor = underClouds(whole, cloudAt < first ? vec4(0.0) : whole, distant, cloud, dir * first);
-    // Towards the sides of its box the effect fades out, so it has no edge where no land hides one.
-    vec2 inside = min(dir.xz * first - uBoxMin.xz, uBoxMax.xz - dir.xz * first);
-    fragColor *= smoothstep(0.0, EDGE, min(inside.x, inside.y));
+    if (first < 0.0) first = hazeFront(dir, span.x, end);
+    fragColor = finished(vec4(colour, alpha), first, uv, ndc, dir);
 }

@@ -1,8 +1,10 @@
 package me.jamino.wynndhrangelimiter.effects;
 
+import me.jamino.wynndhrangelimiter.ModConfig;
+
 /**
- * The void under the Sky Islands: clumps of cloud cubes the islands' spikes dip into and, below them, a dark
- * void with a rare nebula. Placement and timing rules; the look is in the shader.
+ * The void under the Sky Islands: clumps of cloud the islands' spikes dip into and, below them, a dark
+ * void with a rare nebula. Placement and timing rules; the look is in the shaders.
  */
 public final class SkyIslandsVoid implements WorldEffect {
     public static final String ID = "sky_islands_void";
@@ -29,9 +31,9 @@ public final class SkyIslandsVoid implements WorldEffect {
     public static final int SOUTH_Z = -4192;
 
     /**
-     * The world there ends at y 0 and the longest spikes reach down to y 1. The lowest layer of cloud cubes
+     * The world there ends at y 0 and the longest spikes reach down to y 1. The lowest layer of cloud cuboids
      * has its top among the lowest spikes; the void begins at a plane below the cloud and below the world,
-     * where nothing can be in front of it but the cloud. The highest cubes end at y 20 and the haze around
+     * where nothing can be in front of it but the cloud. No cloud reaches above y 20 and the haze around
      * them is densest at y 8 and thins to 1/e every 8 blocks: above the top of the box less than half a
      * percent of it is left along any ray, so the box ends there and not at the islands' tops.
      */
@@ -40,7 +42,7 @@ public final class SkyIslandsVoid implements WorldEffect {
     public static final double TOP_Y = 72;
 
     /**
-     * Blocks from the box, along the ground, beyond which the void is not drawn. The cubes are gone 520
+     * Blocks from the box, along the ground, beyond which the void is not drawn. The clumps are gone 520
      * blocks from the camera, and from further out only the haze could show over the rim of the land.
      */
     public static final double REACH = 640;
@@ -49,14 +51,33 @@ public final class SkyIslandsVoid implements WorldEffect {
     public static final double NOISE_PERIOD = 2048;
     public static final long CYCLE_TICKS = 32000;
 
+    /** How the void is drawn; both styles share where its clouds, nebulae and fallen islands are. */
+    public enum Style {
+        /** Soft ray-marched clouds over smooth nebulae. */
+        REALISTIC("Realistic", "sky_islands_void.fsh"),
+        /** Clouds of a few large cuboids each, after the launch clouds, over pixel-art nebulae. */
+        BLOCKY("Blocky", "sky_islands_void_blocky.fsh");
+
+        private final String label;
+        private final String shader;
+
+        Style(String label, String shader) {
+            this.label = label;
+            this.shader = shader;
+        }
+
+        public String label() { return label; }
+        public String shader() { return shader; }
+    }
+
     private static final Bounds BOUNDS = new Bounds(MIN_X, ABYSS_Y, NORTH_Z, MAX_X, TOP_Y, SOUTH_Z);
 
     @Override public String id() { return ID; }
     @Override public String name() { return "Sky Islands Void"; }
-    @Override public String description() { return "Clumps of cloud cubes over a dark void with a rare nebula under the Sky Islands"; }
-    @Override public String shader() { return "sky_islands_void.fsh"; }
-    /** Half resolution would blur the edges of the cloud cubes. */
-    @Override public boolean halfResolution() { return false; }
+    @Override public String description() { return "Clumps of cloud over a dark void with a rare nebula under the Sky Islands"; }
+    @Override public String shader() { return ModConfig.skyIslandsVoidStyle().shader(); }
+    /** Half resolution would blur the edges of the cloud cuboids the blocky style is made of. */
+    @Override public boolean halfResolution() { return ModConfig.skyIslandsVoidStyle() != Style.BLOCKY; }
     @Override public double anchorX() { return (MIN_X + MAX_X) / 2.0; }
     @Override public double anchorZ() { return (NORTH_Z + SOUTH_Z) / 2.0; }
     @Override public Bounds bounds() { return BOUNDS; }
