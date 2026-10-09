@@ -1,15 +1,18 @@
 #version 330 core
 
-// Reads two things from the world image into a 2x1 target, each smoothed over time.
+// Reads two things from the world image into a row of texels, each smoothed over time.
 //
 // Texel 0, the fog at an effect's distance, measured when nothing is known about it (mode 0: an unrecognised
 // shader pack, WynnIris' post-process fog, no LOD fog model). Terrain that fog has swallowed has lost its
 // detail and has the fog's colour. Effects apply it with throughFog(). When a FogModel says how much fog
 // there is (mode 1) nothing is measured and the texel reads "clear".
 //
-// Texel 1, the colour of the sky just above the horizon in the effect's direction. It is what distant
-// terrain fades into, so it is the colour of a modelled fog, and under a shader pack it is what the effects'
-// own lighting is matched to (skyLight() in scene.glsl).
+// Texels 1 to SKY_BANDS, the colour of the sky in the effect's direction, one texel per band of elevation
+// from the horizon to straight up, clouds included. The lowest is what distant terrain fades into, so it is
+// the colour of a modelled fog. Under a shader pack the effects' own lighting is matched to the band each
+// part of an effect is seen in (skyLight() in scene.glsl), so an effect looked up at from nearby has the
+// colours of the sky behind it and not those of a horizon that may not even be in view. The second row holds
+// the colour of each band's bright parts: where a pack has drawn clouds, those are their lit sides.
 
 #include "scene.glsl"
 
@@ -22,7 +25,8 @@ uniform float uRate;          // share of this frame's measurement blended in; 1
 uniform int uProbeMode;       // 0: measure the fog, 1: a model knows it
 
 out vec4 fragColor;           // texel 0: rgb colour of terrain at the effect's distance, a: how much detail it keeps
-                              // texel 1: rgb colour of the horizon sky, negative while none was seen, a: 1
+                              // others: rgb colour of the sky in that band, negative while none was seen, a: 1
+                              // second row: unused, then the colour of each band's bright parts
 
 const int COLUMNS = 32;
 const int ROWS = 24;
@@ -42,10 +46,12 @@ float contrast(vec3 a, vec3 b) {
 }
 
 const int ELEVATIONS = 8;
-const float HIGHEST = 0.1;    // sine of the highest elevation sampled, about 6 degrees
 
-/** Average colour of the sky just above the horizon across the searched columns. */
-void horizon() {
+/**
+ * Colour of the sky across the searched columns, in one band of elevation: its average, or with `bright`
+ * an average in which each sample counts by the square of its brightness.
+ */
+void sky(int band, bool bright) {
     vec3 colour = vec3(0.0);
     float count = 0.0;
     for (int x = 0; x < COLUMNS; x++) {
@@ -54,7 +60,7 @@ void horizon() {
         if (dot(heading, heading) < 1.0e-4) continue;
         heading = normalize(heading);
         for (int e = 0; e < ELEVATIONS; e++) {
-            float up = (float(e) + 0.5) / float(ELEVATIONS) * HIGHEST;
+            float up = (float(band) + (float(e) + 0.5) / float(ELEVATIONS)) / float(SKY_BANDS);
             vec4 clip = uSceneForward * vec4(vec3(heading.x, 0.0, heading.y) * sqrt(1.0 - up * up) + vec3(0.0, up, 0.0), 0.0);
             if (clip.w <= 0.0) continue;
             vec2 ndc = clip.xy / clip.w;
@@ -62,13 +68,19 @@ void horizon() {
             vec2 uv = ndc * 0.5 + 0.5;
             // Terrain standing above the horizon is not sky.
             if (sceneDistance(uv, ndc) < 0.5 * INF) continue;
-            colour += texture(uSceneColor, uv).rgb;
-            count += 1.0;
+            vec3 seen = texture(uSceneColor, uv).rgb;
+            float weight = 1.0;
+            if (bright) {
+                weight = dot(seen, vec3(0.2126, 0.7152, 0.0722));
+                weight = weight * weight + 1.0e-4;
+            }
+            colour += seen * weight;
+            count += weight;
         }
     }
-    vec4 previous = texelFetch(uPrevious, ivec2(1, 0), 0);
+    vec4 previous = texelFetch(uPrevious, ivec2(1 + band, bright ? 1 : 0), 0);
     bool fresh = uRate >= 1.0 || previous.r < 0.0;
-    if (count < 0.5) {
+    if (count <= 0.0) {
         fragColor = uRate >= 1.0 ? vec4(-1.0, -1.0, -1.0, 1.0) : vec4(previous.rgb, 1.0);
         return;
     }
@@ -77,7 +89,11 @@ void horizon() {
 
 void main() {
     if (gl_FragCoord.x > 1.0) {
-        horizon();
+        sky(int(gl_FragCoord.x) - 1, gl_FragCoord.y > 1.0);
+        return;
+    }
+    if (gl_FragCoord.y > 1.0) {
+        fragColor = vec4(0.0);
         return;
     }
     if (uProbeMode == 1) {

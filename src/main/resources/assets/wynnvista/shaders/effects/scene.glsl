@@ -4,7 +4,7 @@
 uniform sampler2D uSceneDepth;
 uniform sampler2D uLodDepth;
 uniform sampler3D uNoise;
-uniform sampler2D uFogProbe;  // 2x1, written by fog_probe.fsh: the fog measurement, then the horizon sky's colour
+uniform sampler2D uFogProbe;  // written by fog_probe.fsh: the fog measurement, then the sky's colour in SKY_BANDS bands of elevation; second row: its bright parts
 uniform sampler2D uTerrainDepth;  // vanilla depth as it was before a cloud mod drew its clouds into it
 uniform sampler2D uCloudDepth;    // depth of that cloud layer alone, 1 where it wrote none
 uniform sampler2D uCloudColor;    // the cloud layer alone: premultiplied colour, opacity in alpha
@@ -21,7 +21,7 @@ uniform sampler2D uFogTable;  // a pack's or LOD mod's fog (FogTable): x over gr
 uniform vec4 uFogTableRange;  // x: 1 / ground distance covered, 0 without a table, y: lowest height, camera-relative, z: 1 / height covered, w: 1 when the probe's measurement still applies
 uniform vec4 uFogTableColor;  // rgb: the fog's colour, a: 1 when it is known, 0 to take it from the probe
 uniform mat4 uSceneForward;   // camera-relative world -> vanilla clip space
-uniform vec2 uSkyMatch;       // x: 1 while a shader pack renders and the effect is lit to match its sky, y: the effect's brightness under its own light
+uniform float uSkyMatch;      // 1 while a shader pack renders and the effect is lit by the sky that pack drew
 uniform sampler2D uOpaqueDepth;   // vanilla depth as it was before translucents were drawn (a shader pack's depthtex1)
 uniform sampler2D uLodSurface;    // the LOD renderer's depth with its water
 uniform sampler2D uLodOpaque;     // and without it; the same texture as uLodSurface when the two are not kept apart
@@ -32,6 +32,7 @@ uniform int uSteps;           // ray-march samples, already reduced for small or
 uniform int uOctaves;         // noise octaves worth sampling at this distance
 
 const float INF = 1.0e9;
+const int SKY_BANDS = 8;      // EffectFog.SKY_BANDS: equal steps of the sine of the elevation, horizon first
 
 /**
  * Where this pixel's ray starts, camera-relative: the camera, or for a reflection the point behind the water
@@ -105,6 +106,57 @@ vec2 tableFog(vec3 position) {
     return textureLod(uFogTable, clamp(uv, edge, 1.0 - edge), 0.0).rg;
 }
 
+int skyBands[SKY_BANDS];
+bool skyRead = false;
+
+/**
+ * The sky as the probe saw it at an elevation given by its sine: its average colour, or with `bright` the
+ * colour of its bright parts. Below the horizon it is the horizon's. A band with no sky in view has the
+ * colour of the nearest band that has. Negative while no sky has been seen at all.
+ */
+vec3 skyAt(float up, bool bright) {
+    if (!skyRead) {
+        skyRead = true;
+        bool seen[SKY_BANDS];
+        for (int i = 0; i < SKY_BANDS; i++) seen[i] = texelFetch(uFogProbe, ivec2(1 + i, 0), 0).r >= 0.0;
+        for (int i = 0; i < SKY_BANDS; i++) {
+            skyBands[i] = i;
+            for (int k = 0; k < SKY_BANDS; k++) {
+                if (i - k >= 0 && seen[i - k]) { skyBands[i] = i - k; break; }
+                if (i + k < SKY_BANDS && seen[i + k]) { skyBands[i] = i + k; break; }
+            }
+        }
+    }
+    float band = clamp(up * float(SKY_BANDS) - 0.5, 0.0, float(SKY_BANDS - 1));
+    int below = min(int(band), SKY_BANDS - 2);
+    int row = bright ? 1 : 0;
+    return mix(texelFetch(uFogProbe, ivec2(1 + skyBands[below], row), 0).rgb,
+            texelFetch(uFogProbe, ivec2(1 + skyBands[below + 1], row), 0).rgb, band - float(below));
+}
+
+/**
+ * Share of an effect at distance `t` along the ray that is in front of the cloud at `cloudAt`. A cloud mod's
+ * layer has a surface. A shader pack's distance is somewhere inside a cloud it marched through, so there the
+ * effect passes behind it gradually.
+ */
+float beforeCloud(float t, float cloudAt) {
+    return uCloudParams.x > 1.5 ? 1.0 - smoothstep(0.8, 1.25, t / cloudAt) : step(t, cloudAt);
+}
+
+vec4 gatheredBefore = vec4(0.0);
+float shareBefore = 1.0;
+
+/**
+ * Keeps `front`, the part of a march that is in front of the clouds, up to date. Called with what the march
+ * has gathered so far each time it is about to add something at distance `t`, and once more when it is done.
+ */
+void gather(inout vec4 front, vec3 colour, float transmittance, float t, float cloudAt) {
+    vec4 gathered = vec4(colour, 1.0 - transmittance);
+    front += (gathered - gatheredBefore) * shareBefore;
+    gatheredBefore = gathered;
+    shareBefore = beforeCloud(t, cloudAt);
+}
+
 /**
  * Distance along this pixel's ray to the cloud layer, INF where it has no cloud, and the cloud itself:
  * premultiplied colour, opacity in alpha.
@@ -131,7 +183,7 @@ float cloudDistance(vec2 uv, vec2 ndc, vec3 dir, out vec4 cloud) {
 
 /**
  * The finished pixel of an effect: `whole` is the march's premultiplied colour and opacity, `front` the same
- * for the part of it nearer than the clouds. Both get the haze and fog, then the cloud goes between them, so
+ * for the part of it nearer than the clouds, each of the march's samples weighted by beforeCloud(). Both get the haze and fog, then the cloud goes between them, so
  * the part behind is seen through the cloud. `position` is where the effect begins on this pixel's ray, and
  * `haze` the effect's own guess at the haze there, used when no pack's or LOD mod's fog is modelled. Of a
  * reflection, only what the water reflects is returned.
@@ -145,8 +197,9 @@ vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud, vec3 position) 
         front *= 1.0 - fog.y;
         if (uFogTableRange.w < 0.5) {
             haze = fog.x;
-            // The sky's colour at the horizon, or nothing yet.
-            vec3 seen = texelFetch(uFogProbe, ivec2(1, 0), 0).rgb;
+            // Fog in front of an effect has the colour of the sky in its direction: at the horizon what
+            // distant terrain fades into, higher up what the pack drew there. Nothing yet if none was seen.
+            vec3 seen = skyAt(position.y / max(length(position), 1.0e-3), false);
             hazeColour = uFogTableColor.a > 0.5 ? uFogTableColor.rgb : (seen.r < 0.0 ? uFogColor : seen);
         }
     }
@@ -161,38 +214,41 @@ vec4 underClouds(vec4 whole, vec4 front, float haze, vec4 cloud, vec3 position) 
     return seen * rayWeight;
 }
 
-const float GAIN_MIN = 0.35;   // an effect is never dimmed or brightened further than this to match a pack
-const float GAIN_MAX = 2.5;
+const float SKY_SHARE = 1.2;   // of the brightness of a pack's sky that an effect's sky light has
+const float SUN_SHARE = 0.75;  // and of the brightness of that sky's bright parts that its sun or moon light has
 const float SKY_HUE = 0.8;     // share of the pack's sky hue taken on by the effect's sky light
-const float SUN_HUE = 0.5;     // and by its sun or moon light, whose colour the pack also grades
+// The sun, the moon and the stars are in the sky too: its bright parts count for no more than this many
+// times its average.
+const float BRIGHTEST = 2.0;
 
-/** Set by skyLight(): what the effect's lit colour is multiplied by. Its own glow is left alone. */
-float skyGain = 1.0;
-/** Set by skyLight(): what the effect's sun or moon light is multiplied by. */
-vec3 sunTint = vec3(1.0);
+/** Set by skyLight(): the sun or moon light on the effect. */
+vec3 sunLight = vec3(0.0);
 
 float luminance(vec3 colour) {
     return dot(colour, vec3(0.2126, 0.7152, 0.0722));
 }
 
 /**
- * The sky light for an effect whose own model gives `ambient`. Without a shader pack that is tinted by the
- * game's fog colour. Under one, the pack has drawn a sky the game knows nothing about: the light takes the
- * hue of that sky at the horizon, and skyGain brings the effect's brightness to it, so the effect is as
- * dim, bright, blue or pink as the scene the pack exposed and graded.
+ * The light on a part of an effect seen at an elevation whose sine is `up`: returns its sky light and sets
+ * sunLight, given the `ambient` and `sun` of the effect's own model. Without a shader pack those are used,
+ * the sky light tinted by the game's fog colour. Under one, the pack has drawn, exposed and graded a sky the
+ * game knows nothing about, and the effect is lit by that sky as it is behind it: the sky light has its
+ * colour and brightness there, and the sun or moon light the brightness of its bright parts. Where clouds
+ * stand out from the sky their lit sides also show the colour of the pack's sun or moon; an even sky does
+ * not, and there the model's own sun keeps its colour.
  */
-vec3 skyLight(vec3 ambient) {
-    skyGain = 1.0;
-    sunTint = vec3(1.0);
-    if (uSkyMatch.x < 0.5) return mix(ambient, uFogColor, 0.45);
-    vec3 sky = texelFetch(uFogProbe, ivec2(1, 0), 0).rgb;
+vec3 skyLight(vec3 ambient, vec3 sun, float up) {
+    sunLight = sun;
+    if (uSkyMatch < 0.5) return mix(ambient, uFogColor, 0.45);
+    vec3 sky = skyAt(up, false);
     if (sky.r < 0.0) return ambient;
-    float seen = luminance(sky);
-    vec3 hue = sky / max(seen, 1.0e-3);
-    skyGain = clamp(seen / max(uSkyMatch.y, 1.0e-3), GAIN_MIN, GAIN_MAX);
-    sunTint = mix(vec3(1.0), hue, SUN_HUE);
-    // The sky light keeps its strength and trades its own hue for the pack's.
-    return mix(ambient, luminance(ambient) * hue, SKY_HUE);
+    vec3 bright = max(skyAt(up, true), 0.0);
+    float seen = max(luminance(sky), 1.0e-3);
+    float most = clamp(luminance(bright), seen, BRIGHTEST * seen);
+    float clouds = smoothstep(1.1, 1.4, most / seen);
+    vec3 hue = mix(sun / max(luminance(sun), 1.0e-3), bright / max(luminance(bright), 1.0e-3), clouds);
+    sunLight = SUN_SHARE * most * hue;
+    return SKY_SHARE * seen * mix(ambient / max(luminance(ambient), 1.0e-3), sky / seen, SKY_HUE);
 }
 
 const float NOISE_SIZE = 32.0;

@@ -16,6 +16,11 @@ public final class EffectFog {
     /** After a gap this long (the effect was out of view) the old value is dropped instead of blended. */
     static final double RESTART_SECONDS = 1.0;
     static final float MIN_WIDTH = 0.2f;
+    /**
+     * Bands of elevation the probe keeps the sky's colour in, in equal steps of the sine of the elevation
+     * from the horizon to straight up. {@code SKY_BANDS} in {@code scene.glsl}.
+     */
+    public static final int SKY_BANDS = 8;
 
     /** Terrain distances, in blocks, whose visibility says something about an effect at a given distance. */
     public record Band(float near, float far) {}

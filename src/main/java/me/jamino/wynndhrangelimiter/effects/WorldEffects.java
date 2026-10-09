@@ -97,7 +97,8 @@ public final class WorldEffects {
     private static long profiledNanos;
     private static int profiledFrames;
     private static String profiledDetail = "";
-    private static final float[] profiledProbe = {0, 0, 0, 1, -1, -1, -1, 1};
+    private static final int PROBE_WIDTH = 1 + EffectFog.SKY_BANDS;
+    private static final float[] profiledProbe = new float[PROBE_WIDTH * 2 * 4];
     private static boolean active;
 
     private WorldEffects() {}
@@ -149,9 +150,10 @@ public final class WorldEffects {
                          boolean packClouds) {}
 
     /**
-     * One effect's two readings of the world image, side by side in a 2x1 texture: the fog measurement, and
-     * the colour of the sky at the horizon. Both are smoothed over time, so each frame reads the previous
-     * results from one texture and writes the new ones to the other.
+     * One effect's readings of the world image, side by side in a small texture: the fog measurement, then the
+     * colour of the sky in each band of elevation, horizon first, with the colour of each band's bright parts
+     * in a second row. All are smoothed over time, so each frame reads the previous results from one texture
+     * and writes the new ones to the other.
      */
     private static final class FogProbe {
         final int[] textures = new int[2];
@@ -394,9 +396,8 @@ public final class WorldEffects {
         if (PROFILE && !mirror) {
             profiledDetail = effect.id() + " " + (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
                     + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
-                    + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f, horizon sky %.2f %.2f %.2f",
-                    profiledProbe[0], profiledProbe[1], profiledProbe[2], profiledProbe[3],
-                    profiledProbe[4], profiledProbe[5], profiledProbe[6])
+                    + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f, sky from the horizon up",
+                    profiledProbe[0], profiledProbe[1], profiledProbe[2], profiledProbe[3]) + profiledSky()
                     + modelledAt(scene.fog(), env, entry.distance(), box);
         }
     }
@@ -462,7 +463,7 @@ public final class WorldEffects {
         int previous = probe.current;
         probe.current = 1 - previous;
         GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[probe.current]);
-        GL11C.glViewport(0, 0, 2, 1);
+        GL11C.glViewport(0, 0, PROBE_WIDTH, 2);
         bind(5, GL11C.GL_TEXTURE_2D, color);
         bind(6, GL11C.GL_TEXTURE_2D, probe.textures[previous]);
         fogProgram.use();
@@ -480,25 +481,45 @@ public final class WorldEffects {
         if (PROFILE && profiledFrames == 0) {
             int packBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
             GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, 0);
-            float[] value = new float[8];
-            GL11C.glReadPixels(0, 0, 2, 1, GL11C.GL_RGBA, GL11C.GL_FLOAT, value);
+            // A row at a time: whatever row length the game left set for reading pixels then does not matter.
+            float[] row = new float[PROBE_WIDTH * 4];
+            for (int y = 0; y < 2; y++) {
+                GL11C.glReadPixels(0, y, PROBE_WIDTH, 1, GL11C.GL_RGBA, GL11C.GL_FLOAT, row);
+                System.arraycopy(row, 0, profiledProbe, y * row.length, row.length);
+            }
             GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, packBuffer);
-            System.arraycopy(value, 0, profiledProbe, 0, 8);
         }
+    }
+
+    /**
+     * For the profile log: the probe's sky colour in each band of elevation, "-" where none was seen, then
+     * the colour of each band's bright parts.
+     */
+    private static String profiledSky() {
+        StringBuilder sky = new StringBuilder();
+        for (int texel = 1; texel < PROBE_WIDTH * 2; texel++) {
+            if (texel == PROBE_WIDTH) sky.append(", bright parts");
+            else sky.append(profiledProbe[texel * 4] < 0 ? " -" : String.format(" %.2f/%.2f/%.2f",
+                    profiledProbe[texel * 4], profiledProbe[texel * 4 + 1], profiledProbe[texel * 4 + 2]));
+        }
+        return sky.toString();
     }
 
     private static FogProbe createFogProbe() {
         FogProbe probe = new FogProbe();
         GL13C.glActiveTexture(GL13C.GL_TEXTURE6);
         resetUnpack();
+        // No colour seen yet anywhere, full visibility.
+        float[] unseen = new float[PROBE_WIDTH * 2 * 4];
+        for (int i = 0; i < unseen.length; i++) unseen[i] = i % 4 == 3 ? 1 : -1;
         for (int i = 0; i < 2; i++) {
             probe.textures[i] = GL11C.glGenTextures();
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, probe.textures[i]);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
-            // No colour seen yet, full visibility. Full floats: at high frame rates each step of the
-            // smoothing is smaller than a half float can hold near 1.
-            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, 2, 1, 0, GL11C.GL_RGBA, GL11C.GL_FLOAT,
-                    new float[] {-1, -1, -1, 1, -1, -1, -1, 1});
+            // Full floats: at high frame rates each step of the smoothing is smaller than a half float can
+            // hold near 1.
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, PROBE_WIDTH, 2, 0, GL11C.GL_RGBA,
+                    GL11C.GL_FLOAT, unseen);
             probe.framebuffers[i] = GL30C.glGenFramebuffers();
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[i]);
             GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,

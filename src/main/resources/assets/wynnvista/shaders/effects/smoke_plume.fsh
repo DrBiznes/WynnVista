@@ -46,7 +46,7 @@ void main() {
     float t1 = min(span.y, leave + coarse);
 
     // The sky around the plume lights it as much as the sun does, which also carries sunset and weather colours.
-    vec3 ambient = skyLight(uAmbient);
+    vec3 ambient = skyLight(uAmbient, uLightColor, dir.y);
     int lightOctaves = min(uOctaves, 2);
     float dt = max((t1 - t0) / float(uSteps), 1.5);
     float t = t0 + dt * dither(gl_FragCoord.xy);
@@ -54,13 +54,13 @@ void main() {
     float transmittance = 1.0;
     float firstHit = -1.0;
     float shade = 1.0;
-    // What the march had gathered when it reached the cloud layer; negative until then.
+    // The part of the march in front of the cloud layer.
     vec4 cloud;
     float cloudAt = cloudDistance(uv, ndc, dir, cloud);
-    vec4 front = vec4(-1.0);
+    vec4 front = vec4(0.0);
     for (int i = 0; i < uSteps; i++) {
         if (t >= t1 || transmittance < 0.03) break;
-        if (front.a < 0.0 && t >= cloudAt) front = vec4(colour, 1.0 - transmittance);
+        gather(front, colour, transmittance, t, cloudAt);
         vec3 q = rayOrigin + dir * t - uVent;
         float d = density(q, uOctaves);
         if (d > 0.003) {
@@ -73,8 +73,8 @@ void main() {
             // than going dark: the sun term keeps a floor and the sky fills in the rest.
             vec3 albedo = mix(vec3(0.66, 0.65, 0.64), vec3(0.97, 0.97, 0.98), smoothstep(0.0, 0.4, u));
             vec3 lit = albedo * (ambient * mix(0.85, 1.0, u) * (0.55 + 0.2 * shade)
-                    + uLightColor * sunTint * mix(0.22, 0.6, shade));
-            lit = lit * skyGain + vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
+                    + sunLight * mix(0.22, 0.6, shade));
+            lit += vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
             float alpha = 1.0 - exp(-d * EXTINCTION * dt);
             colour += transmittance * alpha * lit;
             transmittance *= 1.0 - alpha;
@@ -84,7 +84,7 @@ void main() {
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
-    if (front.a < 0.0) front = vec4(colour, alpha);
+    gather(front, colour, transmittance, INF, cloudAt);
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.

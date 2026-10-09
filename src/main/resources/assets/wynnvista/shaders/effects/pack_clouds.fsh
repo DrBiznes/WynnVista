@@ -21,16 +21,26 @@ void main() {
     float reach = 0.0;
     if (uKind == 0) {
         opacity = 1.0 - clamp(textureLod(uPackFirst, uv, 0.0).a, 0.0, 1.0);
-        // The nearest of the four texels around the pixel, as the pack itself reads it.
+        // The pack marches its clouds at a fraction of the view's size, so their distances come in blocks of
+        // pixels. Averaged over the blocks around, each by how much cloud it holds, the line between a
+        // cloud in front of an effect and one behind it is smooth instead of stepped.
         ivec2 size = textureSize(uPackSecond, 0);
-        ivec2 base = ivec2(floor(uv * vec2(size) - 0.5));
-        reach = 1.0e6;
-        for (int i = 0; i < 4; i++) {
-            ivec2 texel = clamp(base + ivec2(i & 1, i >> 1), ivec2(0), size - 1);
-            reach = min(reach, texelFetch(uPackSecond, texel, 0).x);
+        ivec2 centre = ivec2(uv * vec2(size));
+        float weight = 0.0;
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                ivec2 texel = clamp(centre + ivec2(x, y) * 3, ivec2(0), size - 1);
+                float stored = texelFetch(uPackSecond, texel, 0).x;
+                // A buffer the pack never drew clouds into holds zeroes, and a million blocks is "no cloud".
+                if (stored <= 0.0 || stored > 1.0e5) continue;
+                float share = 1.01 - clamp(texelFetch(uPackFirst, texel, 0).a, 0.0, 1.0);
+                if (x == 0 && y == 0) share *= 2.0;
+                reach += share * stored;
+                weight += share;
+            }
         }
-        // A buffer the pack never drew clouds into holds zeroes, not "no cloud".
-        if (reach <= 0.0 || reach > 1.0e5) opacity = 0.0;
+        if (weight > 0.0) reach /= weight;
+        else opacity = 0.0;
     } else {
         // A yes-or-no cloud per pixel: its share of a small neighbourhood softens the edge.
         ivec2 size = textureSize(uPackFirst, 0);

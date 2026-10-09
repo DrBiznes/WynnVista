@@ -37,9 +37,9 @@ vec3 hash3(vec3 p) {
 /**
  * Walks one level's lattice front to back along the ray and composites its cubes. The level draws cubes whose
  * centres are between bottom and top (heights above the vent); a negative fade means that end is not faded.
- * front receives what had been gathered at the first cube behind the cloud layer; it is negative until then.
+ * front receives the part of them in front of the cloud layer.
  */
-void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, float bottomFade, float top,
+void marchLevel(int level, vec3 dir, float limit, float bottom, float bottomFade, float top,
                 float topFade, float cloudAt, inout vec3 colour, inout float transmittance, inout float firstHit,
                 inout vec4 front) {
     float size = CELL[level];
@@ -95,11 +95,14 @@ void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, fl
             float leave = min(min(hi.x, hi.y), hi.z);
             if (leave > enter && enter < limit) {
                 if (firstHit < 0.0) firstHit = enter;
-                if (front.a < 0.0 && enter >= cloudAt) front = vec4(colour, 1.0 - transmittance);
+                gather(front, colour, transmittance, enter, cloudAt);
                 vec4 c = column(q);
                 float u = c.y;
-                // One flat colour per cube: brighter on the side of the column that faces the light,
-                // darker ash low down, and a little variation from cube to cube.
+                // One flat colour per cube: lit by the sky at the cube's own elevation, brighter on the side
+                // of the column that faces the light, darker ash low down, and a little variation from
+                // cube to cube.
+                vec3 place = centre * size + lift + uVent;
+                vec3 ambient = skyLight(uAmbient, uLightColor, place.y / max(length(place), 1.0e-3));
                 float side = dot(c.zw, uLightDir.xz) * c.x / max(length(c.zw), 1.0e-3);
                 float shade = clamp(0.5 + 0.5 * side + 0.3 * uLightDir.y, 0.0, 1.0);
                 vec3 albedo = mix(vec3(0.66, 0.65, 0.64), vec3(0.97, 0.97, 0.98), smoothstep(0.0, 0.4, u));
@@ -107,8 +110,8 @@ void marchLevel(int level, vec3 dir, float limit, vec3 ambient, float bottom, fl
                 // The face the ray enters by is shaded as a block's would be: top brightest, underside darkest.
                 float face = lo.y >= max(lo.x, lo.z) ? (stride.y < 0.0 ? 1.0 : 0.7) : (lo.x >= lo.z ? 0.82 : 0.9);
                 vec3 lit = albedo * face * (ambient * mix(0.85, 1.0, u) * (0.55 + 0.2 * shade)
-                        + uLightColor * sunTint * mix(0.22, 0.6, shade));
-                lit = lit * skyGain + vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
+                        + sunLight * mix(0.22, 0.6, shade));
+                lit += vec3(1.0, 0.34, 0.07) * uGlow * exp(-q.y / 20.0);
                 // Cubes fade out just in front of the camera instead of filling the view with one face.
                 float nearFade = smoothstep(size, size * 3.0, length(centre - origin) * size);
                 float alpha = opacity * mix(0.55, 1.0, scale) * nearFade;
@@ -140,20 +143,19 @@ void main() {
     int first = 0;
     while (first < LEVELS - 1 && CELL[first] < MIN_PIXELS * uPixelSize) first++;
 
-    vec3 ambient = skyLight(uAmbient);
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;
     vec4 cloud;
     float cloudAt = cloudDistance(uv, ndc, dir, cloud);
-    vec4 front = vec4(-1.0);
+    vec4 front = vec4(0.0);
     // Levels are stacked by height, so the order the ray meets them in is the order of its climb or descent.
     for (int k = 0; k < LEVELS; k++) {
         int level = dir.y >= 0.0 ? k : LEVELS - 1 - k;
         if (level < first || transmittance < 0.03) continue;
         bool lowest = level == first;
         bool highest = level == LEVELS - 1;
-        marchLevel(level, dir, limit, ambient,
+        marchLevel(level, dir, limit,
                 lowest ? 0.0 : BAND[level], lowest ? -1.0 : CELL[level] * BLEND,
                 highest ? uShape.x : BAND[level + 1], highest ? -1.0 : CELL[level + 1] * BLEND,
                 cloudAt, colour, transmittance, firstHit, front);
@@ -161,7 +163,7 @@ void main() {
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
-    if (front.a < 0.0) front = vec4(colour, alpha);
+    gather(front, colour, transmittance, INF, cloudAt);
     // Aerial perspective: distant smoke sinks into the horizon colour like the terrain around it.
     float haze = 1.0 - exp(-max(firstHit, 0.0) * 0.00022);
     // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.

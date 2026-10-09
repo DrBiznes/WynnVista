@@ -42,7 +42,7 @@ vec3 hash3(vec3 p) {
 
 /**
  * Walks one level's lattice front to back between two distances along the ray and composites its fog. front
- * receives what had been gathered at the first cell behind the cloud layer; it is negative until then.
+ * receives the part of it in front of the cloud layer.
  */
 void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 scattered, float cloudAt,
                 inout vec3 colour, inout float transmittance, inout float firstHit, inout vec4 front) {
@@ -70,7 +70,7 @@ void marchLevel(int level, vec3 dir, float from, float to, vec3 bottomTop, vec3 
     float t = from;
     for (int i = 0; i < MAX_CELLS; i++) {
         float exit = min(min(next.x, min(next.y, next.z)), to);
-        if (front.a < 0.0 && t >= cloudAt) front = vec4(colour, 1.0 - transmittance);
+        gather(front, colour, transmittance, t, cloudAt);
         vec3 q = (cell + 0.5) * size;
         vec3 field = fogField(q, octaves);
         if (field.x > 0.0) {
@@ -132,14 +132,14 @@ void main() {
     while (first < LEVELS - 1 && CELL[first].y < MIN_PIXELS * uPixelSize) first++;
 
     // The sky lights the fog by day; at night almost all of its colour is the lava's own glow.
-    vec3 ambient = skyLight(uAmbient);
-    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + uLightColor * sunTint * 0.3) * skyGain;
+    vec3 ambient = skyLight(uAmbient, uLightColor, dir.y);
+    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + sunLight * 0.3);
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;
     vec4 cloud;
     float cloudAt = cloudDistance(uv, ndc, dir, cloud);
-    vec4 front = vec4(-1.0);
+    vec4 front = vec4(0.0);
     // Levels are stacked by height, so the order the ray meets them in is the order of its climb or descent.
     for (int k = 0; k < LEVELS; k++) {
         int level = dir.y >= 0.0 ? k : LEVELS - 1 - k;
@@ -150,7 +150,7 @@ void main() {
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
-    if (front.a < 0.0) front = vec4(colour, alpha);
+    gather(front, colour, transmittance, INF, cloudAt);
     if (alpha > MAX_OPACITY) {
         front *= MAX_OPACITY / alpha;
         colour *= MAX_OPACITY / alpha;

@@ -53,8 +53,8 @@ void main() {
     span.y = min(span.y, span.x + MAX_DEPTH);
 
     // The sky lights the fog by day; at night almost all of its colour is the lava's own glow.
-    vec3 ambient = skyLight(uAmbient);
-    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + uLightColor * sunTint * 0.3) * skyGain;
+    vec3 ambient = skyLight(uAmbient, uLightColor, dir.y);
+    vec3 scattered = vec3(0.48, 0.19, 0.16) * (ambient * 0.5 + sunLight * 0.3);
     int steps = min(uSteps, MAX_STEPS);
     int octaves = min(uOctaves, MAX_OCTAVES);
     float dt = max((span.y - span.x) / float(steps), 1.0);
@@ -62,13 +62,13 @@ void main() {
     vec3 colour = vec3(0.0);
     float transmittance = 1.0;
     float firstHit = -1.0;
-    // What the march had gathered when it reached the cloud layer; negative until then.
+    // The part of the march in front of the cloud layer.
     vec4 cloud;
     float cloudAt = cloudDistance(uv, ndc, dir, cloud);
-    vec4 front = vec4(-1.0);
+    vec4 front = vec4(0.0);
     for (int i = 0; i < steps; i++) {
         if (t >= span.y || transmittance < 0.03) break;
-        if (front.a < 0.0 && t >= cloudAt) front = vec4(colour, 1.0 - transmittance);
+        gather(front, colour, transmittance, t, cloudAt);
         vec3 q = rayOrigin + dir * t - uOrigin;
         float d = density(q, octaves) * mix(NEAR_CLEAR, 1.0, smoothstep(4.0, NEAR_RANGE, t));
         if (d > 0.003) {
@@ -87,7 +87,7 @@ void main() {
 
     float alpha = 1.0 - transmittance;
     if (alpha < 0.004) return;
-    if (front.a < 0.0) front = vec4(colour, alpha);
+    gather(front, colour, transmittance, INF, cloudAt);
     if (alpha > MAX_OPACITY) {
         front *= MAX_OPACITY / alpha;
         colour *= MAX_OPACITY / alpha;

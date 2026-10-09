@@ -66,7 +66,7 @@ public final class SmokePlume implements WorldEffect {
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
         Lighting light = lighting(frame);
-        program.set("uSkyMatch", frame.packLighting() ? 1 : 0, skyReference(light));
+        program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
         program.set("uVent", (float) (PEAK_X - frame.cameraX()), (float) (VENT_Y - frame.cameraY()),
                 (float) (PEAK_Z - frame.cameraZ()));
         program.set("uShape", HEIGHT, VENT_RADIUS, TOP_RADIUS);
@@ -130,19 +130,6 @@ public final class SmokePlume implements WorldEffect {
         return new Lighting(dirX / length, dirY / length, dirZ / length, red, green, blue,
                 ambient * 0.92f, ambient * 0.97f, ambient * lerp(1.45f, 1.10f, day),
                 lerp(1.0f, 0.1f, day));
-    }
-
-    /**
-     * Brightness of a middling part of an effect under this light, to compare with the sky a shader pack
-     * has drawn: three quarters of the sky light and somewhat under half of the sun or moon.
-     */
-    public static float skyReference(Lighting light) {
-        return 0.75f * luminance(light.ambientRed(), light.ambientGreen(), light.ambientBlue())
-                + 0.45f * luminance(light.red(), light.green(), light.blue());
-    }
-
-    private static float luminance(float red, float green, float blue) {
-        return 0.2126f * red + 0.7152f * green + 0.0722f * blue;
     }
 
     private static float clamp(float value) {
