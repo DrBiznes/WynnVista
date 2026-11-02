@@ -21,6 +21,13 @@ public final class EffectFog {
      * from the horizon to straight up. {@code SKY_BANDS} in {@code scene.glsl}.
      */
     public static final int SKY_BANDS = 8;
+    /**
+     * The probe's samples: across the searched columns, up the view for the measurement, and up each band of
+     * elevation for the sky. {@code COLUMNS}, {@code ROWS} and {@code ELEVATIONS} in {@code fog_probe_layout.glsl}.
+     */
+    public static final int PROBE_COLUMNS = 32;
+    public static final int PROBE_ROWS = 24;
+    public static final int PROBE_ELEVATIONS = 8;
 
     /** Terrain distances, in blocks, whose visibility says something about an effect at a given distance. */
     public record Band(float near, float far) {}

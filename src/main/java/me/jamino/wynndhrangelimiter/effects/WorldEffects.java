@@ -33,6 +33,7 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -90,8 +91,15 @@ public final class WorldEffects {
     private static int lowSizeY;
     private static final Map<String, EffectProgram> PROGRAMS = new HashMap<>();
     private static final Map<String, FogProbe> FOG_PROBES = new HashMap<>();
+    private static FogProbe clearProbe;
     private static EffectProgram fogProgram;
+    private static EffectProgram fogSamplesProgram;
     private static boolean fogBroken;
+    /** The probe's samples of the world image ({@code fog_probe_layout.glsl}), shared by every effect's probe. */
+    private static int probeSamplesFramebuffer;
+    private static int probeSamplesTexture;
+    private static final int PROBE_SAMPLES_WIDTH = EffectFog.PROBE_COLUMNS;
+    private static final int PROBE_SAMPLES_HEIGHT = EffectFog.SKY_BANDS * EffectFog.PROBE_ELEVATIONS + EffectFog.PROBE_ROWS;
     private static final Set<String> BROKEN = new HashSet<>();
     /** Terrain maps by file name; 0 for one that could not be loaded. */
     private static final Map<String, Integer> TERRAIN_MAPS = new HashMap<>();
@@ -147,11 +155,12 @@ public final class WorldEffects {
      * What every program needs to place a pixel in the world: the vanilla projection, the LOD depth and the
      * cloud layer of this frame, either of which may be null, the cloud height relative to the camera, and
      * the modelled fog with the part of the world its table covers (see {@link EffectFog#model}), or null,
-     * and whether a shader pack's clouds are bound in place of a cloud layer.
+     * whether a shader pack's clouds are bound in place of a cloud layer, and whether the effects read their
+     * fog probes this frame.
      */
     private record Scene(Matrix4f forward, Matrix4f inverse, LodDepth.Layer lod, CloudLayer.Layer clouds,
                          float cloudHeight, float cameraY, FogModel fog, FogTable.Range fogRange,
-                         boolean packClouds) {}
+                         boolean packClouds, boolean probes) {}
 
     /**
      * One effect's readings of the world image, side by side in a small texture: the fog measurement, then the
@@ -285,9 +294,12 @@ public final class WorldEffects {
         int height = main.textureHeight;
         List<WorldEffect.Bounds> boxes = new ArrayList<>(visible.size());
         for (Visible entry : visible) boxes.add(entry.effect().bounds());
+        // The probe is read for the fog when that is measured, for the fog's colour when a model does not know
+        // it (a shader pack's sky), and for the sky that lights the effects under a pack; otherwise not at all.
+        boolean probes = fog == null || fog.measured() || fog.colour() == null || frame.packLighting();
         Scene scene = new Scene(viewProjection, new Matrix4f(viewProjection).invert(), lod, clouds, cloudHeight,
                 (float) frame.cameraY(), fog,
-                FogTable.range(frame.cameraX(), frame.cameraZ(), boxes), packTextures != null);
+                FogTable.range(frame.cameraX(), frame.cameraZ(), boxes), packTextures != null, probes);
 
         GlState saved = GlState.capture();
         try {
@@ -318,8 +330,12 @@ public final class WorldEffects {
             GL11C.glDisable(GL11C.GL_BLEND);
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
             float reference = SmokePlume.skyReference(SmokePlume.lighting(frame));
-            for (Visible entry : visible) measureFog(entry, scene, color, reference);
-            EffectProfile.mark("fog probes");
+            if (probes) {
+                for (Visible entry : visible) measureFog(entry, scene, color, reference);
+                EffectProfile.mark("fog probes");
+            } else {
+                clearProbe();
+            }
             for (Visible entry : visible) bake(entry.effect(), frame);
             GL11C.glEnable(GL11C.GL_BLEND);
 
@@ -398,7 +414,8 @@ public final class WorldEffects {
             program.set("uWater", water.base(), water.power(), water.strength());
         }
         program.set("uNoise", 2);
-        FogProbe probe = FOG_PROBES.get(effect.id());
+        // A probe that is not read this frame may hold an old measurement, so a clear one is bound instead.
+        FogProbe probe = scene.probes() ? FOG_PROBES.get(effect.id()) : clearProbe();
         bind(6, GL11C.GL_TEXTURE_2D, probe.textures[probe.current]);
         program.set("uFogProbe", 6);
         program.set("uReference", reference);
@@ -426,12 +443,13 @@ public final class WorldEffects {
             GL11C.glScissor(x0, y0, x1 - x0, y1 - y0);
             GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
         }
-        float[] probed = PROFILED_PROBES.get(effect.id());
-        if (EffectProfile.ENABLED && !mirror && probed != null) {
+        float[] probed = scene.probes() ? PROFILED_PROBES.get(effect.id()) : null;
+        if (EffectProfile.ENABLED && !mirror) {
             EffectProfile.detail(effect.id(), (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
                     + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
-                    + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f, sky from the horizon up",
-                    probed[0], probed[1], probed[2], probed[3]) + profiledSky(probed)
+                    + (probed == null ? ", no probe read" : String.format(
+                    ", probe rgb %.2f %.2f %.2f visibility %.2f, sky from the horizon up",
+                    probed[0], probed[1], probed[2], probed[3]) + profiledSky(probed))
                     + modelledAt(scene.fog(), env, entry.distance(), box));
         }
     }
@@ -474,15 +492,18 @@ public final class WorldEffects {
     /**
      * Updates an effect's fog probe from the finished world image: how much detail the terrain at the
      * effect's distance still has, and its colour, and the sky at the horizon with {@code reference}, the
-     * effects' own brightness now ({@link SmokePlume#skyReference}). If the probe shader is unusable the
-     * probe keeps its initial "clear".
+     * effects' own brightness now ({@link SmokePlume#skyReference}). The image is sampled one sample per pixel
+     * ({@code fog_probe_samples.fsh}), so the GPU reads all of it at once, and the samples are added up into the
+     * probe ({@code fog_probe.fsh}). If either shader is unusable the probe keeps its initial "clear".
      */
     private static void measureFog(Visible entry, Scene scene, int color, float reference) {
         FogProbe probe = FOG_PROBES.computeIfAbsent(entry.effect().id(), id -> createFogProbe());
         if (fogBroken) return;
         if (fogProgram == null) {
             try {
+                fogSamplesProgram = EffectProgram.link("fog_probe_samples.fsh");
                 fogProgram = EffectProgram.link("fog_probe.fsh");
+                createProbeSamples();
             } catch (RuntimeException e) {
                 fogBroken = true;
                 LOGGER.error("World effects will ignore fog: the fog probe shader is unusable", e);
@@ -495,23 +516,33 @@ public final class WorldEffects {
         EffectFog.Band band = EffectFog.band(entry.distance());
         EffectFog.Columns columns = EffectFog.columns(entry.seen());
 
+        // With a model the amount of fog is known and is not measured.
+        int mode = scene.fog() != null && !scene.fog().measured() ? 1 : 0;
+
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probeSamplesFramebuffer);
+        GL11C.glViewport(0, 0, PROBE_SAMPLES_WIDTH, PROBE_SAMPLES_HEIGHT);
+        bind(5, GL11C.GL_TEXTURE_2D, color);
+        fogSamplesProgram.use();
+        setScene(fogSamplesProgram, scene, 1, 1);
+        fogSamplesProgram.set("uSceneColor", 5);
+        fogSamplesProgram.set("uColumns", columns.min(), columns.max());
+        fogSamplesProgram.set("uBand", band.near(), band.far());
+        fogSamplesProgram.set("uProbeMode", mode);
+        GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+
         int previous = probe.current;
         probe.current = 1 - previous;
         GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probe.framebuffers[probe.current]);
         GL11C.glViewport(0, 0, PROBE_WIDTH, 2);
-        bind(5, GL11C.GL_TEXTURE_2D, color);
+        bind(3, GL11C.GL_TEXTURE_2D, probeSamplesTexture);
         bind(6, GL11C.GL_TEXTURE_2D, probe.textures[previous]);
         fogProgram.use();
-        setScene(fogProgram, scene, 1, 1);
-        fogProgram.set("uSceneColor", 5);
+        fogProgram.set("uSamples", 3);
         fogProgram.set("uPrevious", 6);
-        fogProgram.set("uColumns", columns.min(), columns.max());
-        fogProgram.set("uBand", band.near(), band.far());
         fogProgram.set("uContrast", EffectFog.CONTRAST_GONE, EffectFog.CONTRAST_CLEAR);
         fogProgram.set("uRate", rate);
         fogProgram.set("uReference", reference);
-        // With a model the amount of fog is known and is not measured.
-        fogProgram.set("uProbeMode", scene.fog() != null && !scene.fog().measured() ? 1 : 0);
+        fogProgram.set("uProbeMode", mode);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
 
         if (EffectProfile.sampling()) {
@@ -540,6 +571,37 @@ public final class WorldEffects {
                     probed[texel * 4], probed[texel * 4 + 1], probed[texel * 4 + 2]));
         }
         return sky.toString();
+    }
+
+    private static void createProbeSamples() {
+        probeSamplesTexture = GL11C.glGenTextures();
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, probeSamplesTexture);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+        resetUnpack();
+        // Full floats: the probe then adds up exactly what was sampled. Every sample starts as "nothing seen":
+        // the sample pass of the very first frame was seen to leave the texture unwritten, and zeros there read
+        // as a black sky that the probe then held.
+        float[] nothing = new float[PROBE_SAMPLES_WIDTH * PROBE_SAMPLES_HEIGHT * 4];
+        Arrays.fill(nothing, -1);
+        GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, PROBE_SAMPLES_WIDTH, PROBE_SAMPLES_HEIGHT, 0,
+                GL11C.GL_RGBA, GL11C.GL_FLOAT, nothing);
+        probeSamplesFramebuffer = GL30C.glGenFramebuffers();
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, probeSamplesFramebuffer);
+        GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                probeSamplesTexture, 0);
+        if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+            throw new IllegalStateException("Fog probe sample buffer is incomplete");
+        }
+    }
+
+    /**
+     * A probe that has seen no sky and measured no fog, for effects whose own probe is not read. Created before
+     * the effects are drawn, as creating it binds its own buffers.
+     */
+    private static FogProbe clearProbe() {
+        if (clearProbe == null) clearProbe = createFogProbe();
+        return clearProbe;
     }
 
     private static FogProbe createFogProbe() {

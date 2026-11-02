@@ -25,6 +25,7 @@
 - Config: "Shader Pack Water Reflections" switches this off.
 - With a shader pack, the Sky Islands cloud cubes are lit on the faces turned to the pack's sun or moon, and world effects keep following the time of day while no sky is in view. Before, effects seen from a place without a view of the sky, such as under the Sky Islands, kept the brightness of the last sky seen.
 - The Sky Islands effects do less work: the void is skipped when looking up from the islands and from further than 640 blocks away, and the updrafts and motes are skipped unless you are within 64 blocks of the area.
+- World effects spend less time reading the sky and fog from the picture: about 0.4 ms less per frame, and none at all without a shader pack when Distant Horizons' or Voxy's fog is followed.
 - The blocky Sky Islands void is cheaper to draw: the cloud cover is worked out once a frame instead of for every pixel. It looks the same.
 - The Sky Islands void now reaches the horizon and fades into the sky. Before, flying low showed where it ended, as a band of haze and a gap with the sky's lower half showing through.
 

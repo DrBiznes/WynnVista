@@ -3,9 +3,28 @@ package me.jamino.wynndhrangelimiter.effects;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EffectFogTest {
+    @Test
+    void probeSamplesAndTheirSumShareOneLayout() {
+        String layout = EffectProgram.source("fog_probe_layout.glsl");
+        assertTrue(layout.contains("const int COLUMNS = " + EffectFog.PROBE_COLUMNS + ";"));
+        assertTrue(layout.contains("const int ROWS = " + EffectFog.PROBE_ROWS + ";"));
+        assertTrue(layout.contains("const int ELEVATIONS = " + EffectFog.PROBE_ELEVATIONS + ";"));
+        assertTrue(EffectProgram.source("scene.glsl").contains("const int SKY_BANDS = " + EffectFog.SKY_BANDS + ";"));
+        for (String shader : new String[] {"fog_probe_samples.fsh", "fog_probe.fsh"}) {
+            String source = EffectProgram.source(shader);
+            assertTrue(source.contains(layout), shader);
+            assertFalse(source.contains("#include"), shader);
+        }
+        // The sum reads only the samples, never the world image itself.
+        String sum = EffectProgram.source("fog_probe.fsh");
+        String own = sum.substring(sum.indexOf("uniform sampler2D uSamples;"));
+        assertFalse(own.contains("uSceneColor") || own.contains("sceneDistance("));
+    }
+
     @Test
     void bandSurroundsTheEffectDistance() {
         EffectFog.Band band = EffectFog.band(2000);
