@@ -20,8 +20,9 @@ The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay
 
 ### Sky Islands
 
-<!-- TODO: add the Sky Islands sizzle reel GIF here -->
-![Sky Islands sizzle reel](PLACEHOLDER_SKY_ISLANDS_SIZZLE_REEL.gif)
+<img width="1280" height="720" alt="sky-islands-sizzle" src="https://github.com/user-attachments/assets/83f66c35-8000-46f0-a49b-f16efba430b9" />
+
+Lot's of sky islands effects!!
 
 ### Smoke Plume
 
