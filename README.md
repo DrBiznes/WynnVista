@@ -2,14 +2,14 @@
 
 ![WynnVistaBanner](https://github.com/user-attachments/assets/495e19de-1f5b-40b0-a24b-7f28692427e5)
 
-The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay experience on Wynncraft by only showing the LODs of the region you're in (Distant Horizons or Voxy) and adding world effects like the Mount Wynn smoke plume and the Roots of Corruption fog. Made for my modpack [World of Wynncraft](https://modrinth.com/modpack/world-of-wynncraft)
+The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay experience on Wynncraft by only showing the LODs of the region you're in (Distant Horizons or Voxy) and adding world effects like the Mount Wynn smoke plume, the Roots of Corruption fog and the void under the Sky Islands. Made for my modpack [World of Wynncraft](https://modrinth.com/modpack/world-of-wynncraft)
 
 ## What's Up
 
 - Supports both **Distant Horizons** and **Voxy** LOD mods
 - Selective LODs: only shows the LODs of the region you're in (main map, Realm of Light, Void), no peeking at the other realms
 - Doesn't touch your LOD render distance, set it in DH or Voxy
-- **World Effects**: a smoke plume rising from Mount Wynn and the fog over the Roots of Corruption, visible in LODs. Many more to come!!
+- **World Effects**: a smoke plume rising from Mount Wynn, the fog over the Roots of Corruption and the clouds, nebulae and updrafts of the Sky Islands, visible in LODs. Many more to come!!
 - Realistic or Blocky style for each effect
 - Works with shader packs: **Complementary**, **BSL** and **Photon**
 - Configurable settings via Mod Menu or config file
@@ -17,6 +17,11 @@ The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay
 ## See It
 
 <img width="640" height="360" alt="world-effects-timelapse" src="https://github.com/user-attachments/assets/4363d32c-088f-42ee-a5ad-05f6a82c0579" />
+
+### Sky Islands
+
+<!-- TODO: add the Sky Islands sizzle reel GIF here -->
+![Sky Islands sizzle reel](PLACEHOLDER_SKY_ISLANDS_SIZZLE_REEL.gif)
 
 ### Smoke Plume
 
