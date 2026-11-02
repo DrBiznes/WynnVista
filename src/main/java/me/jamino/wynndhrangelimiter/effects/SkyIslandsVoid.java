@@ -47,6 +47,16 @@ public final class SkyIslandsVoid implements WorldEffect {
      */
     public static final double REACH = 640;
 
+    /** Blocks inside the box over which things fade out towards its sides. */
+    public static final double EDGE = 96;
+
+    /**
+     * Blocks past the box the floor and the haze run on for a camera inside it. Seen from low down, a ray
+     * near the horizon leaves through a side of the box long before it meets the floor; this far out the
+     * floor and the haze close the view to the horizon, and what is left is under a pixel to a few.
+     */
+    public static final double SKIRT = 32000;
+
     /** Blocks per repeat of the noise, and the ticks after which the moving patterns repeat. */
     public static final double NOISE_PERIOD = 2048;
     public static final long CYCLE_TICKS = 32000;
@@ -56,6 +66,18 @@ public final class SkyIslandsVoid implements WorldEffect {
      * the pace of vanilla clouds.
      */
     public static final long CLOUD_CYCLE_TICKS = 4 * CYCLE_TICKS;
+
+    /**
+     * Columns, each way, of the two lattices the blocky style's cuboids sit in, per repeat of the noise: one
+     * every 8 blocks ({@code PUFF} in {@code sky_islands_void_lattice.glsl}).
+     */
+    public static final int COLUMNS = (int) (NOISE_PERIOD / 8);
+
+    /**
+     * The blocky style's bake: the cloud cover of every column of both lattices, worked out once a frame instead
+     * of in every column every view ray walks through.
+     */
+    public static final Bake COVER = new Bake("sky_islands_void_bake.fsh", COLUMNS, COLUMNS);
 
     /** How the void is drawn; both styles share where its clouds, nebulae and fallen islands are. */
     public enum Style {
@@ -84,6 +106,7 @@ public final class SkyIslandsVoid implements WorldEffect {
     @Override public String shader() { return ModConfig.skyIslandsVoidStyle().shader(); }
     /** Half resolution would blur the edges of the cloud cuboids the blocky style is made of. */
     @Override public boolean halfResolution() { return ModConfig.skyIslandsVoidStyle() != Style.BLOCKY; }
+    @Override public Bake bake() { return ModConfig.skyIslandsVoidStyle() == Style.BLOCKY ? COVER : null; }
     @Override public double anchorX() { return (MIN_X + MAX_X) / 2.0; }
     @Override public double anchorZ() { return (NORTH_Z + SOUTH_Z) / 2.0; }
     @Override public Bounds bounds() { return BOUNDS; }
@@ -98,11 +121,30 @@ public final class SkyIslandsVoid implements WorldEffect {
         return BOUNDS.groundDistance(x, z) <= REACH;
     }
 
+    /** From inside the box the floor and the haze run on towards the horizon, past the box's sides. */
+    @Override public Bounds viewBounds(double x, double y, double z) {
+        double push = SKIRT * skirt(x, z);
+        return push <= 0 ? BOUNDS : new Bounds(MIN_X - push, ABYSS_Y, NORTH_Z - push, MAX_X + push, TOP_Y, SOUTH_Z + push);
+    }
+
+    /**
+     * How much of the skirt shows from a camera at x, z: none from outside the box, all of it from further
+     * inside than {@link #EDGE}, so it comes and goes without a jump as the camera crosses a side.
+     */
+    public static float skirt(double x, double z) {
+        double inside = Math.min(Math.min(x - MIN_X, MAX_X - x), Math.min(z - NORTH_Z, SOUTH_Z - z));
+        double t = Math.max(0, Math.min(1, inside / EDGE));
+        return (float) (t * t * (3 - 2 * t));
+    }
+
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
         SmokePlume.Lighting light = SmokePlume.lighting(frame);
         program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
         program.set("uLevels", (float) (ABYSS_Y - frame.cameraY()), (float) (CLOUD_Y - frame.cameraY()), 0);
+        program.set("uAreaMin", (float) (MIN_X - frame.cameraX()), (float) (NORTH_Z - frame.cameraZ()));
+        program.set("uAreaMax", (float) (MAX_X - frame.cameraX()), (float) (SOUTH_Z - frame.cameraZ()));
+        program.set("uSkirt", skirt(frame.cameraX(), frame.cameraZ()));
         program.set("uNoiseOrigin", wrap(frame.cameraX()), wrap(frame.cameraZ()));
         program.set("uPhase", phase(frame.worldTime(), frame.tickProgress()));
         program.set("uCloudPhase", cloudPhase(frame.worldTime(), frame.tickProgress()));

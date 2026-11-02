@@ -101,7 +101,7 @@ void clouds(vec3 dir, float from, float to, vec3 lit) {
         // Billows smaller than the samples are apart would only be grain.
         float d = billow(q, body.x, t < 100.0 ? 4 : (t < 220.0 ? 3 : 2));
         // The cloud thins out just in front of the camera instead of filling the view, and into the haze far away.
-        d *= smoothstep(1.0, 5.0, t) * (1.0 - smoothstep(CELLS_NEAR, CELLS_FAR, t));
+        d *= smoothstep(1.0, 5.0, t) * (1.0 - smoothstep(CELLS_NEAR, CELLS_FAR, t)) * cloudWithin(dir, t);
         if (d <= 0.004) continue;
         // Self-shadowing from one sample towards the light, reused once little of a sample reaches the eye.
         if (through > 0.3) shade = exp(-puff(q + uLightDir * SHADOW_REACH).x * SHADOW);
@@ -129,6 +129,9 @@ vec4 fallenIsles(vec3 dir, float t, vec3 lit) {
     vec4 sum = vec4(0.0);
     for (int k = 0; k < ISLES; k++) {
         float depth = ISLE_DEPTH[k];
+        float dimmed = ISLE_SHOWS[k] * exp(-MURK * depth * slope);
+        // Towards the horizon this layer and those under it do not show through the dark.
+        if (dimmed < 0.01) break;
         vec2 top = (at + run * depth) / PERIOD;
         vec2 bend = ISLE_WARP * (vec2(noise(vec3(top * 5.0, 0.64)), noise(vec3(top * 5.0 + 0.47, 0.18))) - 0.5);
         float rough = noise(vec3(top * 24.0, 0.52));
@@ -141,7 +144,7 @@ vec4 fallenIsles(vec3 dir, float t, vec3 lit) {
         // Daylight reaches less far down than the eye does. The top is lighter towards the island's middle.
         vec3 stone = STONE * (lit * 0.5 * exp(-depth / 200.0) + 0.06);
         float shading = mix(0.5, mix(0.8, 1.05, smoothstep(0.0, 0.08, land - ISLE_COVER)) * (0.85 + 0.3 * rough), face);
-        float shows = cover * ISLE_SHOWS[k] * exp(-MURK * depth * slope) * (1.0 - sum.a);
+        float shows = cover * dimmed * (1.0 - sum.a);
         sum += vec4(stone * shading * shows, shows);
     }
     return sum;
@@ -172,7 +175,8 @@ vec3 depths(vec3 dir, float t, vec3 lit) {
     vec2 at = still + uPhase * PERIOD * vec2(0.0, 1.0);
     vec2 centre = at / PERIOD;
     vec3 colour = DARK * (0.6 + 0.9 * noise(vec3(centre * 3.0, 0.33)));
-    float nebula = smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(centre, uPhase)));
+    // Towards the horizon no nebula shows through the dark, so it is not looked up there.
+    float nebula = seen < 0.001 ? 0.0 : smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(centre, uPhase)));
     if (nebula > 0.0) {
         float tone = (noise(vec3(centre * 2.0 + 0.19, 0.45)) - 0.3) / 0.4;
         vec2 bend = vec2(noise(vec3(centre * 2.0, 0.77)), noise(vec3(centre * 2.0 + 0.31, 0.27))) - 0.5;
@@ -215,7 +219,7 @@ void main() {
     fragColor = vec4(0.0);
     fragDistance = sceneDistance(uv, ndc);
     vec2 span = boxSpan(dir);
-    float end = min(span.y, fragDistance);
+    float end = rayEnd(dir, span.y, fragDistance);
     if (end <= span.x) return;
 
     // By day the cloud is lit by the sky and sun; the haze below it is a dim violet.
@@ -229,7 +233,7 @@ void main() {
         float b = (uLevels.y + float(LAYERS) * CELL) / dir.y;
         float from = max(min(a, b), span.x);
         // No cloud shows beyond CELLS_FAR, so it is not marched there.
-        float to = min(min(max(a, b), end), CELLS_FAR);
+        float to = cloudEnd(dir, min(min(max(a, b), end), CELLS_FAR));
         if (to > from) clouds(dir, from, to, lit);
     }
     float cover = 1.0 - through;

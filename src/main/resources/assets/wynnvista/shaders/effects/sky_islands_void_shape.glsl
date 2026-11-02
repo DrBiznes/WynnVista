@@ -2,6 +2,9 @@
 // are, the haze among the clouds, the light and the colours. Include after scene.glsl.
 
 uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cloud, both camera-relative
+uniform vec2 uAreaMin;          // the void's own box along the ground, x and z, camera-relative
+uniform vec2 uAreaMax;
+uniform float uSkirt;           // 1 where the floor and the haze run on past that box to the horizon, 0 where they end at it
 uniform vec2 uNoiseOrigin;      // the camera's place within one repeat of the noise pattern, in blocks
 uniform float uPhase;           // 0..1 over the time after which the moving patterns repeat
 uniform float uCloudPhase;      // the same for the cloud, which moves and changes more slowly, over a longer time
@@ -26,6 +29,7 @@ const float HAZE_SINK = 10.0;           // and below it, where it takes the colo
 const float HAZE_DENSITY = 0.011;       // extinction per block at its level
 const float HAZE_MAX = 0.95;
 const float EDGE = 96.0;                // blocks from the sides of the box over which everything fades out
+const float HORIZON_BLEND = 0.05;       // sine of the angle below the horizon over which the haze takes the sky's colour there
 
 const float NEBULA_DEPTH = 220.0;       // how far below where the void begins its nebulae appear to lie
 const float NEBULA_CELL = 4.0;          // side of one square that may hold a star, at that depth
@@ -52,6 +56,7 @@ const vec3 CLOUD_BLUSH = vec3(0.96, 0.80, 0.90);
 const vec3 NIGHT_LIGHT = vec3(0.11, 0.10, 0.17);    // light of its own the cloud keeps at night, times uGlow
 
 vec3 sunlight = vec3(0.0);      // the sun's or moon's share of the light the cloud is lit by
+vec3 horizon = vec3(0.0);       // the colour of the sky at the horizon
 
 vec3 hash3(vec3 p) {
     p = fract(p * vec3(0.1031, 0.1030, 0.0973));
@@ -120,6 +125,8 @@ vec3 cloudLight(out vec3 pale, out vec3 dusk) {
     vec3 lit = ambient * 0.9 + sunlight;
     pale = vec3(0.92, 0.91, 0.96) * lit + VIOLET * (0.01 + 0.035 * uGlow);
     dusk = pale * vec3(0.42, 0.36, 0.70) + VIOLET * (0.03 + 0.07 * uGlow);
+    vec3 sky = uSkyMatch > 0.5 ? skyAt(0.0, false).rgb : vec3(-1.0);
+    horizon = sky.r < 0.0 ? uFogColor : sky;
     return lit;
 }
 
@@ -140,7 +147,8 @@ float hazeDepth(float a, float b, float len) {
 
 /**
  * The haze along the ray between `from` and `to`: its colour, and in w how much of what is behind it hides.
- * What lies below its level is dim.
+ * What lies below its level is dim. Seen from inside the box it closes the view all the way to the horizon, so
+ * there it takes the sky's colour, and goes into the sky with no line between them.
  */
 vec4 hazeAlong(vec3 dir, float from, float to, vec3 pale, vec3 dusk) {
     float level = uLevels.y + CELL;
@@ -153,7 +161,8 @@ vec4 hazeAlong(vec3 dir, float from, float to, vec3 pale, vec3 dusk) {
     float pall = hazeDepth(max(low, 0.0), max(high, 0.0), reach * above);
     float veil = hazeDepth(min(low, 0.0), min(high, 0.0), reach * (1.0 - above));
     float haze = min(1.0 - exp(-pall - veil), HAZE_MAX);
-    return vec4((pale * 0.94 * pall + dusk * 0.6 * veil) / max(pall + veil, 1.0e-6), haze);
+    vec3 colour = (pale * 0.94 * pall + dusk * 0.6 * veil) / max(pall + veil, 1.0e-6);
+    return vec4(mix(colour, horizon, uSkirt * (1.0 - smoothstep(0.0, HORIZON_BLEND, -dir.y))), haze);
 }
 
 /** Where a ray that met nothing but haze is taken to have met it: at the haze's level. */
@@ -162,16 +171,50 @@ float hazeFront(vec3 dir, float from, float to) {
 }
 
 /**
+ * Where the ray ends: at the first terrain, or where it leaves the box at `exit`. From well inside the box a
+ * ray that meets no terrain runs on to the floor however far that is, or the last pixels under the horizon,
+ * which pass over the skirt's far end, would show the sky's lower half as a line.
+ */
+float rayEnd(vec3 dir, float exit, float terrain) {
+    return uSkirt >= 1.0 && dir.y < 0.0 && terrain >= exit ? uLevels.x / dir.y : min(exit, terrain);
+}
+
+/** 1 further inside the void's own box than EDGE, falling to 0 at its sides, for a place on the ground. */
+float withinArea(vec2 at) {
+    vec2 inside = min(at - uAreaMin, uAreaMax - at);
+    return smoothstep(0.0, EDGE, min(inside.x, inside.y));
+}
+
+/** How much of the cloud t blocks along the ray is there: it stays over the void's own box, skirt or not. */
+float cloudWithin(vec3 dir, float t) {
+    return max(withinArea(dir.xz * t), 1.0 - uSkirt);
+}
+
+/** Blocks along the ray from inside the void's own box to where it leaves through a side. */
+float areaExit(vec3 dir) {
+    vec2 inv = 1.0 / mix(dir.xz, vec2(1.0e-7), lessThan(abs(dir.xz), vec2(1.0e-7)));
+    vec2 far = max(uAreaMin * inv, uAreaMax * inv);
+    return min(far.x, far.y);
+}
+
+/** How far along the ray cloud can be, given that it ends at `to` anyway: the skirt holds none. */
+float cloudEnd(vec3 dir, float to) {
+    return uSkirt >= 1.0 ? min(to, areaExit(dir)) : to;
+}
+
+/**
  * The finished pixel: `whole` is the premultiplied colour and opacity of everything the ray met, the first of
  * it `first` blocks along the ray. Aerial perspective, a shader pack's fog and any cloud between the camera
- * and the void are put on it, and towards the sides of its box the effect fades out, so it has no edge where
- * no land hides one.
+ * and the void are put on it. Seen from outside, the effect fades out towards the sides of its box, so it has
+ * no edge where no land hides one. Seen from inside, the floor and the haze run on past them to the horizon;
+ * that part takes the fog of the side of the box it is seen past, as a pack's or LOD mod's fog would otherwise
+ * fade it into the sky at the LOD border and leave the gap under the horizon the skirt is there to close.
  */
 vec4 finished(vec4 whole, float first, vec2 uv, vec2 ndc, vec3 dir) {
     vec4 cloud;
     float cloudAt = cloudDistance(uv, ndc, dir, cloud);
-    float distant = 1.0 - exp(-first * 0.00022);
-    vec4 result = underClouds(whole, cloudAt < first ? vec4(0.0) : whole, distant, cloud, dir * first);
-    vec2 inside = min(dir.xz * first - uBoxMin.xz, uBoxMax.xz - dir.xz * first);
-    return result * smoothstep(0.0, EDGE, min(inside.x, inside.y));
+    float fogged = mix(first, min(first, areaExit(dir)), uSkirt);
+    float distant = 1.0 - exp(-fogged * 0.00022);
+    vec4 result = underClouds(whole, cloudAt < first ? vec4(0.0) : whole, distant, cloud, dir * fogged);
+    return result * max(withinArea(dir.xz * first), uSkirt);
 }

@@ -26,6 +26,12 @@ public interface WorldEffect {
     default String terrainMap() { return null; }
 
     /**
+     * A texture the effect's shader reads as {@code uBake}, drawn once a frame before the effect while it is in
+     * view: work that is the same for every pixel's ray, done once. Null for none; may change with the config.
+     */
+    default Bake bake() { return null; }
+
+    /**
      * Whether the effect is mirrored in a shader pack's water. Its shader must then start its ray with
      * {@code beginRay()} and march from {@code rayOrigin}.
      */
@@ -42,6 +48,12 @@ public interface WorldEffect {
     /** World-space box containing everything the effect can draw; used for frustum culling and the scissor. */
     Bounds bounds();
 
+    /**
+     * The box the effect is clipped to and culled by from this camera position, for an effect that reaches
+     * further from some places than its {@link #bounds()}; the fog table still covers only those.
+     */
+    default Bounds viewBounds(double x, double y, double z) { return bounds(); }
+
     /** Horizontal distance from the anchor beyond which the effect is not drawn. */
     double maxViewDistance();
 
@@ -55,6 +67,13 @@ public interface WorldEffect {
 
     /** Sets this effect's own uniforms. The scene, depth and quality uniforms are already set. */
     void upload(EffectProgram program, EffectFrame frame);
+
+    /**
+     * A bake: a fragment shader under {@code assets/wynnvista/shaders/effects/} drawn over a float RGBA texture
+     * of the given size. It gets the noise texture as {@code uNoise} and the effect's own uniforms from
+     * {@link #upload}, but none of the scene's.
+     */
+    record Bake(String shader, int width, int height) {}
 
     record Bounds(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
         /** Blocks from a position to the box; 0 inside it. */

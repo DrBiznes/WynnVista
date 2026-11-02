@@ -34,6 +34,25 @@ class SkyIslandsVoidTest {
     }
 
     @Test
+    void blockyCoverIsBakedOnTheLatticesTheStyleWalks() {
+        String bake = EffectProgram.source(SkyIslandsVoid.COVER.shader());
+        String blocky = EffectProgram.source(SkyIslandsVoid.Style.BLOCKY.shader());
+        // One texel per column: the bake reads the noise where the style would have read it.
+        String lattice = EffectProgram.source("sky_islands_void_lattice.glsl");
+        assertTrue(bake.contains(lattice) && blocky.contains(lattice));
+        assertTrue(bake.contains("float clumpCoverSteady(vec2 p)"));
+        assertTrue(lattice.contains("const float PUFF = 8.0;"));
+        assertEquals(SkyIslandsVoid.NOISE_PERIOD, SkyIslandsVoid.COLUMNS * 8.0);
+        assertEquals(SkyIslandsVoid.COLUMNS, SkyIslandsVoid.COVER.width());
+        assertEquals(SkyIslandsVoid.COLUMNS, SkyIslandsVoid.COVER.height());
+        assertFalse(bake.contains("#include"));
+        // The style reads the bake instead of the noise.
+        assertTrue(blocky.contains("uniform sampler2D uBake;"));
+        assertFalse(blocky.substring(blocky.indexOf("bool puffAt(")).contains("clumpCoverSteady("));
+        assertFalse(EffectProgram.source(SkyIslandsVoid.Style.REALISTIC.shader()).contains("uBake"));
+    }
+
+    @Test
     void terrainMapMatchesTheBoxItIsPlacedOn() throws IOException {
         try (InputStream in = SkyIslandsVoid.class.getResourceAsStream(
                 "/assets/wynnvista/textures/effects/" + SkyIslandsVoid.MAP)) {
@@ -127,6 +146,33 @@ class SkyIslandsVoidTest {
         assertTrue(box.maxZ() > SkyIslandsVoid.MAP_MIN_Z + SkyIslandsVoid.MAP_SIZE_Z);
         assertEquals(0, SkyIslandsVoid.MAP_MIN_X % 16);
         assertEquals(0, Math.floorMod(SkyIslandsVoid.MAP_MIN_Z, 16));
+    }
+
+    @Test
+    void floorAndHazeRunOnPastTheBoxOnlyFromInsideIt() {
+        SkyIslandsVoid effect = new SkyIslandsVoid();
+        assertEquals(1f, SkyIslandsVoid.skirt(1306, -4592), "the middle of the void");
+        // Outside the box, and on its sides, nothing changes from the box alone.
+        assertEquals(0f, SkyIslandsVoid.skirt(SkyIslandsVoid.MIN_X - 300, -4600));
+        assertEquals(0f, SkyIslandsVoid.skirt(SkyIslandsVoid.MAX_X, -4600));
+        assertEquals(0f, SkyIslandsVoid.skirt(1300, SkyIslandsVoid.NORTH_Z));
+        assertEquals(effect.bounds(), effect.viewBounds(SkyIslandsVoid.MIN_X - 300, 150, -4600));
+        // It comes in evenly over the same blocks as the fade at the sides.
+        assertEquals(0.5f, SkyIslandsVoid.skirt(SkyIslandsVoid.MIN_X + SkyIslandsVoid.EDGE / 2, -4600), 1e-6);
+        assertEquals(1f, SkyIslandsVoid.skirt(1300, SkyIslandsVoid.SOUTH_Z - SkyIslandsVoid.EDGE));
+        for (SkyIslandsVoid.Style style : SkyIslandsVoid.Style.values()) {
+            assertTrue(EffectProgram.source(style.shader()).contains("const float EDGE = 96.0;"), style.name());
+        }
+        // From inside, the view reaches out to the horizon, at the same heights, and the box itself stays put:
+        // the fog table covers the box, and a table thousands of blocks wide would blur the fog of other effects.
+        WorldEffect.Bounds view = effect.viewBounds(1306, 40, -4592);
+        assertEquals(SkyIslandsVoid.MIN_X - SkyIslandsVoid.SKIRT, view.minX());
+        assertEquals(SkyIslandsVoid.SOUTH_Z + SkyIslandsVoid.SKIRT, view.maxZ());
+        assertEquals(SkyIslandsVoid.ABYSS_Y, view.minY());
+        assertEquals(SkyIslandsVoid.TOP_Y, view.maxY());
+        assertEquals(SkyIslandsVoid.MIN_X, effect.bounds().minX());
+        // What is left of the view under the horizon is under a pixel to a few, from as high as the islands reach.
+        assertTrue(Math.toDegrees(Math.atan((256 - SkyIslandsVoid.ABYSS_Y) / SkyIslandsVoid.SKIRT)) < 0.6);
     }
 
     @Test

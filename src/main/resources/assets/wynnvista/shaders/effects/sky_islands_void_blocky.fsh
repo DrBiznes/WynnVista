@@ -9,11 +9,13 @@
 
 #include "sky_islands_void_shape.glsl"
 
+#include "sky_islands_void_lattice.glsl"
+
+uniform sampler2D uBake;        // the cover of each column of both lattices, from sky_islands_void_bake.fsh
+
 layout(location = 0) out vec4 fragColor;       // premultiplied colour and opacity
 layout(location = 1) out float fragDistance;   // terrain distance, for the half-resolution path
 
-const float PUFF = 8.0;                 // side of one column of a lattice, which holds at most one cuboid
-const vec3 PUFF_SHIFT = vec3(4.5, 2.5, 4.5);    // the second lattice against the first; no two faces share a plane
 const float PUFF_YOUNG = 0.6;           // share of its full measure a cuboid has when it forms
 const float SWELL = 0.07;               // rise of the noise over which it grows to all of it
 const float APPEAR = 0.025;             // and over which a new one fades in
@@ -112,9 +114,10 @@ vec3 puffShape(vec3 r) {
  */
 bool puffAt(vec2 cell, int set, out vec3 low, out vec3 size, out vec3 h, out float shows) {
     // The index wraps where the pattern repeats, so a cuboid keeps its look across the wrap.
-    vec2 column = mod(cell, PERIOD / PUFF);
-    vec2 p = ((column + 0.5) * PUFF + (set == 0 ? vec2(0.0) : PUFF_SHIFT.xz)) / PERIOD;
-    float past = clumpCoverSteady(p) - COVER;
+    vec2 column = mod(cell, COLUMNS);
+    vec4 baked = texelFetch(uBake, ivec2(column), 0);
+    vec2 cover = set == 0 ? baked.xy : baked.zw;
+    float past = cover.x;
     if (past < 0.0) return false;
     shows = smoothstep(0.0, APPEAR, past);
     vec3 seed = vec3(column, 3.0 + 17.0 * float(set));
@@ -123,7 +126,7 @@ bool puffAt(vec2 cell, int set, out vec3 low, out vec3 size, out vec3 h, out flo
     vec3 place = hash3(seed + 91.0);
     size = puffShape(grow) * mix(PUFF_YOUNG, 1.0, clamp(past / SWELL, 0.0, 1.0));
     low.xz = cell * PUFF + (PUFF - size.xz) * place.xz;
-    low.y = CELL * step(0.5, clumpLevel(p)) + floor(3.0 * place.y);
+    low.y = CELL * step(0.5, cover.y) + floor(3.0 * place.y);
     return true;
 }
 
@@ -206,7 +209,8 @@ void cloudSea(vec3 dir, float from, float to, vec3 lit) {
         float t = puff.t;
         if (t >= to) return;
         // A cuboid fades out just in front of the camera instead of filling the view with one face.
-        float alpha = PUFF_OPACITY * puff.shows * smoothstep(CLEAR, CLEAR_FAR, t) * (1.0 - smoothstep(CELLS_NEAR, CELLS_FAR, t));
+        float alpha = PUFF_OPACITY * puff.shows * smoothstep(CLEAR, CLEAR_FAR, t) * (1.0 - smoothstep(CELLS_NEAR, CELLS_FAR, t))
+                * cloudWithin(dir, t);
         gathered += through * alpha * puffColour(puff, dir, lit);
         through *= 1.0 - alpha;
         if (first < 0.0 && alpha > 0.0) first = t;
@@ -236,6 +240,8 @@ vec4 fallenIsles(vec3 dir, float t, vec3 lit) {
     for (int k = 0; k < ISLES; k++) {
         float depth = ISLE_DEPTH[k];
         float shows = ISLE_SHOWS[k] * exp(-MURK * depth * slope);
+        // Towards the horizon this layer and those under it do not show through the dark.
+        if (shows < 0.01) break;
         // Daylight reaches less far down than the eye does.
         vec3 stone = STONE * (lit * 0.5 * exp(-depth / 200.0) + 0.06);
         float land = isle(at + run * depth, k);
@@ -268,7 +274,8 @@ vec3 depths(vec3 dir, float t, vec3 lit) {
     vec2 at = still + uPhase * PERIOD * vec2(0.0, 1.0);
     vec2 pixel = floor(at / NEBULA_CELL);
     vec2 centre = (pixel + 0.5) * NEBULA_CELL / PERIOD;
-    float nebula = smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(centre, uPhase)));
+    // Towards the horizon no nebula shows through the dark, so it is not looked up there.
+    float nebula = seen < 0.001 ? 0.0 : smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(centre, uPhase)));
     if (nebula > 0.0) {
         float tone = (noise(vec3(centre * 2.0 + 0.19, 0.45)) - 0.3) / 0.4;
         float turn = 6.2832 * noise(vec3(centre * 2.0, 0.77));
@@ -306,7 +313,7 @@ void main() {
     fragColor = vec4(0.0);
     fragDistance = sceneDistance(uv, ndc);
     vec2 span = boxSpan(dir);
-    float end = min(span.y, fragDistance);
+    float end = rayEnd(dir, span.y, fragDistance);
     if (end <= span.x) return;
 
     // By day the cloud is lit by the sky and sun; the haze below it is a dim violet.
@@ -320,7 +327,7 @@ void main() {
         float b = (uLevels.y + float(LAYERS) * CELL) / dir.y;
         float from = max(min(a, b), span.x);
         // No cloud shows beyond CELLS_FAR, so the lattices are not walked there.
-        float to = min(min(max(a, b), end), CELLS_FAR);
+        float to = cloudEnd(dir, min(min(max(a, b), end), CELLS_FAR));
         if (to > from) cloudSea(dir, from, to, lit);
     }
     // The haze in front of the cloud is laid over it; without cloud, all of the haze is in front.

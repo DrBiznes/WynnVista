@@ -18,7 +18,6 @@ import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL12C;
 import org.lwjgl.opengl.GL13C;
 import org.lwjgl.opengl.GL14C;
-import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL21C;
 import org.lwjgl.opengl.GL30C;
@@ -53,9 +52,6 @@ public final class WorldEffects {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista-effects");
     private static final int NOISE_SIZE = 32;
     private static final String TEXTURES = "/assets/wynnvista/textures/effects/";
-    /** {@code -Dwynnvista.effects.profile=true} logs the GPU time of the effect pass. */
-    private static final boolean PROFILE = Boolean.getBoolean("wynnvista.effects.profile");
-    private static final int PROFILE_FRAMES = 100;
     /** Share of the view an effect must cover before it is marched at half resolution. */
     private static final double HALF_RESOLUTION_COVERAGE = 0.12;
     /** Blocks after which the ripples on water repeat: the noise texture's size times RIPPLE_SIZE in scene.glsl. */
@@ -99,14 +95,14 @@ public final class WorldEffects {
     private static final Set<String> BROKEN = new HashSet<>();
     /** Terrain maps by file name; 0 for one that could not be loaded. */
     private static final Map<String, Integer> TERRAIN_MAPS = new HashMap<>();
+    /** Texture unit of an effect's bake while the effect is drawn. */
+    private static final int BAKE_UNIT = 15;
+    /** Each effect's bake ({@link WorldEffect#bake}) by effect id; only for an effect whose bake shader linked. */
+    private static final Map<String, Baked> BAKED = new HashMap<>();
     private static String loggedState = "";
-    private static int timerQuery;
-    private static boolean timerPending;
-    private static long profiledNanos;
-    private static int profiledFrames;
-    private static String profiledDetail = "";
     private static final int PROBE_WIDTH = 1 + EffectFog.SKY_BANDS;
-    private static final float[] profiledProbe = new float[PROBE_WIDTH * 2 * 4];
+    /** For the profile log: each effect's probe as last read back. */
+    private static final Map<String, float[]> PROFILED_PROBES = new HashMap<>();
     private static boolean active;
 
     private WorldEffects() {}
@@ -168,6 +164,14 @@ public final class WorldEffects {
         final int[] framebuffers = new int[2];
         int current;
         long measuredNanos;
+    }
+
+    /** The texture an effect's bake is drawn into, kept from frame to frame. */
+    private static final class Baked {
+        int framebuffer;
+        int texture;
+        int width;
+        int height;
     }
 
     /** Called once the world image is complete. The matrices are the ones vanilla terrain was drawn with. */
@@ -238,7 +242,7 @@ public final class WorldEffects {
                     effect.anchorX(), effect.anchorZ())) continue;
             if (!effect.inRange(cameraPos.x, cameraPos.y, cameraPos.z)) continue;
             double distance = Math.hypot(effect.anchorX() - cameraPos.x, effect.anchorZ() - cameraPos.z);
-            WorldEffect.Bounds box = effect.bounds();
+            WorldEffect.Bounds box = effect.viewBounds(cameraPos.x, cameraPos.y, cameraPos.z);
             EffectCulling.ScreenRect rect = EffectCulling.project(viewProjection,
                     (float) (box.minX() - cameraPos.x), (float) (box.minY() - cameraPos.y),
                     (float) (box.minZ() - cameraPos.z), (float) (box.maxX() - cameraPos.x),
@@ -309,12 +313,14 @@ public final class WorldEffects {
             GL30C.glBindVertexArray(vertexArray);
             if (packTextures != null) readPackClouds(packClouds, packTextures, width, height);
 
-            beginProfile();
+            EffectProfile.begin();
             // The fog already in the image is measured before anything is drawn over it.
             GL11C.glDisable(GL11C.GL_BLEND);
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
             float reference = SmokePlume.skyReference(SmokePlume.lighting(frame));
             for (Visible entry : visible) measureFog(entry, scene, color, reference);
+            EffectProfile.mark("fog probes");
+            for (Visible entry : visible) bake(entry.effect(), frame);
             GL11C.glEnable(GL11C.GL_BLEND);
 
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
@@ -333,6 +339,7 @@ public final class WorldEffects {
                     if (entry.mirror() != null) {
                         shade(entry, entry.mirror(), water, scene, frame, env, fogColor, reference, projectionScaleY,
                                 width, height);
+                        EffectProfile.mark(entry.effect().id() + " reflection");
                     }
                 }
             }
@@ -340,9 +347,10 @@ public final class WorldEffects {
                 if (entry.rect() != null) {
                     shade(entry, entry.rect(), null, scene, frame, env, fogColor, reference, projectionScaleY, width,
                             height);
+                    EffectProfile.mark(entry.effect().id());
                 }
             }
-            endProfile();
+            EffectProfile.end();
         } finally {
             saved.restore();
         }
@@ -357,10 +365,12 @@ public final class WorldEffects {
                               EffectFrame frame, FogModel.Env env, Vector4f fogColor, float reference,
                               float projectionScaleY, int width, int height) {
         WorldEffect effect = entry.effect();
-        EffectProgram program = program(effect);
+        EffectProgram program = program(effect, effect.shader());
         if (program == null) return;
         int terrainMap = effect.terrainMap() == null ? 0 : terrainMap(effect);
         if (effect.terrainMap() != null && terrainMap == 0) return;
+        Baked baked = effect.bake() == null ? null : BAKED.get(effect.id());
+        if (effect.bake() != null && baked == null) return;
         // Only the pixels the effect's box can cover are shaded at all.
         int x0 = Math.max(0, (int) Math.floor(rect.minX() * width) - 1);
         int y0 = Math.max(0, (int) Math.floor(rect.minY() * height) - 1);
@@ -396,7 +406,7 @@ public final class WorldEffects {
         program.set("uSteps", steps);
         program.set("uOctaves", octaves);
         program.set("uPixelSize", (float) (entry.distance() * 2 / (projectionScaleY * height)));
-        WorldEffect.Bounds box = effect.bounds();
+        WorldEffect.Bounds box = effect.viewBounds(frame.cameraX(), frame.cameraY(), frame.cameraZ());
         program.set("uBoxMin", (float) (box.minX() - frame.cameraX()), (float) (box.minY() - frame.cameraY()),
                 (float) (box.minZ() - frame.cameraZ()));
         program.set("uBoxMax", (float) (box.maxX() - frame.cameraX()), (float) (box.maxY() - frame.cameraY()),
@@ -406,18 +416,23 @@ public final class WorldEffects {
             bind(14, GL11C.GL_TEXTURE_2D, terrainMap);
             program.set("uTerrainMap", 14);
         }
+        if (baked != null) {
+            bind(BAKE_UNIT, GL11C.GL_TEXTURE_2D, baked.texture);
+            program.set("uBake", BAKE_UNIT);
+        }
         if (half) {
             drawHalfResolution(scene, width, height, x0, y0, x1, y1);
         } else {
             GL11C.glScissor(x0, y0, x1 - x0, y1 - y0);
             GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
         }
-        if (PROFILE && !mirror) {
-            profiledDetail = effect.id() + " " + (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
+        float[] probed = PROFILED_PROBES.get(effect.id());
+        if (EffectProfile.ENABLED && !mirror && probed != null) {
+            EffectProfile.detail(effect.id(), (x1 - x0) + "x" + (y1 - y0) + " px of " + width + "x" + height
                     + (half ? " at half resolution, " : ", ") + steps + " steps, " + octaves + " octaves"
                     + String.format(", probe rgb %.2f %.2f %.2f visibility %.2f, sky from the horizon up",
-                    profiledProbe[0], profiledProbe[1], profiledProbe[2], profiledProbe[3]) + profiledSky()
-                    + modelledAt(scene.fog(), env, entry.distance(), box);
+                    probed[0], probed[1], probed[2], probed[3]) + profiledSky(probed)
+                    + modelledAt(scene.fog(), env, entry.distance(), box));
         }
     }
 
@@ -499,14 +514,15 @@ public final class WorldEffects {
         fogProgram.set("uProbeMode", scene.fog() != null && !scene.fog().measured() ? 1 : 0);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
 
-        if (PROFILE && profiledFrames == 0) {
+        if (EffectProfile.sampling()) {
+            float[] probed = PROFILED_PROBES.computeIfAbsent(entry.effect().id(), id -> new float[PROBE_WIDTH * 2 * 4]);
             int packBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
             GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, 0);
             // A row at a time: whatever row length the game left set for reading pixels then does not matter.
             float[] row = new float[PROBE_WIDTH * 4];
             for (int y = 0; y < 2; y++) {
                 GL11C.glReadPixels(0, y, PROBE_WIDTH, 1, GL11C.GL_RGBA, GL11C.GL_FLOAT, row);
-                System.arraycopy(row, 0, profiledProbe, y * row.length, row.length);
+                System.arraycopy(row, 0, probed, y * row.length, row.length);
             }
             GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, packBuffer);
         }
@@ -516,12 +532,12 @@ public final class WorldEffects {
      * For the profile log: the probe's sky colour in each band of elevation, "-" where none was seen, then
      * the colour of each band's bright parts.
      */
-    private static String profiledSky() {
+    private static String profiledSky(float[] probed) {
         StringBuilder sky = new StringBuilder();
         for (int texel = 1; texel < PROBE_WIDTH * 2; texel++) {
             if (texel == PROBE_WIDTH) sky.append(", bright parts");
-            else sky.append(profiledProbe[texel * 4] < 0 ? " -" : String.format(" %.2f/%.2f/%.2f",
-                    profiledProbe[texel * 4], profiledProbe[texel * 4 + 1], profiledProbe[texel * 4 + 2]));
+            else sky.append(probed[texel * 4] < 0 ? " -" : String.format(" %.2f/%.2f/%.2f",
+                    probed[texel * 4], probed[texel * 4 + 1], probed[texel * 4 + 2]));
         }
         return sky.toString();
     }
@@ -700,11 +716,54 @@ public final class WorldEffects {
     }
 
     /**
-     * Compiles an effect's program on first use, per shader, as an effect may switch shaders with the config.
-     * A shader that fails disables only the effect using it.
+     * Draws an effect's bake into its texture, before the effect is shaded. Called with blending and the scissor
+     * off. A bake whose shader is unusable disables the effect, which cannot be drawn without it.
      */
-    private static EffectProgram program(WorldEffect effect) {
-        String shader = effect.shader();
+    private static void bake(WorldEffect effect, EffectFrame frame) {
+        WorldEffect.Bake bake = effect.bake();
+        if (bake == null) return;
+        EffectProgram program = program(effect, bake.shader());
+        if (program == null) return;
+        Baked baked = BAKED.computeIfAbsent(effect.id(), id -> new Baked());
+        if (baked.framebuffer == 0 || baked.width != bake.width() || baked.height != bake.height()) {
+            createBake(baked, bake.width(), bake.height());
+        }
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, baked.framebuffer);
+        GL11C.glViewport(0, 0, bake.width(), bake.height());
+        program.use();
+        program.set("uNoise", 2);
+        effect.upload(program, frame);
+        GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+        EffectProfile.mark(effect.id() + " bake");
+    }
+
+    private static void createBake(Baked baked, int width, int height) {
+        if (baked.framebuffer == 0) {
+            baked.framebuffer = GL30C.glGenFramebuffers();
+            baked.texture = GL11C.glGenTextures();
+        }
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + BAKE_UNIT);
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, baked.texture);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+        resetUnpack();
+        // Full floats: the shader then reads exactly what the bake worked out.
+        GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, width, height, 0, GL11C.GL_RGBA,
+                GL11C.GL_FLOAT, (ByteBuffer) null);
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, baked.framebuffer);
+        GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                baked.texture, 0);
+        if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+            throw new IllegalStateException("Effect bake buffer is incomplete");
+        }
+        baked.width = width;
+        baked.height = height;
+    }
+
+    /**
+     * Compiles one of an effect's programs on first use, per shader, as an effect may switch shaders with the
+     * config. A shader that fails disables only the effect using it, in the style it failed in.
+     */
+    private static EffectProgram program(WorldEffect effect, String shader) {
         EffectProgram program = PROGRAMS.get(shader);
         if (program != null) return program;
         try {
@@ -713,7 +772,7 @@ public final class WorldEffects {
             LOGGER.info("World effect '{}' compiled and linked ({})", effect.id(), shader);
             return program;
         } catch (RuntimeException e) {
-            BROKEN.add(shader);
+            BROKEN.add(effect.shader());
             LOGGER.error("World effect '{}' disabled: its shader {} is unusable", effect.id(), shader, e);
             return null;
         }
@@ -760,28 +819,6 @@ public final class WorldEffects {
         if (state.equals(loggedState)) return;
         loggedState = state;
         LOGGER.info("World effects: {}", state);
-    }
-
-    private static void beginProfile() {
-        if (!PROFILE) return;
-        if (timerQuery == 0) timerQuery = GL15C.glGenQueries();
-        if (timerPending) {
-            // Last frame's result; waiting here is fine for a diagnostic run.
-            profiledNanos += GL33C.glGetQueryObjecti64(timerQuery, GL15C.GL_QUERY_RESULT);
-            if (++profiledFrames == PROFILE_FRAMES) {
-                LOGGER.info("World effects GPU time: {} ms/frame over {} frames ({})",
-                        String.format("%.3f", profiledNanos / 1.0e6 / PROFILE_FRAMES), PROFILE_FRAMES, profiledDetail);
-                profiledNanos = 0;
-                profiledFrames = 0;
-            }
-        }
-        GL15C.glBeginQuery(GL33C.GL_TIME_ELAPSED, timerQuery);
-    }
-
-    private static void endProfile() {
-        if (!PROFILE) return;
-        GL15C.glEndQuery(GL33C.GL_TIME_ELAPSED);
-        timerPending = true;
     }
 
     private static void bind(int unit, int target, int texture) {
@@ -849,13 +886,14 @@ public final class WorldEffects {
         private static final int[] TARGETS = {GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_3D,
                 GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
                 GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
-                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D};
+                GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_2D,
+                GL11C.GL_TEXTURE_2D};
         private static final int[] BINDINGS = {GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL12C.GL_TEXTURE_BINDING_3D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
                 GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D,
-                GL11C.GL_TEXTURE_BINDING_2D};
+                GL11C.GL_TEXTURE_BINDING_2D, GL11C.GL_TEXTURE_BINDING_2D};
         private static final int[] PIXEL_STORE = {GL11C.GL_UNPACK_ALIGNMENT, GL11C.GL_UNPACK_ROW_LENGTH,
                 GL11C.GL_UNPACK_SKIP_PIXELS, GL11C.GL_UNPACK_SKIP_ROWS, GL12C.GL_UNPACK_IMAGE_HEIGHT,
                 GL12C.GL_UNPACK_SKIP_IMAGES};
