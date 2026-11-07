@@ -268,14 +268,27 @@ float nebulaCloud(float n, float from) {
 vec3 depths(vec3 dir, float t, vec3 lit) {
     float slope = -1.0 / dir.y;         // blocks of ray per block of descent
     vec2 still = dir.xz * (t + slope * NEBULA_DEPTH) + uNoiseOrigin;
-    float seen = exp(-MURK * NEBULA_DEPTH * slope) * (0.55 + 0.45 * uGlow);
-    vec3 colour = DARK;
+    float seen = exp(-MURK * NEBULA_DEPTH * slope) * mix(NEBULA_DAY, 1.0, uGlow);
     // The squares drift with the nebulae, so a nebula slides as a whole and nothing in it crawls or flickers.
-    vec2 at = still + uPhase * PERIOD * vec2(0.0, 1.0);
+    float nebula;
+    vec3 colour = DARK + nebulaLight(still + uPhase * PERIOD * vec2(0.0, 1.0), dir.xz * slope, seen, nebula);
+    vec2 square = floor(still / CRYSTAL_CELL);
+    if (textureLod(uNoise, vec3((square + 0.5) / NOISE_SIZE, 9.5 / NOISE_SIZE), 0.0).r < CRYSTAL_SHARE) {
+        float pulse = 0.6 + 0.4 * sin(6.2832 * (uPhase * 160.0 + hash3(vec3(square, 1.0)).x));
+        colour += vec3(0.62, 0.42, 0.95) * 0.5 * pulse * seen * (1.0 - nebula);
+    }
+    // The islands are above all of that and fade into it.
+    vec4 fallen = fallenIsles(dir, t, lit);
+    return mix(colour, fallen.rgb, fallen.a);
+}
+
+/** A nebula as depths() describes it, drawn on a plane at `at`; see the declaration in the shape. */
+vec3 nebulaLight(vec2 at, vec2 run, float seen, out float nebula) {
     vec2 pixel = floor(at / NEBULA_CELL);
     vec2 centre = (pixel + 0.5) * NEBULA_CELL / PERIOD;
     // Towards the horizon no nebula shows through the dark, so it is not looked up there.
-    float nebula = seen < 0.001 ? 0.0 : smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(centre, uPhase)));
+    nebula = seen < 0.001 ? 0.0 : smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(vec3(centre, uPhase)));
+    vec3 light = vec3(0.0);
     if (nebula > 0.0) {
         float tone = (noise(vec3(centre * 2.0 + 0.19, 0.45)) - 0.3) / 0.4;
         float turn = 6.2832 * noise(vec3(centre * 2.0, 0.77));
@@ -292,16 +305,19 @@ vec3 depths(vec3 dir, float t, vec3 lit) {
             float twinkle = 0.6 + 0.4 * sin(6.2832 * (uPhase * 64.0 + random.y));
             glow += vec3(0.74, 0.72, 0.98) * twinkle * (0.25 + 0.75 * max(one, two));
         }
-        colour += glow * nebula * NEBULA_STRENGTH * seen;
+        light = glow * nebula * NEBULA_STRENGTH * seen;
     }
-    vec2 square = floor(still / CRYSTAL_CELL);
-    if (textureLod(uNoise, vec3((square + 0.5) / NOISE_SIZE, 9.5 / NOISE_SIZE), 0.0).r < CRYSTAL_SHARE) {
-        float pulse = 0.6 + 0.4 * sin(6.2832 * (uPhase * 160.0 + hash3(vec3(square, 1.0)).x));
-        colour += vec3(0.62, 0.42, 0.95) * 0.5 * pulse * seen * (1.0 - nebula);
+#ifdef SURROUND
+    // Out in the void faint stars lie between the nebulae too, a square each.
+    if (seen >= 0.001 && nebula < 1.0) {
+        vec3 random = hash3(vec3(mod(pixel, PERIOD / NEBULA_CELL), 7.0));
+        if (random.x < FIELD_STARS) {
+            float twinkle = 0.6 + 0.4 * sin(6.2832 * (uPhase * 48.0 + random.y));
+            light += vec3(0.74, 0.72, 0.98) * mix(0.25, 0.45, random.z) * twinkle * seen * (1.0 - nebula);
+        }
     }
-    // The islands are above all of that and fade into it.
-    vec4 fallen = fallenIsles(dir, t, lit);
-    return mix(colour, fallen.rgb, fallen.a);
+#endif
+    return light;
 }
 
 void main() {
@@ -314,7 +330,12 @@ void main() {
     fragDistance = sceneDistance(uv, ndc);
     vec2 span = boxSpan(dir);
     float end = rayEnd(dir, span.y, fragDistance);
-    if (end <= span.x) return;
+    if (end <= span.x) {
+#ifdef SURROUND
+        fragColor = surround(fragColor, dir, fragDistance);
+#endif
+        return;
+    }
 
     // By day the cloud is lit by the sky and sun; the haze below it is a dim violet.
     vec3 pale;
@@ -354,7 +375,11 @@ void main() {
     vec4 haze = hazeAlong(dir, span.x, front, pale, dusk);
     vec3 colour = haze.rgb * haze.a + gathered * (1.0 - haze.a);
     float alpha = 1.0 - through * (1.0 - haze.a);
-    if (alpha < 0.004) return;
-    if (first < 0.0) first = hazeFront(dir, span.x, end);
-    fragColor = finished(vec4(colour, alpha), first, uv, ndc, dir);
+    if (alpha >= 0.004) {
+        if (first < 0.0) first = hazeFront(dir, span.x, end);
+        fragColor = finished(vec4(colour, alpha), first, uv, ndc, dir);
+    }
+#ifdef SURROUND
+    fragColor = surround(fragColor, dir, fragDistance);
+#endif
 }

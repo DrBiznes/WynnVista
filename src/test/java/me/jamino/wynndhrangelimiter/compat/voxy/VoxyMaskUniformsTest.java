@@ -34,9 +34,9 @@ class VoxyMaskUniformsTest {
     void voidRegionKeepsPrecisionFarFromTheCamera() {
         // Camera over the main map, Void region ~14000 blocks away: block-exact in float.
         float[] data = VoxyMaskUniforms.pack(snapshot(MaskMode.VOID_OUTER), 0, -3200);
-        assertEquals(13393f, data[0]);
-        assertEquals(-4704f + 3200, data[1]);
-        assertEquals(14381f, data[2]);
-        assertEquals(-3194f + 3200, data[3]);
+        assertEquals(13456f, data[0]);
+        assertEquals(-4602f + 3200, data[1]);
+        assertEquals(14393f, data[2]);
+        assertEquals(-3177f + 3200, data[3]);
     }
 }

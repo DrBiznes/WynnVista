@@ -6,7 +6,7 @@ import java.util.Locale;
 public final class RegionPolicy {
     public static final BlockRect MAIN = BlockRect.fromInclusive(-2518, -60, 1628, -5813);
     public static final BlockRect LIGHT = BlockRect.fromInclusive(-636, -6616, -1111, -5815);
-    public static final BlockRect VOID_OUTER = BlockRect.fromInclusive(13393, -3195, 14380, -4704);
+    public static final BlockRect VOID_OUTER = BlockRect.fromInclusive(13456, -3178, 14392, -4602);
 
     private static volatile BlockRect fixtureCustom;
 

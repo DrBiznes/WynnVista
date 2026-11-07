@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.1
+
+**Added**
+- World effect: the void of the Void and Outer Void ("Void and Outer Void"). The Sky Islands void, but all around you: the same clouds drift beneath the floating islands, a deeper violet haze rises among them and closes the view in every direction, nebulae are commoner and brighter and show by day as well, faint stars lie between them, more fallen islands sink into the dark, and above the horizon the void closes over the sky, thinning towards the top so the sun and moon still show through. It has its own toggle on the World Effects config page.
+
+**Changed**
+- Config: "Sky Islands Void Style" is now "Void Style" and sets the style of both voids. Your setting is kept.
+- Void LOD region: new bounds, X 13456 to 14392 and Z -4602 to -3178. Its west edge moves 63 blocks east, its north edge 102 blocks south, and it reaches 12 blocks further east and 17 further south.
+
 ## 2.2.0
 
 Sky Islands shader effects. The Sky Islands get a void of drifting clouds and nebulae beneath them, and wind and motes in their air. World effects also now follow your shader pack's fog, lighting, clouds and water.

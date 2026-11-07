@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 public final class EffectProgram {
     private static final String SHADERS = "/assets/wynnvista/shaders/effects/";
     private static final Pattern INCLUDE = Pattern.compile("(?m)^#include \"([\\w.]+)\"\\s*$");
+    private static final Pattern VERSION = Pattern.compile("\\A\\s*#version[^\\n]*\\n");
 
     private final int id;
     private final Map<String, Integer> uniforms = new HashMap<>();
@@ -88,7 +89,10 @@ public final class EffectProgram {
         return shader;
     }
 
-    /** Reads a shader, replacing each {@code #include "file"} line with that file's text. */
+    /**
+     * Reads a shader, replacing each {@code #include "file"} line with that file's text. An included file's own
+     * {@code #version} line is dropped, so a shader can be a few {@code #define}s and a whole other shader.
+     */
     static String source(String name) {
         String text;
         try (InputStream in = EffectProgram.class.getResourceAsStream(SHADERS + name)) {
@@ -100,7 +104,8 @@ public final class EffectProgram {
         Matcher include = INCLUDE.matcher(text);
         StringBuilder expanded = new StringBuilder();
         while (include.find()) {
-            include.appendReplacement(expanded, Matcher.quoteReplacement(source(include.group(1))));
+            String included = VERSION.matcher(source(include.group(1))).replaceFirst("");
+            include.appendReplacement(expanded, Matcher.quoteReplacement(included));
         }
         return include.appendTail(expanded).toString();
     }

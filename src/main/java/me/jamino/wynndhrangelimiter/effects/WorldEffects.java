@@ -61,7 +61,7 @@ public final class WorldEffects {
     private static final long RIPPLE_TICKS = NOISE_SIZE * 2 * 20;
 
     private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog(), new SkyIslandsVoid(),
-            new SkyIslandsAir());
+            new SkyIslandsAir(), new VoidDepths());
 
     private static boolean failed;
     private static boolean created;

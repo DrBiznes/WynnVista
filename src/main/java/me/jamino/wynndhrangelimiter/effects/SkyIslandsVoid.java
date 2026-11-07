@@ -82,20 +82,24 @@ public final class SkyIslandsVoid implements WorldEffect {
     /** How the void is drawn; both styles share where its clouds, nebulae and fallen islands are. */
     public enum Style {
         /** Soft ray-marched clouds over smooth nebulae. */
-        REALISTIC("Realistic", "sky_islands_void.fsh"),
+        REALISTIC("Realistic", "sky_islands_void.fsh", "void_depths.fsh"),
         /** Clouds of a few large cuboids each, after the launch clouds, over pixel-art nebulae. */
-        BLOCKY("Blocky", "sky_islands_void_blocky.fsh");
+        BLOCKY("Blocky", "sky_islands_void_blocky.fsh", "void_depths_blocky.fsh");
 
         private final String label;
         private final String shader;
+        private final String surroundShader;
 
-        Style(String label, String shader) {
+        Style(String label, String shader, String surroundShader) {
             this.label = label;
             this.shader = shader;
+            this.surroundShader = surroundShader;
         }
 
         public String label() { return label; }
         public String shader() { return shader; }
+        /** The same style out in the void of the Void and Outer Void ({@link VoidDepths}). */
+        public String surroundShader() { return surroundShader; }
     }
 
     private static final Bounds BOUNDS = new Bounds(MIN_X, ABYSS_Y, NORTH_Z, MAX_X, TOP_Y, SOUTH_Z);
@@ -132,19 +136,33 @@ public final class SkyIslandsVoid implements WorldEffect {
      * inside than {@link #EDGE}, so it comes and goes without a jump as the camera crosses a side.
      */
     public static float skirt(double x, double z) {
-        double inside = Math.min(Math.min(x - MIN_X, MAX_X - x), Math.min(z - NORTH_Z, SOUTH_Z - z));
+        return skirt(x, z, MIN_X, NORTH_Z, MAX_X, SOUTH_Z);
+    }
+
+    /** {@link #skirt(double, double)} for a void with the given box along the ground. */
+    static float skirt(double x, double z, double minX, double northZ, double maxX, double southZ) {
+        double inside = Math.min(Math.min(x - minX, maxX - x), Math.min(z - northZ, southZ - z));
         double t = Math.max(0, Math.min(1, inside / EDGE));
         return (float) (t * t * (3 - 2 * t));
     }
 
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
+        upload(program, frame, MIN_X, NORTH_Z, MAX_X, SOUTH_Z, ABYSS_Y, CLOUD_Y);
+    }
+
+    /**
+     * The uniforms of the void's shaders, for a void with the given box along the ground, the plane it begins
+     * at and the top of its lowest layer of cloud. Shared with {@link VoidDepths}.
+     */
+    static void upload(EffectProgram program, EffectFrame frame, double minX, double northZ, double maxX,
+                       double southZ, double abyssY, double cloudY) {
         SmokePlume.Lighting light = SmokePlume.lighting(frame);
         program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
-        program.set("uLevels", (float) (ABYSS_Y - frame.cameraY()), (float) (CLOUD_Y - frame.cameraY()), 0);
-        program.set("uAreaMin", (float) (MIN_X - frame.cameraX()), (float) (NORTH_Z - frame.cameraZ()));
-        program.set("uAreaMax", (float) (MAX_X - frame.cameraX()), (float) (SOUTH_Z - frame.cameraZ()));
-        program.set("uSkirt", skirt(frame.cameraX(), frame.cameraZ()));
+        program.set("uLevels", (float) (abyssY - frame.cameraY()), (float) (cloudY - frame.cameraY()), 0);
+        program.set("uAreaMin", (float) (minX - frame.cameraX()), (float) (northZ - frame.cameraZ()));
+        program.set("uAreaMax", (float) (maxX - frame.cameraX()), (float) (southZ - frame.cameraZ()));
+        program.set("uSkirt", skirt(frame.cameraX(), frame.cameraZ(), minX, northZ, maxX, southZ));
         program.set("uNoiseOrigin", wrap(frame.cameraX()), wrap(frame.cameraZ()));
         program.set("uPhase", phase(frame.worldTime(), frame.tickProgress()));
         program.set("uCloudPhase", cloudPhase(frame.worldTime(), frame.tickProgress()));

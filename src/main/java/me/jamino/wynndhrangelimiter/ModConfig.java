@@ -141,7 +141,7 @@ public final class ModConfig implements ModMenuApi {
         }
     }
 
-    /** Rendering style of the Sky Islands void; an unknown value means the default. */
+    /** Rendering style of the Sky Islands void and the Void's; an unknown value means the default. */
     public static SkyIslandsVoid.Style skyIslandsVoidStyle() {
         try {
             return SkyIslandsVoid.Style.valueOf(config.skyIslandsVoidStyle.toUpperCase(Locale.ROOT));
@@ -271,11 +271,12 @@ public final class ModConfig implements ModMenuApi {
                         config.netherFogStyle = value.name();
                         save();
                     }).build());
-            effects.addEntry(entries.startEnumSelector(Text.literal("Sky Islands Void Style"),
+            effects.addEntry(entries.startEnumSelector(Text.literal("Void Style"),
                             SkyIslandsVoid.Style.class, skyIslandsVoidStyle())
                     .setDefaultValue(SkyIslandsVoid.Style.BLOCKY)
                     .setEnumNameProvider(style -> Text.literal(((SkyIslandsVoid.Style) style).label()))
-                    .setTooltip(Text.literal("Blocky: clouds of whole cubes over pixel-art nebulae. "
+                    .setTooltip(Text.literal("For the void under the Sky Islands and the Void and Outer Void. "
+                            + "Blocky: clouds of whole cubes over pixel-art nebulae. "
                             + "Realistic: soft volumetric clouds over smooth nebulae"))
                     .setSaveConsumer(value -> {
                         config.skyIslandsVoidStyle = value.name();

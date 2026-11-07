@@ -1,5 +1,10 @@
 // Shared by both styles of the Sky Islands void: where the cloud clumps, the nebulae and the fallen islands
 // are, the haze among the clouds, the light and the colours. Include after scene.glsl.
+//
+// With SURROUND defined (void_depths.fsh, void_depths_blocky.fsh) it is the void of the Void and Outer Void
+// instead, where the player is out in the void itself rather than on land above it: the haze is deeper and
+// rises past the islands, nebulae are commoner and brighter and show by day too, more islands have fallen,
+// and above the horizon the void closes over the sky (dome()).
 
 uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cloud, both camera-relative
 uniform vec2 uAreaMin;          // the void's own box along the ground, x and z, camera-relative
@@ -24,23 +29,39 @@ const float GATHER = 4.0;               // and the groups of clumps; a whole num
 const float CELLS_NEAR = 220.0;         // blocks from the camera at which the clumps start to give way to the haze
 const float CELLS_FAR = 520.0;          // and where they are gone
 
+#ifndef SURROUND
 const float HAZE_HEIGHT = 8.0;          // blocks above the cloud over which the haze thins to 1/e
-const float HAZE_SINK = 10.0;           // and below it, where it takes the colour of the depths
 const float HAZE_DENSITY = 0.011;       // extinction per block at its level
 const float HAZE_MAX = 0.95;
+#else
+// The haze reaches up among the islands: from their height, the void a few hundred blocks off is half veiled.
+const float HAZE_HEIGHT = 48.0;
+const float HAZE_DENSITY = 0.0065;
+const float HAZE_MAX = 0.97;
+#endif
+const float HAZE_SINK = 10.0;           // blocks below the haze's level over which it thins, taking the colour of the depths
 const float EDGE = 96.0;                // blocks from the sides of the box over which everything fades out
 const float HORIZON_BLEND = 0.05;       // sine of the angle below the horizon over which the haze takes the sky's colour there
 
 const float NEBULA_DEPTH = 220.0;       // how far below where the void begins its nebulae appear to lie
 const float NEBULA_CELL = 4.0;          // side of one square that may hold a star, at that depth
-const float NEBULA_RARE = 0.52;        // noise above which a place holds a nebula; higher is fewer
 const float NEBULA_WARP = 0.02;         // how far a nebula's pattern is bent, in noise repeats
+#ifndef SURROUND
+const float NEBULA_RARE = 0.52;        // noise above which a place holds a nebula; higher is fewer
 const float NEBULA_STRENGTH = 0.9;      // its brightness at night, before the dark in front of it
+const float NEBULA_DAY = 0.55;          // share of that it keeps by day
 const float MURK = 0.0035;              // extinction per block of that dark
+const float ISLE_COVER = 0.70;          // noise above which a layer holds land; higher is fewer islands
+#else
+const float NEBULA_RARE = 0.46;
+const float NEBULA_STRENGTH = 1.15;
+const float NEBULA_DAY = 1.0;           // out in the void it is as bright by day as by night
+const float MURK = 0.002;
+const float ISLE_COVER = 0.66;
+#endif
 const int ISLES = 3;                    // layers of fallen islands
 const float ISLE_DEPTH[ISLES] = float[](60.0, 130.0, 210.0);    // blocks below where the void begins, all above the nebulae
 const float ISLE_SHOWS[ISLES] = float[](1.0, 0.7, 0.45);        // how much of a layer shows, before the dark in front of it
-const float ISLE_COVER = 0.70;          // noise above which a layer holds land; higher is fewer islands
 const float ISLE_THICK = 0.3;           // an island's thickness as a share of its layer's depth
 const float CRYSTAL_CELL = 4.0;         // side of one square that may hold a crystal's glint
 const float CRYSTAL_SHARE = 0.004;      // share of them that do
@@ -125,10 +146,62 @@ vec3 cloudLight(out vec3 pale, out vec3 dusk) {
     vec3 lit = ambient * 0.9 + sunlight;
     pale = vec3(0.92, 0.91, 0.96) * lit + VIOLET * (0.01 + 0.035 * uGlow);
     dusk = pale * vec3(0.42, 0.36, 0.70) + VIOLET * (0.03 + 0.07 * uGlow);
+#ifdef SURROUND
+    // Out in the void the haze is the void's own violet, and along the horizon it meets the dome, not the sky:
+    // the dome starts from the haze's own colour there, so the two meet with no line.
+    pale = mix(pale, dusk * 1.5, 0.7);
+    horizon = pale * 0.94;
+#else
     vec3 sky = uSkyMatch > 0.5 ? skyAt(0.0, false).rgb : vec3(-1.0);
     horizon = sky.r < 0.0 ? uFogColor : sky;
+#endif
     return lit;
 }
+
+/**
+ * A nebula at `at`, in blocks on the plane it lies on, with `run` the blocks across that plane per block of
+ * depth along the ray, seen with `seen` of its light: the light it adds, and in `nebula` how much of a nebula
+ * is there, 0..1. Each style draws its own.
+ */
+vec3 nebulaLight(vec2 at, vec2 run, float seen, out float nebula);
+
+#ifdef SURROUND
+const float DOME_HORIZON = 1.0;         // share of the sky the void hides along the horizon
+const float DOME_ZENITH = 0.6;          // and straight up, so the sun and moon still show through
+const float DOME_DISTANCE = 360.0;      // blocks to the plane the dome's nebulae are drawn on, straight up
+const float DOME_FLAT = 0.25;          // added to the sine of the elevation, so that plane does not run off to infinity
+const float FIELD_STARS = 0.012;        // share of the squares outside the nebulae that hold a faint star
+
+/**
+ * The void above the horizon, where a ray from the islands meets no terrain: premultiplied colour and how much
+ * of the sky it hides. It is the haze's colour along the horizon, darkening upward, and holds nebulae and stars
+ * of the same kind as the depths below. It is a sky, fixed to the camera, so it does not move as the camera does.
+ */
+vec4 dome(vec3 dir) {
+    float up = max(dir.y, 0.0);
+    vec2 at = dir.xz * (DOME_DISTANCE / (up + DOME_FLAT)) + vec2(0.0, uPhase * PERIOD);
+    // Low down the nebulae go into the haze along the horizon.
+    float nebula;
+    vec3 light = nebulaLight(at, vec2(0.0), smoothstep(0.02, 0.3, up), nebula);
+    vec3 colour = mix(horizon, DARK, smoothstep(0.0, 0.4, up)) + light;
+    float shows = mix(DOME_HORIZON, DOME_ZENITH, smoothstep(0.0, 0.9, up));
+    return vec4(colour * shows, shows);
+}
+
+/**
+ * The finished pixel `effect` with the dome behind it, where the ray rises and meets no terrain: `distance` is
+ * the terrain's along the ray, INF for none.
+ */
+vec4 surround(vec4 effect, vec3 dir, float distance) {
+    // Near the sides of the region the dome comes and goes with the skirt, which only shows from inside.
+    if (dir.y <= 0.0 || distance < INF * 0.5 || uMirror.x > 0.5 || uSkirt <= 0.0) return effect;
+    // The dome takes its colour from the light; on a pixel the effect left early that is not worked out yet.
+    vec3 pale;
+    vec3 dusk;
+    cloudLight(pale, dusk);
+    return effect + dome(dir) * (uSkirt * (1.0 - effect.a));
+}
+#endif
 
 /** Haze between its level and h blocks from it (negative below), for an even climb of one block per block. */
 float hazeColumn(float h) {

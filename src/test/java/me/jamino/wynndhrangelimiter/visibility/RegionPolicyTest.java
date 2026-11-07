@@ -13,8 +13,8 @@ class RegionPolicyTest {
         assertEquals(MaskMode.MAIN, select(1628, -5813));
         assertEquals(MaskMode.LIGHT, select(-636, -6616));
         assertEquals(MaskMode.LIGHT, select(-1111, -5815));
-        assertEquals(MaskMode.VOID_OUTER, select(13393, -3195));
-        assertEquals(MaskMode.VOID_OUTER, select(14380, -4704));
+        assertEquals(MaskMode.VOID_OUTER, select(13456, -3178));
+        assertEquals(MaskMode.VOID_OUTER, select(14392, -4602));
         assertEquals(MaskMode.LIGHT, select(-800, -5815));
         assertEquals(MaskMode.NONE, select(-800, -5814));
         assertEquals(MaskMode.MAIN, select(-800, -5813));
@@ -27,10 +27,10 @@ class RegionPolicyTest {
         assertEquals(MaskMode.NONE, select(0, -59));
         assertEquals(MaskMode.NONE, select(-635, -6000));
         assertEquals(MaskMode.NONE, select(-800, -5814));
-        assertEquals(MaskMode.NONE, select(13392.999, -4000));
-        assertEquals(MaskMode.NONE, select(14381, -4000));
-        assertEquals(MaskMode.NONE, select(14000, -4705));
-        assertEquals(MaskMode.NONE, select(14000, -3194));
+        assertEquals(MaskMode.NONE, select(13455.999, -4000));
+        assertEquals(MaskMode.NONE, select(14393, -4000));
+        assertEquals(MaskMode.NONE, select(14000, -4603));
+        assertEquals(MaskMode.NONE, select(14000, -3177));
         assertEquals(MaskMode.NONE, select(Double.NaN, -4000));
     }
 
