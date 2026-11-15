@@ -15,6 +15,7 @@ A config screen with a tab for each area's world effects, and switches for the s
 **Fixed**
 - ReplayMod: LOD masking and world effects now work in replays recorded on Wynncraft, while watching them and in rendered videos. Before, a replay was treated as an unknown world, with no masking and no effects.
 - Fabrishot and ReplayMod: world effects could be missing from a high-resolution screenshot or a rendered video, and stay missing afterwards, because the picture is resized for the capture. Effects now follow the resized picture.
+- World effects: just before sunrise and just after sunset, the lit side of the Mount Wynn smoke plume and of the Sky Islands void clouds jumped from one side to the other in a single frame, as the light was handed between the sun and the moon. The light now swings over the top through twilight.
 
 ## 2.2.0
 

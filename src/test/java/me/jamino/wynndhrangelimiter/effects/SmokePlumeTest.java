@@ -50,6 +50,23 @@ class SmokePlumeTest {
     }
 
     @Test
+    void lightDirectionNeverJumpsBetweenSunAndMoon() {
+        // The sun sets in the west as the moon rises in the east: the light has to swing across, not snap.
+        for (boolean pack : new boolean[] {false, true}) {
+            double widest = 0;
+            for (long time = 0; time < 24000; time += 10) {
+                SmokePlume.Lighting a = SmokePlume.lighting(time, 0, pack, -40);
+                SmokePlume.Lighting b = SmokePlume.lighting(time + 10, 0, pack, -40);
+                double dot = a.dirX() * b.dirX() + a.dirY() * b.dirY() + a.dirZ() * b.dirZ();
+                widest = Math.max(widest, Math.toDegrees(Math.acos(Math.min(1, dot))));
+            }
+            assertTrue(widest < 4, "widest turn in half a second is " + widest + " degrees, pack sun " + pack);
+        }
+        assertTrue(SmokePlume.lighting(12300, 0).dirX() < -0.5f, "still lit from the sunset just after it");
+        assertTrue(SmokePlume.lighting(13500, 0).dirX() > 0.5f, "and from the rising moon once it is dark");
+    }
+
+    @Test
     void risingPatternWrapsWithoutAJump() {
         // 32000 ticks at 4.8 blocks/s is exactly six repeats of the noise pattern.
         assertEquals(0.0, 32000 / 20.0 * SmokePlume.RISE_SPEED % SmokePlume.SCROLL_PERIOD, 1e-9);

@@ -114,28 +114,50 @@ public final class SmokePlume implements WorldEffect {
         float sunY = (float) Math.sin(angle);
         float day = smoothstep(-0.3f, 0.1f, sunY);
         float high = smoothstep(0.0f, 0.4f, Math.abs(sunY));
-        boolean sunUp = sunY > -0.05f;
-        // Keep the light off the horizon so the plume is never lit exactly edge-on.
-        float dirX = sunUp ? sunX : -sunX;
-        float dirY = Math.max(Math.abs(sunY), 0.12f);
-        float dirZ = 0.25f;
-        if (packSun) {
-            // Iris places the sun at RotY(-90) RotZ(rotation) RotX(sky angle) of straight up; the moon is opposite.
-            double tilt = Math.toRadians(sunPathRotation);
-            dirY = Math.max((float) (Math.abs(sunY) * Math.cos(tilt)), 0.12f);
-            dirZ = (float) (-Math.abs(sunY) * Math.sin(tilt));
-        }
-        float length = (float) Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
         float dim = 1 - 0.55f * clamp(rain);
         float sun = day * dim;
         float moon = (1 - day) * 0.16f;
+        // Iris places the sun at RotY(-90) RotZ(rotation) RotX(sky angle) of straight up; the moon is opposite.
+        double tilt = Math.toRadians(sunPathRotation);
+        double[] toSun = towards(sunX, Math.max(sunY, 0), packSun, tilt);
+        double[] toMoon = towards(-sunX, Math.max(-sunY, 0), packSun, tilt);
+        // The sun and the moon are on opposite sides of the sky, so handing the light from one to the other
+        // at a fixed moment would throw the shadows across the plume in a single frame. Each pulls the
+        // direction by how bright it is instead: through twilight the light swings in an arc over the top,
+        // and it is halfway when the two are equally dim and the shading is at its faintest. The square
+        // roots spread the swing over most of a minute of twilight.
+        double sunPull = Math.sqrt(sun);
+        double moonPull = Math.sqrt(moon);
+        double share = moonPull / (sunPull + moonPull);
+        double between = Math.acos(Math.max(-1, Math.min(1,
+                toSun[0] * toMoon[0] + toSun[1] * toMoon[1] + toSun[2] * toMoon[2])));
+        double fromSun = 1;
+        double fromMoon = 0;
+        if (between > 1e-4) {
+            fromSun = Math.sin((1 - share) * between) / Math.sin(between);
+            fromMoon = Math.sin(share * between) / Math.sin(between);
+        }
+        float dirX = (float) (fromSun * toSun[0] + fromMoon * toMoon[0]);
+        float dirY = (float) (fromSun * toSun[1] + fromMoon * toMoon[1]);
+        float dirZ = (float) (fromSun * toSun[2] + fromMoon * toMoon[2]);
         float red = sun * lerp(1.00f, 0.92f, high) + moon * 0.55f;
         float green = sun * lerp(0.58f, 0.90f, high) + moon * 0.68f;
         float blue = sun * lerp(0.36f, 0.86f, high) + moon * 1.00f;
         float ambient = lerp(0.08f, 0.62f, day) * dim;
-        return new Lighting(dirX / length, dirY / length, dirZ / length, red, green, blue,
+        return new Lighting(dirX, dirY, dirZ, red, green, blue,
                 ambient * 0.92f, ambient * 0.97f, ambient * lerp(1.45f, 1.10f, day),
                 lerp(1.0f, 0.1f, day));
+    }
+
+    /**
+     * Unit direction towards the sun or moon, given its east-west position and its height above the horizon
+     * (0 once it has set). The light is kept off the horizon so the plume is never lit exactly edge-on.
+     */
+    private static double[] towards(double x, double height, boolean packSun, double tilt) {
+        double y = Math.max(packSun ? height * Math.cos(tilt) : height, 0.12);
+        double z = packSun ? -height * Math.sin(tilt) : 0.25;
+        double length = Math.sqrt(x * x + y * y + z * z);
+        return new double[] {x / length, y / length, z / length};
     }
 
     /**
