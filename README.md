@@ -15,24 +15,23 @@ The Fog is coming. WynnVista is a Minecraft mod designed to enhance the gameplay
 - Configurable settings via Mod Menu or config file
 
 ## See It
-
-![world-effects-timelapse](https://github.com/user-attachments/assets/4363d32c-088f-42ee-a5ad-05f6a82c0579)
-
 ### Sky Islands
 
-![sky-islands-sizzle](https://github.com/user-attachments/assets/83f66c35-8000-46f0-a49b-f16efba430b9)
+![sky-islands-sizzle](https://github.com/user-attachments/assets/68401d11-26b0-4539-91ed-2f15d3843eed)
+
 
 Lot's of sky islands effects!!
 
 ### Smoke Plume
 
-![smoke-plume-realistic-vs-blocky](https://github.com/user-attachments/assets/a634705f-e714-4163-8d43-675f39cf364c)
+![smoke-plume-realistic-vs-blocky](https://github.com/user-attachments/assets/6f70acd3-cd61-458f-936f-84e5a6df0f52)
+
 
 SUPER SMOKE PLUME!!
 
 ### Roots of Corruption Fog
 
-![roots-of-corruption-fog-realistic-vs-blocky](https://github.com/user-attachments/assets/06803fd6-deec-467b-8edf-eea23b16d75f)
+![roots-of-corruption-fog-realistic-vs-blocky](https://github.com/user-attachments/assets/42d271d3-a2f4-4622-9373-6da9e4ede867)
 
 Doesn't obscure annie do not worrie!!
 
@@ -45,7 +44,7 @@ Doesn't obscure annie do not worrie!!
 
 ## Configuration
 
-You can configure WynnVista in game with Mod Menu and Cloth Config, which are both optional. Without them, edit `config/WynnVista.json` and restart the game. World effects have a tab for each area (Wynn Plains, Sky Islands) with a switch for the area, for each effect and for the single parts of an effect, and Realistic or Blocky for each.
+You can configure WynnVista in game with Mod Menu and Cloth Config, which are both optional. Without them, edit `config/WynnVista.json` and restart the game.
 
 ## Requirements
 
