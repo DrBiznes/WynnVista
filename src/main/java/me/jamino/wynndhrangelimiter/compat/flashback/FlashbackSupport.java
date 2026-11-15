@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter.compat.flashback;
 
+import me.jamino.wynndhrangelimiter.compat.Reflected;
 import me.jamino.wynndhrangelimiter.visibility.RegionPolicy;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
@@ -44,6 +45,24 @@ public final class FlashbackSupport {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
     /** Asked on first use, not when the class loads: the name rules below are used without the loader. */
     private static Boolean loaded;
+
+    private static final String FLASHBACK = "com.moulberry.flashback.Flashback";
+    private static final String RECORDER = "com.moulberry.flashback.record.Recorder";
+    private static final String REPLAY_SERVER = "com.moulberry.flashback.playback.ReplayServer";
+    private static final String META = "com.moulberry.flashback.record.FlashbackMeta";
+
+    static final Reflected GET_REPLAY_SERVER = Reflected.staticMethod(FLASHBACK, "getReplayServer", REPLAY_SERVER);
+    static final Reflected GET_METADATA = Reflected.method(REPLAY_SERVER, "getMetadata", META);
+    static final Reflected RECORDER_FIELD = Reflected.staticField(FLASHBACK, "RECORDER", RECORDER);
+    static final Reflected RECORDER_METADATA = Reflected.declaredField(RECORDER, "metadata", META);
+    static final Reflected REPLAY_IDENTIFIER = Reflected.field(META, "replayIdentifier", null);
+    static final Reflected WORLD_NAME = Reflected.field(META, "worldName", "java.lang.String");
+    static final Reflected BOBBY_WORLD_NAME = Reflected.field(META, "bobbyWorldName", "java.lang.String");
+    static final Reflected DISTANT_HORIZON_PATHS = Reflected.field(META, "distantHorizonPaths", "java.util.Map");
+
+    /** Everything of Flashback's that is reached by name; checked against its jar by {@code ReplayModJarsTest}. */
+    public static final List<Reflected> REFLECTED = List.of(GET_REPLAY_SERVER, GET_METADATA, RECORDER_FIELD,
+            RECORDER_METADATA, REPLAY_IDENTIFIER, WORLD_NAME, BOBBY_WORLD_NAME, DISTANT_HORIZON_PATHS);
 
     private static boolean broken;
     private static Method getReplayServer;
@@ -154,17 +173,14 @@ public final class FlashbackSupport {
 
     private static void lookUp() throws ReflectiveOperationException {
         if (getReplayServer != null) return;
-        Class<?> flashback = Class.forName("com.moulberry.flashback.Flashback");
-        Class<?> meta = Class.forName("com.moulberry.flashback.record.FlashbackMeta");
-        getMetadata = Class.forName("com.moulberry.flashback.playback.ReplayServer").getMethod("getMetadata");
-        recorderField = flashback.getField("RECORDER");
-        recorderMetadata = Class.forName("com.moulberry.flashback.record.Recorder").getDeclaredField("metadata");
-        recorderMetadata.setAccessible(true);
-        replayIdentifier = meta.getField("replayIdentifier");
-        worldName = meta.getField("worldName");
-        bobbyWorldName = meta.getField("bobbyWorldName");
-        distantHorizonPaths = meta.getField("distantHorizonPaths");
-        getReplayServer = flashback.getMethod("getReplayServer");
+        getMetadata = GET_METADATA.asMethod();
+        recorderField = RECORDER_FIELD.asField();
+        recorderMetadata = RECORDER_METADATA.asField();
+        replayIdentifier = REPLAY_IDENTIFIER.asField();
+        worldName = WORLD_NAME.asField();
+        bobbyWorldName = BOBBY_WORLD_NAME.asField();
+        distantHorizonPaths = DISTANT_HORIZON_PATHS.asField();
+        getReplayServer = GET_REPLAY_SERVER.asMethod();
     }
 
     private static String serverOf(Object metadata) throws ReflectiveOperationException {
