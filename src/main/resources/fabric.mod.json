@@ -20,7 +20,7 @@
       "me.jamino.wynndhrangelimiter.WynndhrangelimiterClient"
     ],
     "modmenu": [
-      "me.jamino.wynndhrangelimiter.ModConfig"
+      "me.jamino.wynndhrangelimiter.ModMenuIntegration"
     ]
   },
   "mixins": [
@@ -30,7 +30,10 @@
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
     "minecraft": "1.21.11",
-    "java": ">=21",
+    "java": ">=21"
+  },
+  "recommends": {
+    "modmenu": "*",
     "cloth-config": "*"
   },
   "suggests": {

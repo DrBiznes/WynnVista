@@ -446,7 +446,7 @@ Known and left as they are:
 
 ## Config tabs
 
-The config screen is built from the registry, with no per-effect code in `ModConfig`:
+The config screen (`ConfigScreen`, Cloth Config, opened by Mod Menu through `ModMenuIntegration`) is built from the registry, with no per-effect code. Both mods are optional and only those two classes use them; `ModConfig` reads and writes the file without either:
 
 - **World Effects**: the master switch, the quality slider and the fog, lighting, cloud and reflection settings shared by every effect.
 - **One tab per `EffectArea`** in `EffectAreas` (now "Wynn Plains": the smoke plume and the lava fog; "Sky Islands": the void, and the updrafts and motes). A tab starts with the area's switch; each of the area's effects is then a group holding the effect's "Enabled" switch and one entry per `EffectOption` the effect lists in `options()`: a switch for a `Toggle`, a selector for a `Choice`.

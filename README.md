@@ -45,7 +45,7 @@ Doesn't obscure annie do not worrie!!
 
 ## Configuration
 
-You can configure WynnVista using Mod Menu. World effects have a tab for each area (Wynn Plains, Sky Islands) with a switch for the area, for each effect and for the single parts of an effect, and Realistic or Blocky for each.
+You can configure WynnVista in game with Mod Menu and Cloth Config, which are both optional. Without them, edit `config/WynnVista.json` and restart the game. World effects have a tab for each area (Wynn Plains, Sky Islands) with a switch for the area, for each effect and for the single parts of an effect, and Realistic or Blocky for each.
 
 ## Requirements
 
@@ -55,8 +55,7 @@ You can configure WynnVista using Mod Menu. World effects have a tab for each ar
 - **One of the following LOD mods:**
   - Distant Horizons 3.3.3
   - Voxy 0.2.16-beta
-- Cloth Config
-- Mod Menu
+- Mod Menu and Cloth Config for the in-game config screen (optional)
 - WynnIris 1.2.2 if you want shader packs (optional)
 - Better Clouds (optional)
 
