@@ -2,6 +2,8 @@ package me.jamino.wynndhrangelimiter.effects;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
 
+import java.util.List;
+
 /** The smoke column rising from Mount Wynn's crater: placement, shape and lighting rules. */
 public final class SmokePlume implements WorldEffect {
     public static final String ID = "smoke_plume";
@@ -41,6 +43,9 @@ public final class SmokePlume implements WorldEffect {
         public String shader() { return shader; }
     }
 
+    public static final EffectOption.Choice<Style> STYLE = new EffectOption.Choice<>("style", "Style",
+            "Blocky: translucent cubes. Realistic: soft volumetric smoke", Style.class, Style.BLOCKY, Style::label);
+
     private static final Bounds BOUNDS = new Bounds(PEAK_X - TOP_RADIUS, VENT_Y, PEAK_Z - TOP_RADIUS,
             PEAK_X + DRIFT_X + TOP_RADIUS, VENT_Y + HEIGHT, PEAK_Z + DRIFT_Z + TOP_RADIUS);
 
@@ -53,9 +58,10 @@ public final class SmokePlume implements WorldEffect {
     @Override public String id() { return ID; }
     @Override public String name() { return "Mount Wynn Smoke Plume"; }
     @Override public String description() { return "Smoke rising from the crater of Mount Wynn"; }
-    @Override public String shader() { return ModConfig.smokePlumeStyle().shader(); }
+    @Override public List<EffectOption> options() { return List.of(STYLE); }
+    @Override public String shader() { return ModConfig.effectChoice(ID, STYLE).shader(); }
     /** Half resolution would blur the cube edges the blocky style is made of. */
-    @Override public boolean halfResolution() { return ModConfig.smokePlumeStyle() != Style.BLOCKY; }
+    @Override public boolean halfResolution() { return ModConfig.effectChoice(ID, STYLE) != Style.BLOCKY; }
     @Override public double anchorX() { return PEAK_X; }
     @Override public double anchorZ() { return PEAK_Z; }
     @Override public Bounds bounds() { return BOUNDS; }

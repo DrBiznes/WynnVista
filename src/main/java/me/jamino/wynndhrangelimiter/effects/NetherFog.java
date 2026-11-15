@@ -2,6 +2,8 @@ package me.jamino.wynndhrangelimiter.effects;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
 
+import java.util.List;
+
 /**
  * The glowing lava fog over the Roots of Corruption: placement, shape and lighting rules. It is a layer
  * that starts a little below ground level and fills the spikes above it; the Nether portal's pit lies below its floor,
@@ -53,15 +55,19 @@ public final class NetherFog implements WorldEffect {
         public String shader() { return shader; }
     }
 
+    public static final EffectOption.Choice<Style> STYLE = new EffectOption.Choice<>("style", "Style",
+            "Blocky: translucent slabs. Realistic: soft glowing fog", Style.class, Style.BLOCKY, Style::label);
+
     private static final Bounds BOUNDS = new Bounds(CENTER_X - RADIUS_X, FLOOR_Y, CENTER_Z - RADIUS_Z,
             CENTER_X + RADIUS_X, FLOOR_Y + THICKNESS, CENTER_Z + RADIUS_Z);
 
     @Override public String id() { return ID; }
     @Override public String name() { return "Roots of Corruption Lava Fog"; }
     @Override public String description() { return "Glowing lava fog over the Roots of Corruption, around the Nether portal"; }
-    @Override public String shader() { return ModConfig.netherFogStyle().shader(); }
+    @Override public List<EffectOption> options() { return List.of(STYLE); }
+    @Override public String shader() { return ModConfig.effectChoice(ID, STYLE).shader(); }
     /** Half resolution would blur the slab edges the blocky style is made of. */
-    @Override public boolean halfResolution() { return ModConfig.netherFogStyle() != Style.BLOCKY; }
+    @Override public boolean halfResolution() { return ModConfig.effectChoice(ID, STYLE) != Style.BLOCKY; }
     @Override public double anchorX() { return CENTER_X; }
     @Override public double anchorZ() { return CENTER_Z; }
     @Override public Bounds bounds() { return BOUNDS; }

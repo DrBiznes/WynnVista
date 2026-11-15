@@ -9,8 +9,10 @@ World effects are drawn over the **finished world image**, after every world pas
 | Piece | Location |
 | --- | --- |
 | Hook: wraps `WorldRenderer.render` inside `GameRenderer.renderWorld` | `mixin/client/MixinGameRendererEffects` |
-| Effect contract: id, config label, shader, anchor block, bounds, uniforms | `effects/WorldEffect` |
-| Registry and renderer: culling, per-effect programs, half-resolution path, exact GL state save/restore | `effects/WorldEffects` |
+| Effect contract: id, config label, options, shader, anchor block, bounds, uniforms | `effects/WorldEffect` |
+| An effect's settings beyond on/off: a part that can be left out (`Toggle`) or a choice of how it is drawn (`Choice`) | `effects/EffectOption` |
+| Registry: the effects grouped by the part of the map they belong to, one config tab per area | `effects/EffectAreas`, `effects/EffectArea` |
+| Renderer: culling, per-effect programs, half-resolution path, exact GL state save/restore | `effects/WorldEffects` |
 | Region rule shared with the LOD mask (pure, unit-tested) | `effects/EffectRegion` |
 | Frustum rectangle, sample and octave reduction (pure, unit-tested) | `effects/EffectCulling` |
 | Program wrapper with `#include` expansion | `effects/EffectProgram` |
@@ -186,7 +188,7 @@ In `scene.glsl`, `sceneDistance()` uses the copied depth wherever the vanilla de
 
 ## Smoke plume styles
 
-"Smoke Plume Style" on the World Effects config page (`smokePlumeStyle` in the config file) chooses how the plume is drawn. Placement, shape, density (`plume_shape.glsl`) and the sun and moon lighting are the same in both; switching takes effect on the next frame.
+"Style" under "Mount Wynn Smoke Plume" on the Wynn Plains config tab (`smoke_plume.style` under `effectOptions` in the config file) chooses how the plume is drawn. Placement, shape, density (`plume_shape.glsl`) and the sun and moon lighting are the same in both; switching takes effect on the next frame.
 
 - **Realistic** (`REALISTIC`, `smoke_plume.fsh`): the soft ray-marched volume described in the rest of this document.
 - **Blocky** (`BLOCKY`, the default, `smoke_plume_blocky.fsh`): translucent, flat-shaded cubes whose overlap adds up to the opacity, after the look of the [Better Clouds](https://github.com/Qendolin/better-clouds) mod. Only the technique follows that mod; none of its code or assets are included.
@@ -221,7 +223,7 @@ Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever t
 
 ### Blocky style
 
-"Lava Fog Style" on the World Effects config page (`netherFogStyle` in the config file) is separate from the plume's setting. **Realistic** (`REALISTIC`) is the fog described above. **Blocky** (`BLOCKY`, the default, `nether_fog_blocky.fsh`) uses the plume's cube technique, with the layer's shape, drifting noise and glow shared through `nether_fog_shape.glsl`. What differs from the plume:
+"Style" under "Roots of Corruption Lava Fog" on the Wynn Plains config tab (`nether_fog.style` under `effectOptions` in the config file) is separate from the plume's setting. **Realistic** (`REALISTIC`) is the fog described above. **Blocky** (`BLOCKY`, the default, `nether_fog_blocky.fsh`) uses the plume's cube technique, with the layer's shape, drifting noise and glow shared through `nether_fog_shape.glsl`. What differs from the plume:
 
 - **Slabs on a fixed lattice.** Cells are flat: 6 x 3 x 6 blocks up to 36 blocks above the floor, 12 x 6 x 12 above that. The lattice does not move; the noise drifts through it, so slabs swell and shrink in place. A slab's size follows the billow and wisp noise at the cell centre, scaled by the square root of how much fog the layer allows there.
 - **Haze per cell.** The even haze is not made of slabs. Each cell the ray crosses adds haze for the length of ray inside it, at the density of the cell centre, with the same extinction as the realistic haze. It is therefore constant within a cell.
@@ -233,7 +235,9 @@ Cost is kept down inside the shader: at most 40 samples and 3 octaves whatever t
 
 `sky_islands_void` replaces the flat vanilla void under the Sky Islands. Its box is x 560..1808, z -5056..-4192, y -40..72, larger than the terrain mask (x 704..1535, z -5008..-4369) on every side: the void runs on south towards the Raiders' bases and east past the coast, and a separate piece of it lies under the Colossus to the south-west. It does not read the terrain map. Seen from outside, everything fades out over the last 96 blocks before a side of the box, so where no land hides the edge there is none; seen from inside, the floor and the haze run on to the horizon (see Skirt below). One pass.
 
-"Sky Islands Void Style" on the World Effects config page (`skyIslandsVoidStyle` in the config file) chooses how it is drawn: **Blocky** (`BLOCKY`, the default, `sky_islands_void_blocky.fsh`), described first, or **Realistic** (`REALISTIC`, `sky_islands_void.fsh`), described under Realistic style below. Blocky is the default here, unlike the plume and the lava fog, because it is the look the place was built around. Where the clumps, nebulae and fallen islands are, the haze, the light and the colours are shared through `sky_islands_void_shape.glsl`, so both styles have the same cloud over the same place at the same time. The updrafts and motes are the same under both.
+"Clouds" under "Void" on the Sky Islands config tab (`sky_islands_void.clouds` under `effectOptions`, on by default) leaves the cloud clumps out and keeps everything else: the haze, the void with its nebulae and fallen islands, and the skirt. Both styles skip their cloud pass (`uClouds`), and the blocky style's cover is then not baked either.
+
+"Style" under "Void" on the Sky Islands config tab (`sky_islands_void.style` under `effectOptions` in the config file) chooses how it is drawn: **Blocky** (`BLOCKY`, the default, `sky_islands_void_blocky.fsh`), described first, or **Realistic** (`REALISTIC`, `sky_islands_void.fsh`), described under Realistic style below. Blocky is the default here, unlike the plume and the lava fog, because it is the look the place was built around. Where the clumps, nebulae and fallen islands are, the haze, the light and the colours are shared through `sky_islands_void_shape.glsl`, so both styles have the same cloud over the same place at the same time. The updrafts and motes are the same under both.
 
 - **Cloud clumps.** Separate clumps, each a few large cuboids that run into each other, modelled on the cloud models that launch the player between the islands, floating around the ends of the longest spikes with open void between them. The cuboids sit in the columns of two lattices of 8-block columns, at most one per column; the second lattice is 4.5 blocks across and 2.5 blocks above the first, so its cuboids sit across the seams of the first's and no two faces share a plane. A cuboid has one of six shapes by its own random, so a clump is a mix of them: a cube of 6 to 8 blocks, a small cube of 4 to 5, a bar of 8 by 3 to 5 by 3 to 5 along x or along z, a slab 3 to 4 high, or a post 8 high. It has 60% of that measure when it forms and all of it 0.07 of noise past the cover threshold, growing from a place of its own inside its column over texels that stay fixed to the lattice. The noise changes with time, as the smoke plume's does: the clumps through one noise cell in 25 seconds, the groups in 50 (the cloud has its own phase, `uCloudPhase`, over 128000 ticks, so that it can drift slowly), so cuboids swell, shrink, go and form anew, and a new one fades in over the first 0.025 of noise past the threshold instead of appearing. The blend between the two time slices of the noise is done in the shader (`noiseOver`, two lookups for one): the texture filter blends in 256 steps between texels, which made a cuboid's faces move in jerks of up to a quarter block several times a second. The realistic style reads the same noise and changes with it. The noise has peaks about 16 blocks apart, each a clump of some two to eight cuboids, and a slow part with patches of about 64 blocks that gathers the clumps into groups; a third lookup puts a cuboid's foot at y 0 or y 4, and its own random up to two blocks higher. Until 2026-10-08 a clump was up to three layers of 2- to 4-block cubes on a 4-block lattice with **crumbs** of 1 to 2 blocks around them: too many cubes that stuck out or barely touched, and the crumbs, drawn only within 170 blocks, visibly appeared while flying.
 - **A cuboid's look.** White, or faintly rose or blue (about two in five), with a rose blush along the lowest block or block and a half of its sides (by the column of texels) and over its underside, lighter texels of half a block, and a block's face shading (top 1, sides 0.9 and 0.84, underside 0.74). A cuboid is a little translucent and flat, as the cubes of the blocky smoke plume are: it hides 72% of what is behind it however the ray passes through it, so a lone cuboid lets the void show faintly, overlapping ones are denser, and three in a row are opaque. At night the cuboids keep a little light of their own so the faces can still be told apart. Both lattices drift along x at 0.32 blocks per second, half the pace of vanilla clouds. Every cuboid is drawn out to where the clumps give way to the haze, between 220 and 520 blocks from the camera, so nothing appears on the way there; within 5 blocks of the camera a cuboid fades out.
@@ -277,13 +281,15 @@ All of it is one mechanism. The ground is divided into squares of 8 blocks, and 
 - **Astraulus' Tower** (`1206 126 -4921`): within 40 blocks, from 30 below to 55 above that height, motes of pale gold and pale blue that drift up slowly and blink.
 - **Wybel Island** (`1310 66 -4684`): within 45 blocks, from 8 below to 40 above, sparkles in four pastels that blink faster.
 
+Each kind is a part with its own switch under "Updrafts and Motes" on the Sky Islands config tab (`SkyIslandsAir`'s options; `sky_islands_air.updrafts`, `.temple_wind`, `.motes`, `.stars`, `.sparkles` and `.spray` under `effectOptions`, all on by default). The shader is told which kinds to draw (`uShow`), and a named place that is switched off is given no reach, so its squares hold what the ground around them does: with the star motes off, the air around Astraulus' Tower has the ordinary streaks and violet motes. "Windwalker Temple Winds" only strengthens the updrafts and does nothing without them. With every kind off the pass is skipped (`WorldEffect.hasContent`).
+
 Lines fade in from 1.5 to 5 blocks from the camera and out from 38 to 64. Terrain hides them through the depth buffers as it does every effect. Always at full resolution.
 
 ## Where an effect is shown
 
 Decided on the CPU, in this order, before any GL call. If nothing survives, the frame does no effect work at all.
 
-1. **Config.** The master switch `effectsEnabled`, then the effect's own switch in `effects` (`{"smoke_plume": false}`; an effect that is not listed is on). The config screen has a "World Effects" page with the master switch, the quality slider and one toggle per registered effect.
+1. **Config.** The master switch `effectsEnabled`, then the area's switch in `effectAreas` (`{"sky_islands": false}`), then the effect's own switch in `effects` (`{"smoke_plume": false}`); an area or effect that is not listed is on. An effect whose parts are all switched off is skipped as well (`WorldEffect.hasContent`). The config screen has a "World Effects" tab with the master switch, the quality slider and the settings shared by all effects, and one tab per area (see [Config tabs](#config-tabs)).
 2. **Region mask.** An effect is anchored to a block and is shown exactly where LOD terrain at that block is shown: the anchor must lie inside the rectangles of the frame's `VisibilitySnapshot`, the same snapshot the DH and Voxy masks use. The plume therefore disappears with the main map in the Realm of Light, the Void, unlisted areas (`NONE`) and under any fixture override. With "Enable LOD Masking" off there is no mask, so the region the mask *would* select from the player's position is used instead. Effects never appear outside Wynncraft or the local fixture.
 3. **Distance.** `WorldEffect.inRange`: horizontal distance from the anchor against the effect's `maxViewDistance`, or for an effect spread over an area (the Sky Islands) the distance from its box.
 4. **Frustum.** The effect's bounding box is projected; a box entirely outside the view is skipped. The far plane is deliberately not tested. A box that reaches behind the camera is cut at the camera's plane first, so only the camera being inside it gives the whole view: a layer below the camera gets the view up to the horizon, where it got all of it before.
@@ -313,7 +319,7 @@ Run with `JAVA_TOOL_OPTIONS=-Dwynnvista.effects.profile=true` to log the GPU tim
 
 ## Results
 
-Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking --override MAIN --commands '...' --timeline '...' --capture-prefix <name>`, optionally with `--iris --shaderpack ComplementaryReimagined`, `--better-clouds`, `--no-effects` or `--disable-effects smoke_plume,nether_fog`. Screenshots are under the ignored `run-*/screenshots/`.
+Fixture runs: `python scripts/lod_fixture.py --backend <dh|voxy> run --masking --override MAIN --commands '...' --timeline '...' --capture-prefix <name>`, optionally with `--iris --shaderpack ComplementaryReimagined`, `--better-clouds`, `--no-effects`, `--disable-effects smoke_plume,nether_fog` or `--disable-parts sky_islands_void.clouds,sky_islands_air.stars`. Screenshots are under the ignored `run-*/screenshots/`.
 
 | Check | Result |
 | --- | --- |
@@ -425,10 +431,33 @@ Places to add world effects to. None is started; each needs its anchor, bounds a
 - [ ] Ice Island Blizzard
 - [ ] Light Forest Motes
 
+## Screenshot and replay mods
+
+Written from the sources of [Fabrishot](https://github.com/ramidzkh/fabrishot) 1.16.4 and [ReplayMod](https://github.com/ReplayMod/ReplayMod) 2.6.28 (both for 1.21.11) on 2026-11-14. **Neither was run**: nothing below has been seen in the game.
+
+- **Resized picture.** Both resize Minecraft's main framebuffer in place for a capture (Fabrishot to its capture size for a few ordinary frames, ReplayMod to the video size for the whole render) and back afterwards. `Framebuffer.resize` deletes the colour and depth textures and creates new ones, which the driver may give the names of the old ones. The effect pass kept its colour attachment by texture name and would then go on drawing into the deleted texture. It now attaches the frame's colour texture every frame (`WorldEffects.draw`). The other buffers were already kept by size.
+- **Replays have no server.** ReplayMod plays a replay through a connection without a server entry, so `getCurrentServerEntry()` is null and the world was not recognised as Wynncraft. `WorldContextResolver.host` now falls back to the address the replay was recorded on (`compat/replaymod/ReplayModSupport`, by reflection on `ReplayModReplay.instance.getReplayHandler().getReplayFile().getMetaData().getServerName()`; a build without these is logged once and ignored). The region comes from `client.player`, which in a replay is ReplayMod's camera.
+
+Known and left as they are:
+
+- ReplayMod's video render does not run in real time, and a frame may take seconds. The fog probe's smoothing goes by `System.nanoTime()`, so in a rendered video it smooths less than while playing; the DH exact-clip states (`FRESH_NANOS`, 2 s) may fall back to whole-section masking on a frame that takes longer than that.
+- ReplayMod's cubic, equirectangular and stereoscopic renders draw the world 6 or 2 times per frame with different views. Each pass draws the effects with that pass's matrices, but the fog probes are shared between the passes.
+- Fabrishot keeps the window's aspect in the projection while the picture has the capture's; the effects use the matrices they are given and are stretched exactly as the world is.
+
+## Config tabs
+
+The config screen is built from the registry, with no per-effect code in `ModConfig`:
+
+- **World Effects**: the master switch, the quality slider and the fog, lighting, cloud and reflection settings shared by every effect.
+- **One tab per `EffectArea`** in `EffectAreas` (now "Wynn Plains": the smoke plume and the lava fog; "Sky Islands": the void, and the updrafts and motes). A tab starts with the area's switch; each of the area's effects is then a group holding the effect's "Enabled" switch and one entry per `EffectOption` the effect lists in `options()`: a switch for a `Toggle`, a selector for a `Choice`.
+
+In the config file (`schemaVersion` 3) the area switches are in `effectAreas`, the effect switches in `effects`, and option values in `effectOptions` under `<effect id>.<option id>`: `true` or `false` for a toggle, the value's name for a choice. A missing entry means on, or the option's fallback. The three style settings of schema 2 (`smokePlumeStyle`, `netherFogStyle`, `skyIslandsVoidStyle`) are moved into `effectOptions` on first load. An effect reads its values with `ModConfig.effectToggle(ID, OPTION)` and `ModConfig.effectChoice(ID, OPTION)`.
+
 ## Adding an effect
 
 1. Implement `WorldEffect`: an id, a config label, an anchor block, world-space bounds, a view distance and an `upload` that sets its uniforms.
 2. Write its fragment shader beside `smoke_plume.fsh`. Start with `#include "scene.glsl"` for the view ray, `boxSpan`, `sceneDistance`, noise and the `uSteps` / `uOctaves` budget. Write `fragColor` (premultiplied, finished by `underClouds`, which applies the fog) and `fragDistance` for every pixel instead of discarding, so the half-resolution path works.
 3. If it has to know where the ground is beyond the first surface along a ray, return a map from `terrainMap()` and read it as `uTerrainMap` (see [TERRAIN_MASKS.md](TERRAIN_MASKS.md)).
 4. If every ray works out the same numbers, such as noise per lattice cell, return a `Bake` from `bake()`: its shader is drawn once a frame into a float texture the effect reads as `uBake`, with the noise and the effect's own uniforms.
-5. Add it to `EFFECTS` in `WorldEffects`. The config toggle, region masking, culling, scissor, fog and resolution choice then apply without further code.
+5. For a part of it that players may want to leave out, or a choice of look, declare an `EffectOption` constant, return it from `options()` and read it in `upload` (a uniform) or wherever it applies. If the effect draws nothing with all of its parts off, say so in `hasContent()`.
+6. Add it to its area's list in `EffectAreas`, or to a new `EffectArea` there for a new part of the map. The config tab, switches and option entries, region masking, culling, scissor, fog and resolution choice then apply without further code.

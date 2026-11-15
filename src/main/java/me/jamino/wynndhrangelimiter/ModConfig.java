@@ -2,16 +2,18 @@ package me.jamino.wynndhrangelimiter;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
-import me.jamino.wynndhrangelimiter.effects.NetherFog;
-import me.jamino.wynndhrangelimiter.effects.SkyIslandsVoid;
-import me.jamino.wynndhrangelimiter.effects.SmokePlume;
+import me.jamino.wynndhrangelimiter.effects.EffectArea;
+import me.jamino.wynndhrangelimiter.effects.EffectAreas;
+import me.jamino.wynndhrangelimiter.effects.EffectOption;
 import me.jamino.wynndhrangelimiter.effects.WorldEffect;
-import me.jamino.wynndhrangelimiter.effects.WorldEffects;
 import me.jamino.wynndhrangelimiter.visibility.BlockRect;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
+import me.shedaniel.clothconfig2.api.AbstractConfigListEntry;
 import me.shedaniel.clothconfig2.api.ConfigBuilder;
 import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
@@ -25,18 +27,29 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ModConfig implements ModMenuApi {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("WynnVista.json");
+    private static final int SCHEMA_VERSION = 3;
+    /** Settings of schema 2 that became effect options, with the key each is kept under now. */
+    private static final Map<String, String> LEGACY_OPTIONS = Map.of(
+            "smokePlumeStyle", "smoke_plume.style",
+            "netherFogStyle", "nether_fog.style",
+            "skyIslandsVoidStyle", "sky_islands_void.style");
+    /** Each choice as last read from the config, so a frame does not parse the same text again and again. */
+    private static final Map<String, Enum<?>> CHOICES = new ConcurrentHashMap<>();
     private static Config config = load();
 
     private static final class Config {
-        int schemaVersion = 2;
+        int schemaVersion = SCHEMA_VERSION;
         boolean showMessage = true;
         boolean maskingEnabled = true;
         boolean effectsEnabled = true;
@@ -45,11 +58,15 @@ public final class ModConfig implements ModMenuApi {
         boolean effectPackLighting = true;
         boolean effectPackClouds = true;
         boolean effectPackReflections = true;
+        /** Per-area switches by {@link EffectArea#id()}; an area that is not listed is on. */
+        Map<String, Boolean> effectAreas = new LinkedHashMap<>();
         /** Per-effect switches by {@link WorldEffect#id()}; an effect that is not listed is on. */
         Map<String, Boolean> effects = new LinkedHashMap<>();
-        String smokePlumeStyle = "BLOCKY";
-        String netherFogStyle = "BLOCKY";
-        String skyIslandsVoidStyle = "BLOCKY";
+        /**
+         * Values of the effects' {@link EffectOption}s by {@code <effect id>.<option id>}: true or false for a
+         * toggle, the value's name for a choice. An option that is not listed has its fallback.
+         */
+        Map<String, Object> effectOptions = new LinkedHashMap<>();
         boolean fixtureEnabled = false;
         String fixtureSavePath = "";
         String fixtureOverride = "AUTO";
@@ -73,20 +90,29 @@ public final class ModConfig implements ModMenuApi {
                 if (json.has("effectPackLighting")) result.effectPackLighting = json.get("effectPackLighting").getAsBoolean();
                 if (json.has("effectPackClouds")) result.effectPackClouds = json.get("effectPackClouds").getAsBoolean();
                 if (json.has("effectPackReflections")) result.effectPackReflections = json.get("effectPackReflections").getAsBoolean();
-                if (json.has("effects") && json.get("effects").isJsonObject()) {
-                    json.getAsJsonObject("effects").entrySet().forEach(entry ->
-                            result.effects.put(entry.getKey(), entry.getValue().getAsBoolean()));
+                readSwitches(json, "effectAreas", result.effectAreas);
+                readSwitches(json, "effects", result.effects);
+                if (json.has("effectOptions") && json.get("effectOptions").isJsonObject()) {
+                    for (Map.Entry<String, JsonElement> entry : json.getAsJsonObject("effectOptions").entrySet()) {
+                        if (!entry.getValue().isJsonPrimitive()) continue;
+                        JsonPrimitive value = entry.getValue().getAsJsonPrimitive();
+                        result.effectOptions.put(entry.getKey(), value.isBoolean() ? value.getAsBoolean() : value.getAsString());
+                    }
                 }
-                if (json.has("smokePlumeStyle")) result.smokePlumeStyle = json.get("smokePlumeStyle").getAsString();
-                if (json.has("netherFogStyle")) result.netherFogStyle = json.get("netherFogStyle").getAsString();
-                if (json.has("skyIslandsVoidStyle")) result.skyIslandsVoidStyle = json.get("skyIslandsVoidStyle").getAsString();
+                LEGACY_OPTIONS.forEach((legacy, key) -> {
+                    if (json.has(legacy) && json.get(legacy).isJsonPrimitive()) {
+                        result.effectOptions.putIfAbsent(key, json.get(legacy).getAsString());
+                    }
+                });
                 if (json.has("fixtureEnabled")) result.fixtureEnabled = json.get("fixtureEnabled").getAsBoolean();
                 if (json.has("fixtureSavePath")) result.fixtureSavePath = json.get("fixtureSavePath").getAsString();
                 if (json.has("fixtureOverride")) result.fixtureOverride = json.get("fixtureOverride").getAsString();
                 if (json.has("fixtureCustomRect")) result.fixtureCustomRect = json.get("fixtureCustomRect").getAsString();
-                if (!json.has("schemaVersion") || json.get("schemaVersion").getAsInt() < 2) {
+                int schema = json.has("schemaVersion") ? json.get("schemaVersion").getAsInt() : 0;
+                if (schema < SCHEMA_VERSION) {
+                    // The file from before masking replaced the distance limits is kept as it was.
                     Path backup = FILE.resolveSibling(FILE.getFileName() + ".bak");
-                    if (!Files.exists(backup)) Files.copy(FILE, backup, StandardCopyOption.COPY_ATTRIBUTES);
+                    if (schema < 2 && !Files.exists(backup)) Files.copy(FILE, backup, StandardCopyOption.COPY_ATTRIBUTES);
                     save(result);
                 }
             }
@@ -94,6 +120,11 @@ public final class ModConfig implements ModMenuApi {
             LOGGER.error("Unable to read WynnVista config; using defaults", e);
         }
         return result;
+    }
+
+    private static void readSwitches(JsonObject json, String name, Map<String, Boolean> into) {
+        if (!json.has(name) || !json.get(name).isJsonObject()) return;
+        json.getAsJsonObject(name).entrySet().forEach(entry -> into.put(entry.getKey(), entry.getValue().getAsBoolean()));
     }
 
     private static void save(Config value) {
@@ -105,14 +136,43 @@ public final class ModConfig implements ModMenuApi {
         }
     }
 
-    private static void save() { save(config); }
+    private static void save() {
+        CHOICES.clear();
+        save(config);
+    }
 
     public static boolean shouldShowMessage() { return config.showMessage; }
     public static boolean maskingEnabled() { return config.maskingEnabled; }
     /** Master switch for every world effect. */
     public static boolean effectsEnabled() { return config.effectsEnabled; }
-    /** Whether one effect is on; the master switch still applies. */
+    /** Whether an area's effects are on; the master switch still applies. */
+    public static boolean areaEnabled(String id) { return config.effectAreas.getOrDefault(id, true); }
+    /** Whether one effect is on; the master switch and its area's switch still apply. */
     public static boolean effectEnabled(String id) { return config.effects.getOrDefault(id, true); }
+
+    /** Whether a part of an effect is on; the effect's own switch still applies. */
+    public static boolean effectToggle(String effectId, EffectOption.Toggle option) {
+        return config.effectOptions.get(optionKey(effectId, option)) instanceof Boolean value ? value : option.fallback();
+    }
+
+    /** The chosen value of one of an effect's choices; a value the option does not know means its fallback. */
+    public static <E extends Enum<E>> E effectChoice(String effectId, EffectOption.Choice<E> option) {
+        return option.type().cast(CHOICES.computeIfAbsent(optionKey(effectId, option), key -> {
+            if (config.effectOptions.get(key) instanceof String name) {
+                try {
+                    return Enum.valueOf(option.type(), name.toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException e) {
+                    LOGGER.warn("Invalid {}: {}", key, name);
+                }
+            }
+            return option.fallback();
+        }));
+    }
+
+    private static String optionKey(String effectId, EffectOption option) {
+        return effectId + "." + option.id();
+    }
+
     /** Ray-march samples per pixel for volumetric effects. */
     public static int effectSteps() { return Math.max(16, Math.min(128, config.effectSteps)); }
     /** Whether a shader pack's or LOD mod's fog is worked out from its settings instead of measured. */
@@ -123,32 +183,6 @@ public final class ModConfig implements ModMenuApi {
     public static boolean effectPackClouds() { return config.effectPackClouds; }
     /** Whether effects are mirrored in the water of a shader pack that draws reflections on it. */
     public static boolean effectPackReflections() { return config.effectPackReflections; }
-    /** Rendering style of the Mount Wynn smoke plume; an unknown value means the default. */
-    public static SmokePlume.Style smokePlumeStyle() {
-        try {
-            return SmokePlume.Style.valueOf(config.smokePlumeStyle.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return SmokePlume.Style.BLOCKY;
-        }
-    }
-
-    /** Rendering style of the Roots of Corruption lava fog; an unknown value means the default. */
-    public static NetherFog.Style netherFogStyle() {
-        try {
-            return NetherFog.Style.valueOf(config.netherFogStyle.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return NetherFog.Style.BLOCKY;
-        }
-    }
-
-    /** Rendering style of the Sky Islands void; an unknown value means the default. */
-    public static SkyIslandsVoid.Style skyIslandsVoidStyle() {
-        try {
-            return SkyIslandsVoid.Style.valueOf(config.skyIslandsVoidStyle.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return SkyIslandsVoid.Style.BLOCKY;
-        }
-    }
 
     public static boolean fixtureEnabled() { return config.fixtureEnabled; }
     public static String fixtureSavePath() { return config.fixtureSavePath; }
@@ -179,127 +213,115 @@ public final class ModConfig implements ModMenuApi {
     @Override
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
         return parent -> {
+            // Every entry only sets its value; the file is written once when the screen is saved.
             ConfigBuilder builder = ConfigBuilder.create()
-                    .setParentScreen(parent).setTitle(Text.literal("WynnVista Config"));
-            ConfigCategory general = builder.getOrCreateCategory(Text.literal("General"));
+                    .setParentScreen(parent).setTitle(Text.literal("WynnVista Config"))
+                    .setSavingRunnable(ModConfig::save);
             ConfigEntryBuilder entries = builder.entryBuilder();
+            ConfigCategory general = builder.getOrCreateCategory(Text.literal("General"));
             general.addEntry(entries.startBooleanToggle(Text.literal("Show Region Messages"), config.showMessage)
-                    .setDefaultValue(true).setSaveConsumer(value -> {
-                        config.showMessage = value;
-                        save();
-                    }).build());
+                    .setDefaultValue(true).setSaveConsumer(value -> config.showMessage = value).build());
             general.addEntry(entries.startBooleanToggle(Text.literal("Enable LOD Masking"), config.maskingEnabled)
-                    .setDefaultValue(true).setSaveConsumer(value -> {
-                        config.maskingEnabled = value;
-                        save();
-                    }).build());
-            ConfigCategory effects = builder.getOrCreateCategory(Text.literal("World Effects"));
-            effects.addEntry(entries.startBooleanToggle(Text.literal("Enable World Effects"), config.effectsEnabled)
-                    .setDefaultValue(true)
-                    .setTooltip(Text.literal("Master switch for every effect below"))
-                    .setSaveConsumer(value -> {
-                        config.effectsEnabled = value;
-                        save();
-                    }).build());
-            effects.addEntry(entries.startIntSlider(Text.literal("World Effect Quality"), effectSteps(), 16, 128)
-                    .setDefaultValue(64)
-                    .setTooltip(Text.literal("Samples per pixel for volumetric effects; lower is faster"))
-                    .setSaveConsumer(value -> {
-                        config.effectSteps = value;
-                        save();
-                    }).build());
-            effects.addEntry(entries.startBooleanToggle(Text.literal("Follow Fog Settings"), config.effectFogModels)
-                    .setDefaultValue(true)
-                    .setTooltip(Text.literal("Put effects in the same fog as distant terrain, worked out from the "
-                            + "settings of the shader pack (Complementary, BSL, Photon) or of Distant Horizons / "
-                            + "Voxy. Off: the fog is only measured from the picture"))
-                    .setSaveConsumer(value -> {
-                        config.effectFogModels = value;
-                        save();
-                    }).build());
-            effects.addEntry(entries.startBooleanToggle(Text.literal("Match Shader Pack Lighting"),
-                            config.effectPackLighting)
-                    .setDefaultValue(true)
-                    .setTooltip(Text.literal("With a shader pack, light effects from the pack's sun and moon and "
-                            + "match their brightness and tint to the sky the pack draws. Off: their own lighting"))
-                    .setSaveConsumer(value -> {
-                        config.effectPackLighting = value;
-                        save();
-                    }).build());
-            effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Clouds Hide Effects"),
-                            config.effectPackClouds)
-                    .setDefaultValue(true)
-                    .setTooltip(Text.literal("Draw effects behind the clouds of the shader pack in use "
-                            + "(Complementary, BSL, Photon). Off: effects are drawn over the pack's clouds"))
-                    .setSaveConsumer(value -> {
-                        config.effectPackClouds = value;
-                        save();
-                    }).build());
-            effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Water Reflections"),
-                            config.effectPackReflections)
-                    .setDefaultValue(true)
-                    .setTooltip(Text.literal("With a shader pack whose water reflects, show effects in that "
-                            + "water too. Off: water mirrors the sky and terrain but not the effects"))
-                    .setSaveConsumer(value -> {
-                        config.effectPackReflections = value;
-                        save();
-                    }).build());
-            for (WorldEffect effect : WorldEffects.all()) {
-                effects.addEntry(entries.startBooleanToggle(Text.literal(effect.name()), effectEnabled(effect.id()))
-                        .setDefaultValue(true)
-                        .setTooltip(Text.literal(effect.description()))
-                        .setSaveConsumer(value -> {
-                            config.effects.put(effect.id(), value);
-                            save();
-                        }).build());
+                    .setDefaultValue(true).setSaveConsumer(value -> config.maskingEnabled = value).build());
+            addEffectSettings(builder.getOrCreateCategory(Text.literal("World Effects")), entries);
+            for (EffectArea area : EffectAreas.all()) {
+                addArea(builder.getOrCreateCategory(Text.literal(area.name())), entries, area);
             }
-            effects.addEntry(entries.startEnumSelector(Text.literal("Smoke Plume Style"), SmokePlume.Style.class,
-                            smokePlumeStyle())
-                    .setDefaultValue(SmokePlume.Style.BLOCKY)
-                    .setEnumNameProvider(style -> Text.literal(((SmokePlume.Style) style).label()))
-                    .setTooltip(Text.literal("Realistic: soft volumetric smoke. Blocky: translucent cubes"))
-                    .setSaveConsumer(value -> {
-                        config.smokePlumeStyle = value.name();
-                        save();
-                    }).build());
-            effects.addEntry(entries.startEnumSelector(Text.literal("Lava Fog Style"), NetherFog.Style.class,
-                            netherFogStyle())
-                    .setDefaultValue(NetherFog.Style.BLOCKY)
-                    .setEnumNameProvider(style -> Text.literal(((NetherFog.Style) style).label()))
-                    .setTooltip(Text.literal("Realistic: soft glowing fog. Blocky: translucent slabs"))
-                    .setSaveConsumer(value -> {
-                        config.netherFogStyle = value.name();
-                        save();
-                    }).build());
-            effects.addEntry(entries.startEnumSelector(Text.literal("Sky Islands Void Style"),
-                            SkyIslandsVoid.Style.class, skyIslandsVoidStyle())
-                    .setDefaultValue(SkyIslandsVoid.Style.BLOCKY)
-                    .setEnumNameProvider(style -> Text.literal(((SkyIslandsVoid.Style) style).label()))
-                    .setTooltip(Text.literal("Blocky: clouds of whole cubes over pixel-art nebulae. "
-                            + "Realistic: soft volumetric clouds over smooth nebulae"))
-                    .setSaveConsumer(value -> {
-                        config.skyIslandsVoidStyle = value.name();
-                        save();
-                    }).build());
             ConfigCategory fixture = builder.getOrCreateCategory(Text.literal("Local Fixture"));
             fixture.addEntry(entries.startBooleanToggle(Text.literal("Enable Fixture"), config.fixtureEnabled)
-                    .setDefaultValue(false).setSaveConsumer(value -> {
-                        config.fixtureEnabled = value;
-                        save();
-                    }).build());
+                    .setDefaultValue(false).setSaveConsumer(value -> config.fixtureEnabled = value).build());
             fixture.addEntry(entries.startStrField(Text.literal("Fixture Save Path"), config.fixtureSavePath)
-                    .setDefaultValue("").setSaveConsumer(value -> {
-                        config.fixtureSavePath = value;
-                        save();
-                    }).build());
+                    .setDefaultValue("").setSaveConsumer(value -> config.fixtureSavePath = value).build());
             fixture.addEntry(entries.startStrField(Text.literal("Fixture Override"), config.fixtureOverride)
                     .setDefaultValue("AUTO")
                     .setTooltip(Text.literal("AUTO, MAIN, LIGHT, VOID_OUTER, NONE, or PASSTHROUGH"))
-                    .setSaveConsumer(value -> {
-                        config.fixtureOverride = value;
-                        save();
-                    }).build());
+                    .setSaveConsumer(value -> config.fixtureOverride = value).build());
             return builder.build();
         };
+    }
+
+    /** The settings shared by every world effect, wherever it is. */
+    private static void addEffectSettings(ConfigCategory effects, ConfigEntryBuilder entries) {
+        effects.addEntry(entries.startBooleanToggle(Text.literal("Enable World Effects"), config.effectsEnabled)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("Master switch for the effects of every area. Each area has a tab of its "
+                        + "own with a switch for each of its effects"))
+                .setSaveConsumer(value -> config.effectsEnabled = value).build());
+        effects.addEntry(entries.startIntSlider(Text.literal("World Effect Quality"), effectSteps(), 16, 128)
+                .setDefaultValue(64)
+                .setTooltip(Text.literal("Samples per pixel for volumetric effects; lower is faster"))
+                .setSaveConsumer(value -> config.effectSteps = value).build());
+        effects.addEntry(entries.startBooleanToggle(Text.literal("Follow Fog Settings"), config.effectFogModels)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("Put effects in the same fog as distant terrain, worked out from the "
+                        + "settings of the shader pack (Complementary, BSL, Photon) or of Distant Horizons / "
+                        + "Voxy. Off: the fog is only measured from the picture"))
+                .setSaveConsumer(value -> config.effectFogModels = value).build());
+        effects.addEntry(entries.startBooleanToggle(Text.literal("Match Shader Pack Lighting"),
+                        config.effectPackLighting)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("With a shader pack, light effects from the pack's sun and moon and "
+                        + "match their brightness and tint to the sky the pack draws. Off: their own lighting"))
+                .setSaveConsumer(value -> config.effectPackLighting = value).build());
+        effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Clouds Hide Effects"),
+                        config.effectPackClouds)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("Draw effects behind the clouds of the shader pack in use "
+                        + "(Complementary, BSL, Photon). Off: effects are drawn over the pack's clouds"))
+                .setSaveConsumer(value -> config.effectPackClouds = value).build());
+        effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Water Reflections"),
+                        config.effectPackReflections)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("With a shader pack whose water reflects, show effects in that "
+                        + "water too. Off: water mirrors the sky and terrain but not the effects"))
+                .setSaveConsumer(value -> config.effectPackReflections = value).build());
+    }
+
+    /**
+     * One area's tab: its own switch, then a group for each of its effects holding the effect's switch and an
+     * entry for each of its options. Everything on it comes from the area and its effects.
+     */
+    @SuppressWarnings("rawtypes")
+    private static void addArea(ConfigCategory tab, ConfigEntryBuilder entries, EffectArea area) {
+        tab.addEntry(entries.startBooleanToggle(Text.literal("Enable " + area.name() + " Effects"),
+                        areaEnabled(area.id()))
+                .setDefaultValue(true)
+                .setTooltip(Text.literal(area.description() + ". Off: none of the effects below are drawn"))
+                .setSaveConsumer(value -> config.effectAreas.put(area.id(), value)).build());
+        for (WorldEffect effect : area.effects()) {
+            List<AbstractConfigListEntry> group = new ArrayList<>();
+            group.add(entries.startBooleanToggle(Text.literal("Enabled"), effectEnabled(effect.id()))
+                    .setDefaultValue(true)
+                    .setTooltip(Text.literal(effect.description()))
+                    .setSaveConsumer(value -> config.effects.put(effect.id(), value)).build());
+            for (EffectOption option : effect.options()) group.add(optionEntry(entries, effect, option));
+            tab.addEntry(entries.startSubCategory(Text.literal(effect.name()), group)
+                    .setExpanded(true)
+                    .setTooltip(Text.literal(effect.description())).build());
+        }
+    }
+
+    private static AbstractConfigListEntry<?> optionEntry(ConfigEntryBuilder entries, WorldEffect effect,
+                                                           EffectOption option) {
+        String key = optionKey(effect.id(), option);
+        return switch (option) {
+            case EffectOption.Toggle toggle -> entries
+                    .startBooleanToggle(Text.literal(toggle.name()), effectToggle(effect.id(), toggle))
+                    .setDefaultValue(toggle.fallback())
+                    .setTooltip(Text.literal(toggle.description()))
+                    .setSaveConsumer(value -> config.effectOptions.put(key, value)).build();
+            case EffectOption.Choice<?> choice -> choiceEntry(entries, effect, choice, key);
+        };
+    }
+
+    private static <E extends Enum<E>> AbstractConfigListEntry<?> choiceEntry(ConfigEntryBuilder entries,
+                                                                              WorldEffect effect,
+                                                                              EffectOption.Choice<E> choice,
+                                                                              String key) {
+        return entries.startEnumSelector(Text.literal(choice.name()), choice.type(), effectChoice(effect.id(), choice))
+                .setDefaultValue(choice.fallback())
+                .setEnumNameProvider(value -> Text.literal(choice.label().apply(choice.type().cast(value))))
+                .setTooltip(Text.literal(choice.description()))
+                .setSaveConsumer(value -> config.effectOptions.put(key, value.name())).build();
     }
 }

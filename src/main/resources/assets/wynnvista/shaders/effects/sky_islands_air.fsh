@@ -15,8 +15,9 @@ uniform float uPhase;           // 0..1 over the time after which the moving pat
 uniform vec3 uLightColor;
 uniform vec3 uAmbient;
 uniform float uGlow;            // 1 at night, less by day
-uniform vec3 uWind;             // a place of stronger updraft: x and z on the map, and its reach
-uniform vec4 uStars;            // a place of star motes: x and z on the map, its height, and its reach
+uniform vec3 uShow;             // 1 for each kind that is drawn: x updrafts, y the violet motes, z spray
+uniform vec3 uWind;             // a place of stronger updraft: x and z on the map, and its reach, 0 for none
+uniform vec4 uStars;            // a place of star motes: x and z on the map, its height, and its reach, 0 for none
 uniform vec4 uSparkles;         // a place of sparkles, the same
 
 layout(location = 0) out vec4 fragColor;       // premultiplied colour and opacity
@@ -119,8 +120,8 @@ vec4 line(vec2 square, vec2 eye, vec3 dir, float end, vec3 daylight) {
     if (any(lessThan(centre, vec2(0.0))) || any(greaterThanEqual(centre, uMap.zw))) return vec4(0.0);
 
     // What kind of line this square holds, from where it is.
-    float starry = 1.0 - length(centre - uStars.xy) / uStars.w;
-    float sparkling = 1.0 - length(centre - uSparkles.xy) / uSparkles.w;
+    float starry = uStars.w > 0.0 ? 1.0 - length(centre - uStars.xy) / uStars.w : -1.0;
+    float sparkling = uSparkles.w > 0.0 ? 1.0 - length(centre - uSparkles.xy) / uSparkles.w : -1.0;
     bool local = max(starry, sparkling) > 0.0;
     float thick = 0.14;
 
@@ -161,8 +162,8 @@ vec4 line(vec2 square, vec2 eye, vec3 dir, float end, vec3 daylight) {
     vec4 map = texelFetch(uTerrainMap, ivec2(centre), 0);
     if (map.b > 0.0) {
         // Open void below: an updraft. Gusts come and go across the area; none through a waterfall.
-        if (map.a > 0.3) return vec4(0.0);
-        float windy = 1.0 - min(length(centre - uWind.xy) / uWind.z, 1.0);
+        if (uShow.x < 0.5 || map.a > 0.3) return vec4(0.0);
+        float windy = uWind.z > 0.0 ? 1.0 - min(length(centre - uWind.xy) / uWind.z, 1.0) : 0.0;
         float gust = noise(vec3(centre / GUST_SIZE / NOISE_SIZE + uPhase * vec2(3.0, 0.0), uPhase * 4.0)) + 0.3 * windy;
         float strength = smoothstep(GUST, GUST + 0.12, gust);
         if (strength <= 0.0 || random.z > 0.6 + 0.4 * windy) return vec4(0.0);
@@ -180,7 +181,7 @@ vec4 line(vec2 square, vec2 eye, vec3 dir, float end, vec3 daylight) {
 
     // Under an island: a violet mote now and then, rising from the cloud to the rock.
     float ceiling = map.g * 255.0;
-    if (random.z > 0.45 || ceiling < SEA + 8.0 || y < SEA || y > ceiling) return vec4(0.0);
+    if (uShow.y < 0.5 || random.z > 0.45 || ceiling < SEA + 8.0 || y < SEA || y > ceiling) return vec4(0.0);
     float spacing = 12.0 + 10.0 * random.y;
     vec2 mote = cube(met, dir, thick, spacing, random.x - wraps(0.8 / spacing) * uPhase);
     if (mote.x <= 0.0) return vec4(0.0);
@@ -222,7 +223,7 @@ void main() {
         float lowest = uCameraY + dir.y * (dir.y < 0.0 ? min(left, end) : entered);
         float highest = uCameraY + dir.y * (dir.y < 0.0 ? entered : min(left, end));
         vec2 middle = (square + 0.5) * SQUARE;
-        if (lowest < SEA + SPRAY_TOP && highest > SEA && all(greaterThanEqual(middle, vec2(0.0)))
+        if (uShow.z > 0.5 && lowest < SEA + SPRAY_TOP && highest > SEA && all(greaterThanEqual(middle, vec2(0.0)))
                 && all(lessThan(middle, uMap.zw)) && texelFetch(uTerrainMap, ivec2(middle), 0).a > SPRAY_NEAR - 0.3) {
             for (float which = 1.0; which <= SPRAY_LINES; which++) {
                 vec4 drop = spray(square, which, eye, dir, end, daylight);

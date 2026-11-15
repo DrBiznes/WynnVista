@@ -228,7 +228,7 @@ void main() {
     vec3 lit = cloudLight(pale, dusk);
 
     // The clouds, within the slab of heights that can hold them.
-    if (abs(dir.y) > 1.0e-4) {
+    if (uClouds > 0.5 && abs(dir.y) > 1.0e-4) {
         float a = (uLevels.y - 2.0 * CELL) / dir.y;
         float b = (uLevels.y + float(LAYERS) * CELL) / dir.y;
         float from = max(min(a, b), span.x);

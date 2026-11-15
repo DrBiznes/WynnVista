@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.1
+
+A config screen with a tab for each area's world effects, and switches for the single parts of the Sky Islands effects.
+
+**Changed**
+- Config: world effects are now grouped by area, each on its own tab. "Wynn Plains" holds the Mount Wynn smoke plume and the Roots of Corruption lava fog; "Sky Islands" holds the void and the updrafts and motes. Each tab has a switch for the whole area, and each effect has its own group with its switch and its settings. The "World Effects" tab keeps the master switch, the quality slider and the shader pack settings shared by all effects.
+- Config: the three style settings moved next to their effect ("Style" under the smoke plume, the lava fog and the Sky Islands void). Your existing choices are carried over.
+
+**Added**
+- Config: "Clouds" under the Sky Islands void. Switch it off to keep the void, its haze, nebulae and fallen islands without the cloud clumps floating over it.
+- Config: the Sky Islands updrafts and motes can be switched off one kind at a time: "Updrafts", "Windwalker Temple Winds" (the stronger updrafts around the temple), "Violet Motes", "Astraulus' Tower Star Motes", "Wybel Island Sparkles" and "Waterfall Spray".
+
+**Fixed**
+- ReplayMod: LOD masking and world effects now work in replays recorded on Wynncraft, while watching them and in rendered videos. Before, a replay was treated as an unknown world, with no masking and no effects.
+- Fabrishot and ReplayMod: world effects could be missing from a high-resolution screenshot or a rendered video, and stay missing afterwards, because the picture is resized for the capture. Effects now follow the resized picture.
+
 ## 2.2.0
 
 Sky Islands shader effects. The Sky Islands get a void of drifting clouds and nebulae beneath them, and wind and motes in their air. World effects also now follow your shader pack's fog, lighting, clouds and water.

@@ -1,8 +1,11 @@
 package me.jamino.wynndhrangelimiter.effects;
 
+import java.util.List;
+
 /**
  * One world effect: a fragment shader ray-marched over the finished world image, plus the rules that decide
- * where it exists. Register implementations in {@link WorldEffects}; each gets its own config toggle.
+ * where it exists. Register implementations in {@link EffectAreas}; each gets its own switch on its area's
+ * config tab, followed by its {@link #options()}.
  */
 public interface WorldEffect {
     /** Stable key used in the config file. */
@@ -12,6 +15,15 @@ public interface WorldEffect {
     String name();
 
     String description();
+
+    /**
+     * This effect's settings beyond on/off: parts of it that can be left out and choices of how it is drawn.
+     * Their values are read with {@code ModConfig.effectToggle} and {@code ModConfig.effectChoice}.
+     */
+    default List<EffectOption> options() { return List.of(); }
+
+    /** Whether the effect has anything to draw with its options as they are; false skips it altogether. */
+    default boolean hasContent() { return true; }
 
     /** Fragment shader file under {@code assets/wynnvista/shaders/effects/}; may change with the config. */
     String shader();

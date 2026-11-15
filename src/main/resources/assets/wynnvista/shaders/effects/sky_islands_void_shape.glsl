@@ -4,6 +4,7 @@
 uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cloud, both camera-relative
 uniform vec2 uAreaMin;          // the void's own box along the ground, x and z, camera-relative
 uniform vec2 uAreaMax;
+uniform float uClouds;          // 1 where the clumps of cloud are drawn, 0 for the haze and the void without them
 uniform float uSkirt;           // 1 where the floor and the haze run on past that box to the horizon, 0 where they end at it
 uniform vec2 uNoiseOrigin;      // the camera's place within one repeat of the noise pattern, in blocks
 uniform float uPhase;           // 0..1 over the time after which the moving patterns repeat

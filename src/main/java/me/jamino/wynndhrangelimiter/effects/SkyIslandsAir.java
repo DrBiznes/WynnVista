@@ -1,9 +1,13 @@
 package me.jamino.wynndhrangelimiter.effects;
 
+import me.jamino.wynndhrangelimiter.ModConfig;
+
+import java.util.List;
+
 /**
  * What rises through the air of the Sky Islands near the camera: streaks of updraft in the gaps between the
  * islands, violet motes under them, and motes of light at two named places. Placement rules; the look is in
- * the shader.
+ * the shader. Each kind is an {@link EffectOption} of its own and can be left out.
  */
 public final class SkyIslandsAir implements WorldEffect {
     public static final String ID = "sky_islands_air";
@@ -29,16 +33,40 @@ public final class SkyIslandsAir implements WorldEffect {
     public static final double SPARKLES_Z = -4684;
     public static final float SPARKLES_REACH = 45;
 
+    public static final EffectOption.Toggle UPDRAFTS = new EffectOption.Toggle("updrafts", "Updrafts",
+            "White streaks of rising wind that blow in gusts through the gaps between the islands");
+    public static final EffectOption.Toggle TEMPLE_WIND = new EffectOption.Toggle("temple_wind",
+            "Windwalker Temple Winds",
+            "Stronger, taller and more frequent updrafts around Windwalker Temple. Off: the updrafts there are "
+                    + "as everywhere else. Needs Updrafts");
+    public static final EffectOption.Toggle MOTES = new EffectOption.Toggle("motes", "Violet Motes",
+            "Small violet motes that rise from the cloud under the islands");
+    public static final EffectOption.Toggle STARS = new EffectOption.Toggle("stars", "Astraulus' Tower Star Motes",
+            "Motes of starlight around Astraulus' Tower");
+    public static final EffectOption.Toggle SPARKLES = new EffectOption.Toggle("sparkles", "Wybel Island Sparkles",
+            "Pastel sparkles over Wybel Island");
+    public static final EffectOption.Toggle SPRAY = new EffectOption.Toggle("spray", "Waterfall Spray",
+            "Spray rising where a waterfall lands in the cloud");
+
+    private static final List<EffectOption> OPTIONS = List.of(UPDRAFTS, TEMPLE_WIND, MOTES, STARS, SPARKLES, SPRAY);
+
     private static final Bounds BOUNDS = new Bounds(SkyIslandsVoid.MAP_MIN_X, 0, SkyIslandsVoid.MAP_MIN_Z,
             SkyIslandsVoid.MAP_MIN_X + SkyIslandsVoid.MAP_SIZE_X, TOP_Y,
             SkyIslandsVoid.MAP_MIN_Z + SkyIslandsVoid.MAP_SIZE_Z);
 
     @Override public String id() { return ID; }
-    @Override public String name() { return "Sky Islands Updrafts and Motes"; }
+    @Override public String name() { return "Updrafts and Motes"; }
     @Override public String description() {
         return "Streaks of rising wind between the Sky Islands, violet motes under them, star motes at Astraulus' "
                 + "Tower and sparkles on Wybel Island";
     }
+    @Override public List<EffectOption> options() { return OPTIONS; }
+
+    /** The temple's winds only strengthen the updrafts, so by themselves they draw nothing. */
+    @Override public boolean hasContent() {
+        return on(UPDRAFTS) || on(MOTES) || on(STARS) || on(SPARKLES) || on(SPRAY);
+    }
+
     @Override public String shader() { return "sky_islands_air.fsh"; }
     @Override public String terrainMap() { return SkyIslandsVoid.MAP; }
     /** The lines are a fraction of a block wide and would be lost at half resolution. */
@@ -71,9 +99,16 @@ public final class SkyIslandsAir implements WorldEffect {
         program.set("uLightColor", light.red(), light.green(), light.blue());
         program.set("uAmbient", light.ambientRed(), light.ambientGreen(), light.ambientBlue());
         program.set("uGlow", Math.max(0, Math.min(1, light.glow())));
-        program.set("uWind", onMapX(WIND_X), onMapZ(WIND_Z), WIND_REACH);
-        program.set("uStars", onMapX(STARS_X), onMapZ(STARS_Z), (float) STARS_Y, STARS_REACH);
-        program.set("uSparkles", onMapX(SPARKLES_X), onMapZ(SPARKLES_Z), (float) SPARKLES_Y, SPARKLES_REACH);
+        program.set("uShow", on(UPDRAFTS) ? 1 : 0, on(MOTES) ? 1 : 0, on(SPRAY) ? 1 : 0);
+        // A place that is switched off has no reach, and its ground holds what the ground around it does.
+        program.set("uWind", onMapX(WIND_X), onMapZ(WIND_Z), on(TEMPLE_WIND) ? WIND_REACH : 0);
+        program.set("uStars", onMapX(STARS_X), onMapZ(STARS_Z), (float) STARS_Y, on(STARS) ? STARS_REACH : 0);
+        program.set("uSparkles", onMapX(SPARKLES_X), onMapZ(SPARKLES_Z), (float) SPARKLES_Y,
+                on(SPARKLES) ? SPARKLES_REACH : 0);
+    }
+
+    private static boolean on(EffectOption.Toggle part) {
+        return ModConfig.effectToggle(ID, part);
     }
 
     /** A world x as blocks from the terrain map's corner, the coordinates the shader works in. */

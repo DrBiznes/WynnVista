@@ -45,7 +45,7 @@ Doesn't obscure annie do not worrie!!
 
 ## Configuration
 
-You can configure WynnVista using Mod Menu. The World Effects page has a switch for each effect and Realistic or Blocky for each.
+You can configure WynnVista using Mod Menu. World effects have a tab for each area (Wynn Plains, Sky Islands) with a switch for the area, for each effect and for the single parts of an effect, and Realistic or Blocky for each.
 
 ## Requirements
 

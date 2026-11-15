@@ -2,6 +2,8 @@ package me.jamino.wynndhrangelimiter.effects;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
 
+import java.util.List;
+
 /**
  * The void under the Sky Islands: clumps of cloud the islands' spikes dip into and, below them, a dark
  * void with a rare nebula. Placement and timing rules; the look is in the shaders.
@@ -98,15 +100,28 @@ public final class SkyIslandsVoid implements WorldEffect {
         public String shader() { return shader; }
     }
 
+    /** The cloud clumps alone: without them the haze, the void, its nebulae and fallen islands are still drawn. */
+    public static final EffectOption.Toggle CLOUDS = new EffectOption.Toggle("clouds", "Clouds",
+            "The clumps of cloud floating over the void. Off: the void, its haze, nebulae and fallen islands "
+                    + "are still drawn, without the clouds");
+
+    public static final EffectOption.Choice<Style> STYLE = new EffectOption.Choice<>("style", "Style",
+            "Blocky: clouds of whole cubes over pixel-art nebulae. Realistic: soft volumetric clouds over "
+                    + "smooth nebulae", Style.class, Style.BLOCKY, Style::label);
+
     private static final Bounds BOUNDS = new Bounds(MIN_X, ABYSS_Y, NORTH_Z, MAX_X, TOP_Y, SOUTH_Z);
 
     @Override public String id() { return ID; }
-    @Override public String name() { return "Sky Islands Void"; }
+    @Override public String name() { return "Void"; }
     @Override public String description() { return "Clumps of cloud over a dark void with a rare nebula under the Sky Islands"; }
-    @Override public String shader() { return ModConfig.skyIslandsVoidStyle().shader(); }
+    @Override public List<EffectOption> options() { return List.of(CLOUDS, STYLE); }
+    @Override public String shader() { return ModConfig.effectChoice(ID, STYLE).shader(); }
     /** Half resolution would blur the edges of the cloud cuboids the blocky style is made of. */
-    @Override public boolean halfResolution() { return ModConfig.skyIslandsVoidStyle() != Style.BLOCKY; }
-    @Override public Bake bake() { return ModConfig.skyIslandsVoidStyle() == Style.BLOCKY ? COVER : null; }
+    @Override public boolean halfResolution() { return ModConfig.effectChoice(ID, STYLE) != Style.BLOCKY; }
+    /** The bake is the cover of the blocky clouds, so there is none without them. */
+    @Override public Bake bake() {
+        return ModConfig.effectChoice(ID, STYLE) == Style.BLOCKY && ModConfig.effectToggle(ID, CLOUDS) ? COVER : null;
+    }
     @Override public double anchorX() { return (MIN_X + MAX_X) / 2.0; }
     @Override public double anchorZ() { return (NORTH_Z + SOUTH_Z) / 2.0; }
     @Override public Bounds bounds() { return BOUNDS; }
@@ -145,6 +160,7 @@ public final class SkyIslandsVoid implements WorldEffect {
         program.set("uAreaMin", (float) (MIN_X - frame.cameraX()), (float) (NORTH_Z - frame.cameraZ()));
         program.set("uAreaMax", (float) (MAX_X - frame.cameraX()), (float) (SOUTH_Z - frame.cameraZ()));
         program.set("uSkirt", skirt(frame.cameraX(), frame.cameraZ()));
+        program.set("uClouds", ModConfig.effectToggle(ID, CLOUDS) ? 1f : 0f);
         program.set("uNoiseOrigin", wrap(frame.cameraX()), wrap(frame.cameraZ()));
         program.set("uPhase", phase(frame.worldTime(), frame.tickProgress()));
         program.set("uCloudPhase", cloudPhase(frame.worldTime(), frame.tickProgress()));

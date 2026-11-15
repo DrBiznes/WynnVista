@@ -46,8 +46,9 @@ import java.util.Set;
  * ray-marched in a view-covering pass that reads the vanilla depth buffer and, when a LOD mod is rendering,
  * that mod's depth through {@link LodDepth}; they therefore work at any distance, with or without LODs.
  *
- * <p>Each registered {@link WorldEffect} is independent: it has its own config toggle and program, is hidden
- * with the LOD region mask, is skipped when outside the view, and only shades its own screen rectangle.
+ * <p>The effects are those registered in {@link EffectAreas}. Each is independent: it has its own config switch
+ * and program, is hidden with the LOD region mask, is skipped when outside the view, and only shades its own
+ * screen rectangle.
  */
 public final class WorldEffects {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista-effects");
@@ -60,14 +61,10 @@ public final class WorldEffects {
     /** Ticks after which they repeat in time: the same size, at half a noise cell per second. */
     private static final long RIPPLE_TICKS = NOISE_SIZE * 2 * 20;
 
-    private static final List<WorldEffect> EFFECTS = List.of(new SmokePlume(), new NetherFog(), new SkyIslandsVoid(),
-            new SkyIslandsAir());
-
     private static boolean failed;
     private static boolean created;
     private static int vertexArray;
     private static int framebuffer;
-    private static int attachedColor;
     private static int sampler;
     private static int noiseTexture;
     private static int fogTable;
@@ -126,11 +123,6 @@ public final class WorldEffects {
      */
     public static PackClouds.Kind packCloudsWanted() {
         return active ? wantedPackClouds : null;
-    }
-
-    /** Every effect, in draw order; the config screen builds one toggle from each. */
-    public static List<WorldEffect> all() {
-        return EFFECTS;
     }
 
     /** Called before the world is rendered, so LOD backends start the frame with no stale depth. */
@@ -239,29 +231,39 @@ public final class WorldEffects {
      */
     private static List<Visible> cull(MinecraftClient client, Vec3d cameraPos, Matrix4f viewProjection,
                                       boolean reflections) {
-        List<Visible> visible = new ArrayList<>(EFFECTS.size());
-        String host = client.getCurrentServerEntry() == null ? "" : client.getCurrentServerEntry().address;
-        boolean recognized = RegionPolicy.isWynncraftHost(host) || WorldContextResolver.isFixture(client);
+        List<Visible> visible = new ArrayList<>();
+        boolean recognized = RegionPolicy.isWynncraftHost(WorldContextResolver.host(client))
+                || WorldContextResolver.isFixture(client);
         if (!recognized) return visible;
         VisibilitySnapshot snapshot = WynnVistaMod.refreshForRender(client);
         String dimension = client.world.getRegistryKey().getValue().toString();
-        for (WorldEffect effect : EFFECTS) {
-            if (!ModConfig.effectEnabled(effect.id()) || BROKEN.contains(effect.shader())) continue;
-            if (!EffectRegion.shows(snapshot, true, dimension, client.player.getX(), client.player.getZ(),
-                    effect.anchorX(), effect.anchorZ())) continue;
-            if (!effect.inRange(cameraPos.x, cameraPos.y, cameraPos.z)) continue;
-            double distance = Math.hypot(effect.anchorX() - cameraPos.x, effect.anchorZ() - cameraPos.z);
-            WorldEffect.Bounds box = effect.viewBounds(cameraPos.x, cameraPos.y, cameraPos.z);
-            EffectCulling.ScreenRect rect = EffectCulling.project(viewProjection,
-                    (float) (box.minX() - cameraPos.x), (float) (box.minY() - cameraPos.y),
-                    (float) (box.minZ() - cameraPos.z), (float) (box.maxX() - cameraPos.x),
-                    (float) (box.maxY() - cameraPos.y), (float) (box.maxZ() - cameraPos.z));
-            EffectCulling.ScreenRect mirror = !reflections || !effect.reflects() ? null : EffectCulling.reflection(viewProjection,
-                    (float) (box.minX() - cameraPos.x), (float) (box.minZ() - cameraPos.z),
-                    (float) (box.maxX() - cameraPos.x), (float) (box.maxZ() - cameraPos.z));
-            if (rect != null || mirror != null) visible.add(new Visible(effect, rect, mirror, distance));
+        for (EffectArea area : EffectAreas.all()) {
+            if (!ModConfig.areaEnabled(area.id())) continue;
+            for (WorldEffect effect : area.effects()) {
+                Visible seen = seen(effect, client, snapshot, dimension, cameraPos, viewProjection, reflections);
+                if (seen != null) visible.add(seen);
+            }
         }
         return visible;
+    }
+
+    /** One effect as it is to be drawn this frame, or null when it is switched off, hidden or out of view. */
+    private static Visible seen(WorldEffect effect, MinecraftClient client, VisibilitySnapshot snapshot,
+                                String dimension, Vec3d cameraPos, Matrix4f viewProjection, boolean reflections) {
+        if (!ModConfig.effectEnabled(effect.id()) || !effect.hasContent() || BROKEN.contains(effect.shader())) return null;
+        if (!EffectRegion.shows(snapshot, true, dimension, client.player.getX(), client.player.getZ(),
+                effect.anchorX(), effect.anchorZ())) return null;
+        if (!effect.inRange(cameraPos.x, cameraPos.y, cameraPos.z)) return null;
+        double distance = Math.hypot(effect.anchorX() - cameraPos.x, effect.anchorZ() - cameraPos.z);
+        WorldEffect.Bounds box = effect.viewBounds(cameraPos.x, cameraPos.y, cameraPos.z);
+        EffectCulling.ScreenRect rect = EffectCulling.project(viewProjection,
+                (float) (box.minX() - cameraPos.x), (float) (box.minY() - cameraPos.y),
+                (float) (box.minZ() - cameraPos.z), (float) (box.maxX() - cameraPos.x),
+                (float) (box.maxY() - cameraPos.y), (float) (box.maxZ() - cameraPos.z));
+        EffectCulling.ScreenRect mirror = !reflections || !effect.reflects() ? null : EffectCulling.reflection(viewProjection,
+                (float) (box.minX() - cameraPos.x), (float) (box.minZ() - cameraPos.z),
+                (float) (box.maxX() - cameraPos.x), (float) (box.maxZ() - cameraPos.z));
+        return rect == null && mirror == null ? null : new Visible(effect, rect, mirror, distance);
     }
 
     private static void draw(List<Visible> visible, EffectFrame frame, Matrix4f viewProjection, float projectionScaleY,
@@ -340,11 +342,12 @@ public final class WorldEffects {
             GL11C.glEnable(GL11C.GL_BLEND);
 
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
-            if (attachedColor != color) {
-                GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0,
-                        GL11C.GL_TEXTURE_2D, color, 0);
-                attachedColor = color;
-            }
+            // Attached anew every frame. The game recreates its framebuffer's textures when the view is resized,
+            // which a screenshot or video mod does for a single frame, and the new texture may be given the name
+            // of the old one: an attachment kept by name would then still be the deleted texture, and the
+            // effects would be drawn into an image nobody sees.
+            GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0,
+                    GL11C.GL_TEXTURE_2D, color, 0);
             GL11C.glViewport(0, 0, width, height);
             GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
             // Premultiplied colour over the world image; the target's alpha is left alone.

@@ -1,6 +1,7 @@
 package me.jamino.wynndhrangelimiter.visibility;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
+import me.jamino.wynndhrangelimiter.compat.replaymod.ReplayModSupport;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.WorldSavePath;
 
@@ -19,7 +20,7 @@ public final class WorldContextResolver {
         }
         String dimension = client.world.getRegistryKey().getValue().toString();
         boolean fixture = isFixture(client);
-        String host = client.getCurrentServerEntry() == null ? "" : client.getCurrentServerEntry().address;
+        String host = host(client);
         boolean recognized = fixture || RegionPolicy.isWynncraftHost(host);
         String token = fixture ? fixturePath().toString() : host;
         MaskMode mode = client.player == null
@@ -30,6 +31,15 @@ public final class WorldContextResolver {
             if (mode == MaskMode.FIXTURE_CUSTOM) RegionPolicy.setFixtureCustomRect(ModConfig.fixtureCustomRect());
         }
         return new Resolution(token, dimension, mode, fixture);
+    }
+
+    /**
+     * The address of the server the world comes from: the one connected to, or for a ReplayMod replay, which
+     * has no connection, the one it was recorded on. Empty when there is neither.
+     */
+    public static String host(MinecraftClient client) {
+        return client.getCurrentServerEntry() != null ? client.getCurrentServerEntry().address
+                : ReplayModSupport.replayServer();
     }
 
     public static boolean isFixture(MinecraftClient client) {
