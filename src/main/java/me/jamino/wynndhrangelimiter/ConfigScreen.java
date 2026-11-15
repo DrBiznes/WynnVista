@@ -29,7 +29,9 @@ final class ConfigScreen {
         ConfigEntryBuilder entries = builder.entryBuilder();
         ConfigCategory general = builder.getOrCreateCategory(Text.literal("General"));
         general.addEntry(entries.startBooleanToggle(Text.literal("Show Region Messages"), ModConfig.config.showMessage)
-                .setDefaultValue(true).setSaveConsumer(value -> ModConfig.config.showMessage = value).build());
+                .setDefaultValue(false)
+                .setTooltip(Text.literal("Says in chat \"The Fog lifts.\" when you enter a region whose LOD terrain is shown, and "
+                        + "\"The Fog descends.\" when you leave it")).setSaveConsumer(value -> ModConfig.config.showMessage = value).build());
         general.addEntry(entries.startBooleanToggle(Text.literal("Enable LOD Masking"), ModConfig.config.maskingEnabled)
                 .setDefaultValue(true).setSaveConsumer(value -> ModConfig.config.maskingEnabled = value).build());
         addEffectSettings(builder.getOrCreateCategory(Text.literal("World Effects")), entries);

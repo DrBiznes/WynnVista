@@ -76,11 +76,17 @@ public final class WynnVistaMod {
             LOGGER.info("Visibility revision {}: {} in {} (fixture={}, token={})",
                     after.revision(), after.mode(), after.dimension(), context.fixture(), after.worldToken());
             if ((dhSupported || voxySupported) && ModConfig.shouldShowMessage() && client.player != null
-                    && before.mode() != after.mode() && after.mode() != MaskMode.PASSTHROUGH) {
-                client.player.sendMessage(Text.literal("WynnVista: " + after.mode()), true);
+                    && after.mode() != MaskMode.PASSTHROUGH && lifted(before.mode()) != lifted(after.mode())) {
+                client.player.sendMessage(Text.literal(lifted(after.mode()) ? "The Fog lifts." : "The Fog descends."),
+                        false);
             }
         }
         return after;
+    }
+
+    /** Whether LOD terrain is shown in this mode: in a region of the map, as opposed to between or outside them. */
+    static boolean lifted(MaskMode mode) {
+        return mode != MaskMode.NONE && mode != MaskMode.PASSTHROUGH;
     }
 
     private void refresh(MinecraftClient client) {

@@ -46,7 +46,7 @@ public final class ModConfig {
 
     static final class Config {
         int schemaVersion = SCHEMA_VERSION;
-        boolean showMessage = true;
+        boolean showMessage = false;
         boolean maskingEnabled = true;
         boolean effectsEnabled = true;
         int effectSteps = 64;
