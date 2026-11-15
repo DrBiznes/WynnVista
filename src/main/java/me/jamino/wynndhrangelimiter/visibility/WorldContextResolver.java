@@ -1,6 +1,7 @@
 package me.jamino.wynndhrangelimiter.visibility;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
+import me.jamino.wynndhrangelimiter.compat.flashback.FlashbackSupport;
 import me.jamino.wynndhrangelimiter.compat.replaymod.ReplayModSupport;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.WorldSavePath;
@@ -34,12 +35,13 @@ public final class WorldContextResolver {
     }
 
     /**
-     * The address of the server the world comes from: the one connected to, or for a ReplayMod replay, which
-     * has no connection, the one it was recorded on. Empty when there is neither.
+     * The address of the server the world comes from: the one connected to, or for a ReplayMod or Flashback
+     * replay, which has no server entry, the one it was recorded on. Empty when there is neither.
      */
     public static String host(MinecraftClient client) {
-        return client.getCurrentServerEntry() != null ? client.getCurrentServerEntry().address
-                : ReplayModSupport.replayServer();
+        if (client.getCurrentServerEntry() != null) return client.getCurrentServerEntry().address;
+        String replay = ReplayModSupport.replayServer();
+        return replay.isEmpty() ? FlashbackSupport.replayServer() : replay;
     }
 
     public static boolean isFixture(MinecraftClient client) {

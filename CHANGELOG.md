@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.2
+
+Compatibility with the Flashback replay mod.
+
+**Fixed**
+- Flashback: LOD masking and world effects now work in replays recorded on Wynncraft, while watching them in the editor and in exported videos. Before, a replay was treated as an unknown world, with no masking and no effects.
+- Flashback does not save which server a replay was recorded on, so WynnVista now notes it itself while Flashback records on Wynncraft (in `config/WynnVista-flashback.txt`). Replays recorded before this update, or on another installation, are recognised when the server's name in your server list contained "Wynn" at the time (for example "Wynncraft"), or by the names Bobby or Distant Horizons saved for the server.
+
 ## 2.2.1
 
 A config screen with a tab for each area's world effects, and switches for the single parts of the Sky Islands effects.
