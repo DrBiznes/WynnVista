@@ -41,6 +41,9 @@ public final class SkyIslandsVoid implements WorldEffect {
     public static final double ABYSS_Y = -40;
     public static final double TOP_Y = 72;
 
+    /** Where the haze is densest: one level of clumps (4 blocks) above the top of the lowest. */
+    public static final double HAZE_Y = CLOUD_Y + 4;
+
     /**
      * Blocks from the box, along the ground, beyond which the void is not drawn. The clumps are gone 520
      * blocks from the camera, and from further out only the haze could show over the rim of the land.
@@ -148,18 +151,20 @@ public final class SkyIslandsVoid implements WorldEffect {
 
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
-        upload(program, frame, MIN_X, NORTH_Z, MAX_X, SOUTH_Z, ABYSS_Y, CLOUD_Y);
+        upload(program, frame, MIN_X, NORTH_Z, MAX_X, SOUTH_Z, ABYSS_Y, CLOUD_Y, HAZE_Y);
     }
 
     /**
      * The uniforms of the void's shaders, for a void with the given box along the ground, the plane it begins
-     * at and the top of its lowest layer of cloud. Shared with {@link VoidDepths}.
+     * at, the top of its lowest layer of cloud and the height where its haze is densest. Shared with
+     * {@link VoidDepths}.
      */
     static void upload(EffectProgram program, EffectFrame frame, double minX, double northZ, double maxX,
-                       double southZ, double abyssY, double cloudY) {
+                       double southZ, double abyssY, double cloudY, double hazeY) {
         SmokePlume.Lighting light = SmokePlume.lighting(frame);
         program.set("uSkyMatch", frame.packLighting() ? 1f : 0f);
-        program.set("uLevels", (float) (abyssY - frame.cameraY()), (float) (cloudY - frame.cameraY()), 0);
+        program.set("uLevels", (float) (abyssY - frame.cameraY()), (float) (cloudY - frame.cameraY()),
+                (float) (hazeY - frame.cameraY()));
         program.set("uAreaMin", (float) (minX - frame.cameraX()), (float) (northZ - frame.cameraZ()));
         program.set("uAreaMax", (float) (maxX - frame.cameraX()), (float) (southZ - frame.cameraZ()));
         program.set("uSkirt", skirt(frame.cameraX(), frame.cameraZ(), minX, northZ, maxX, southZ));

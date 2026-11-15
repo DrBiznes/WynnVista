@@ -230,6 +230,48 @@ vec3 nebulaLight(vec2 at, vec2 run, float seen, out float nebula) {
     return light;
 }
 
+#ifdef SURROUND
+const float SKY_STAR = 0.12;            // radius of a star in the sky, in its squares
+
+/**
+ * The sky's nebulae and stars, as on the floor but on the sphere about the camera, from the same 3D noise read at
+ * the ray's direction: no seam and no horizon. A nebula's two clouds lie at the same distance, so they do not slide.
+ */
+vec3 skyNebula(vec3 d, float seen, out float nebula) {
+    vec3 q = skyPlace(d);
+    nebula = seen < 0.001 ? 0.0 : smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(q));
+    float gas = 0.0;
+    vec3 light = vec3(0.0);
+    if (nebula > 0.0) {
+        float tone = (noise(q * 2.0 + vec3(0.19, 0.19, 0.45)) - 0.3) / 0.4;
+        vec3 bend = vec3(noise(q * 2.0 + vec3(0.0, 0.0, 0.77)), noise(q * 2.0 + vec3(0.31, 0.31, 0.27)),
+                noise(q * 2.0 + vec3(0.53, 0.17, 0.61))) - 0.5;
+        vec3 bent = q + 2.0 * NEBULA_WARP * bend;
+        float one = smoothstep(0.42, 0.72, fbm(bent * 2.0 + vec3(0.0, 0.0, 0.21), 5));
+        float two = smoothstep(0.47, 0.77, fbm(bent * 3.0 + vec3(0.43, 0.43, 0.57), 5));
+        gas = max(one, two);
+        vec3 glow = nebulaHue(tone) * (0.07 + 0.55 * one) + nebulaHue(fract(tone + 0.3)) * 0.45 * two;
+        glow *= 1.0 - 0.6 * smoothstep(0.45, 0.75, fbm(bent * 5.0 + vec3(0.61, 0.61, 0.15), 3));
+        glow += vec3(0.80, 0.74, 1.0) * 0.35 * one * one * two;
+        float ridge = 1.0 - abs(2.0 * fbm(bent * 6.0 + vec3(0.0, 0.0, 0.89), 3) - 1.0);
+        float thread = ridge * ridge * ridge * ridge * gas * smoothstep(0.5, 0.75, noise(bent * 3.0 + vec3(0.0, 0.0, 0.39)));
+        glow = mix(glow, mix(nebulaHue(fract(tone + 0.6)), vec3(0.86, 0.82, 1.0), 0.4) * 0.75, thread * 0.6);
+        light = glow * nebula * NEBULA_STRENGTH * seen;
+    }
+    // Stars in the squares of the sky: brighter ones in the nebulae, faint ones between them.
+    vec3 g = skyGrid(d);
+    vec3 random = hash3(vec3(floor(g.xy), 13.0 + 7.0 * g.z));
+    if (seen >= 0.001 && random.x < NEBULA_STARS + FIELD_STARS) {
+        bool inside = random.x < NEBULA_STARS;
+        float twinkle = 0.6 + 0.4 * sin(6.2832 * (uPhase * (inside ? 64.0 : 48.0) + random.y));
+        float star = point(g.xy, 1.0, hash3(vec3(floor(g.xy), 29.0 + g.z)).xy, SKY_STAR * mix(0.5, 1.0, random.z));
+        float bright = inside ? 1.6 * (0.25 + 0.75 * gas) * nebula : 0.7 * (1.0 - nebula);
+        light += vec3(0.74, 0.72, 0.98) * star * twinkle * bright * seen;
+    }
+    return light;
+}
+#endif
+
 void main() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
@@ -238,6 +280,9 @@ void main() {
     // Pixels without the effect write zero rather than discarding: the half-resolution path needs their distance.
     fragColor = vec4(0.0);
     fragDistance = sceneDistance(uv, ndc);
+#ifdef SURROUND
+    terrainAt = fragDistance;
+#endif
     vec2 span = boxSpan(dir);
     float end = rayEnd(dir, span.y, fragDistance);
     if (end <= span.x) {
@@ -268,6 +313,10 @@ void main() {
     bool open = through >= 0.03 && floorAt > 0.0 && floorAt <= end * 1.0001 + 0.01;
     vec3 below = open ? depths(dir, floorAt, lit) : vec3(0.0);
     float backed = open ? 1.0 : 0.0;
+#ifdef SURROUND
+    // The floor comes in over the sky going down, from none along the horizon; the sky is behind it.
+    backed *= floorShows(dir);
+#endif
 
     // The haze lies among the clouds. Past them it is laid over the void or the terrain for the whole of the
     // ray, and towards the horizon it is all there is; over a cloud, only for the way to it.

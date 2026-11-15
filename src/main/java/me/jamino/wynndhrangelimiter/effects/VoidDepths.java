@@ -22,12 +22,15 @@ public final class VoidDepths implements WorldEffect {
     public static final double SOUTH_Z = AREA.maxZ();
 
     /**
-     * The islands float at about y 100 to 170. The lowest layer of cloud has its top below them, so the cloud is
-     * seen beneath them and their lowest spikes dip into it, and the void begins below that. The haze is densest
-     * just over the cloud and thins to 1/e every 48 blocks, so at the islands it is still there.
+     * The islands float at about y 100 to 170. The lowest layer of cloud has its top well below them, so the
+     * cloud lies deep under them, and the void begins below that. The haze is densest above the cloud, at
+     * {@link #HAZE_Y}, where it was when the cloud was 32 blocks higher (y 72), and thins to 1/e every 48 blocks
+     * above, so at the islands it is still there; below its level it thins over 10 blocks, so it does not bury
+     * the cloud.
      */
-    public static final double CLOUD_Y = 72;
-    public static final double ABYSS_Y = 24;
+    public static final double CLOUD_Y = 40;
+    public static final double ABYSS_Y = -8;
+    public static final double HAZE_Y = 76;
 
     /** Above the islands and the build limit: from inside, the dome above the horizon is in the box. */
     public static final double TOP_Y = 400;
@@ -72,6 +75,6 @@ public final class VoidDepths implements WorldEffect {
 
     @Override
     public void upload(EffectProgram program, EffectFrame frame) {
-        SkyIslandsVoid.upload(program, frame, MIN_X, NORTH_Z, MAX_X, SOUTH_Z, ABYSS_Y, CLOUD_Y);
+        SkyIslandsVoid.upload(program, frame, MIN_X, NORTH_Z, MAX_X, SOUTH_Z, ABYSS_Y, CLOUD_Y, HAZE_Y);
     }
 }

@@ -23,7 +23,9 @@ class VoidDepthsTest {
             // The whole Sky Islands shader is in it, with the dome over it.
             String own = EffectProgram.source(style.shader());
             assertTrue(surround.contains(own.substring(own.indexOf("\n") + 1)), style.name());
-            assertTrue(surround.contains("vec4 dome(vec3 dir)"), style.name());
+            assertTrue(surround.contains("vec4 sky(vec3 dir)"), style.name());
+            assertTrue(surround.contains("vec3 skyNebula(vec3 d, float seen, out float nebula) {"), style.name());
+            assertTrue(surround.contains("terrainAt = fragDistance;"), style.name());
             assertTrue(surround.contains("vec3 nebulaLight(vec2 at, vec2 run, float seen, out float nebula) {"), style.name());
             assertTrue(surround.contains("fragColor = surround(fragColor, dir, fragDistance);"), style.name());
         }
@@ -36,8 +38,8 @@ class VoidDepthsTest {
             assertFalse(own.contains("#define SURROUND"), style.name());
             // Every use of it is behind the switch.
             String unguarded = own.replaceAll("(?s)#ifdef SURROUND.*?#(else|endif)", "");
-            assertFalse(unguarded.contains("= surround(") || unguarded.contains("dome(dir)"), style.name());
-            assertTrue(own.contains("= surround(") && own.contains("dome(dir)"), style.name() + ": the switch is in the source");
+            assertFalse(unguarded.contains("= surround(") || unguarded.contains("skyNebula(dir"), style.name());
+            assertTrue(own.contains("= surround(") && own.contains("skyNebula(dir"), style.name() + ": the switch is in the source");
         }
     }
 
@@ -53,6 +55,17 @@ class VoidDepthsTest {
         assertTrue(VoidDepths.ABYSS_Y < VoidDepths.CLOUD_Y && VoidDepths.CLOUD_Y < 100, "the cloud is under the islands");
         assertTrue(box.maxY() > 320, "the dome is inside the box from anywhere the player can be");
         assertTrue(RegionPolicy.VOID_OUTER.contains(effect.anchorX(), effect.anchorZ()));
+    }
+
+    @Test
+    void cloudLiesDeepUnderTheIslandsWithTheHazeAboveIt() {
+        // The cloud's slab reaches 16 blocks over its top; the haze is densest above that, below the islands.
+        assertTrue(VoidDepths.CLOUD_Y + 4 * 4 < VoidDepths.HAZE_Y && VoidDepths.HAZE_Y < 100);
+        assertTrue(VoidDepths.ABYSS_Y < VoidDepths.CLOUD_Y - 2 * 4, "the floor is below the lowest cloud");
+        // Under the Sky Islands the haze is where it always was, one level of clumps over the lowest.
+        assertEquals(SkyIslandsVoid.CLOUD_Y + 4, SkyIslandsVoid.HAZE_Y);
+        String shape = EffectProgram.source("sky_islands_void_shape.glsl");
+        assertFalse(shape.contains("uLevels.y + CELL"), "the haze has its own level");
     }
 
     @Test

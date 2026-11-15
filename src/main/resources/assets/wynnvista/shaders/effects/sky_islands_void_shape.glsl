@@ -4,9 +4,9 @@
 // With SURROUND defined (void_depths.fsh, void_depths_blocky.fsh) it is the void of the Void and Outer Void
 // instead, where the player is out in the void itself rather than on land above it: the haze is deeper and
 // rises past the islands, nebulae are commoner and brighter and show by day too, more islands have fallen,
-// and above the horizon the void closes over the sky (dome()).
+// and the void is a sky on a sphere all around, above the horizon and below it, closing over the real one (sky()).
 
-uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cloud, both camera-relative
+uniform vec3 uLevels;           // x: where the void begins, y: the top of the lowest layer of cloud, z: where the haze is densest, all camera-relative
 uniform vec2 uAreaMin;          // the void's own box along the ground, x and z, camera-relative
 uniform vec2 uAreaMax;
 uniform float uSkirt;           // 1 where the floor and the haze run on past that box to the horizon, 0 where they end at it
@@ -34,8 +34,8 @@ const float HAZE_HEIGHT = 8.0;          // blocks above the cloud over which the
 const float HAZE_DENSITY = 0.011;       // extinction per block at its level
 const float HAZE_MAX = 0.95;
 #else
-// The haze reaches up among the islands: from their height, the void a few hundred blocks off is half veiled.
-const float HAZE_HEIGHT = 48.0;
+// The haze reaches up among the islands, thinning to 1/e over 32 blocks, and closes the view to the horizon.
+const float HAZE_HEIGHT = 32.0;
 const float HAZE_DENSITY = 0.0065;
 const float HAZE_MAX = 0.97;
 #endif
@@ -147,8 +147,8 @@ vec3 cloudLight(out vec3 pale, out vec3 dusk) {
     pale = vec3(0.92, 0.91, 0.96) * lit + VIOLET * (0.01 + 0.035 * uGlow);
     dusk = pale * vec3(0.42, 0.36, 0.70) + VIOLET * (0.03 + 0.07 * uGlow);
 #ifdef SURROUND
-    // Out in the void the haze is the void's own violet, and along the horizon it meets the dome, not the sky:
-    // the dome starts from the haze's own colour there, so the two meet with no line.
+    // Out in the void the haze is the void's own violet, and along the horizon it meets the void's sky, not the
+    // real one: that sky starts from the haze's own colour there, so the two meet with no line.
     pale = mix(pale, dusk * 1.5, 0.7);
     horizon = pale * 0.94;
 #else
@@ -166,40 +166,82 @@ vec3 cloudLight(out vec3 pale, out vec3 dusk) {
 vec3 nebulaLight(vec2 at, vec2 run, float seen, out float nebula);
 
 #ifdef SURROUND
-const float DOME_HORIZON = 1.0;         // share of the sky the void hides along the horizon
-const float DOME_ZENITH = 0.6;          // and straight up, so the sun and moon still show through
-const float DOME_DISTANCE = 360.0;      // blocks to the plane the dome's nebulae are drawn on, straight up
-const float DOME_FLAT = 0.25;          // added to the sine of the elevation, so that plane does not run off to infinity
+const float DOME_ZENITH = 0.6;          // share of the sky the void hides straight up, so the sun and moon still show through; all of it at and below the horizon
+const float SKY_RADIUS = 0.18;          // radius of the sphere the sky is looked up on, in noise repeats: a nebula's patches are some 10 degrees across
+const float SKY_CELLS = 128.0;          // squares across each face of the cube the sky's squares and stars sit on, under a degree each
+const float SKY_BAND = 0.4;             // sine of the angle from the horizon, up or down, over which the sky goes from the haze's colour to the dark
+const float FLOOR_FADE = 0.35;          // and below it, over which the floor's own nebulae and islands come in over the sky
 const float FIELD_STARS = 0.012;        // share of the squares outside the nebulae that hold a faint star
+const float TERRAIN_HAZE = 0.55;        // share of the haze laid over terrain: the islands are veiled, not lost in it
+
+float terrainAt = INF;                  // distance of the terrain along this pixel's ray, set by main(); INF for none
 
 /**
- * The void above the horizon, where a ray from the islands meets no terrain: premultiplied colour and how much
- * of the sky it hides. It is the haze's colour along the horizon, darkening upward, and holds nebulae and stars
- * of the same kind as the depths below. It is a sky, fixed to the camera, so it does not move as the camera does.
+ * Where direction d meets the cube around the camera that the sky's squares sit on: xy the place on that face,
+ * in squares from its middle, z the face, 0 to 5. The sky is a sphere; only its squares and stars use the cube,
+ * so a square is about the same size everywhere and nothing is pinched at the top or bottom.
  */
-vec4 dome(vec3 dir) {
-    float up = max(dir.y, 0.0);
-    vec2 at = dir.xz * (DOME_DISTANCE / (up + DOME_FLAT)) + vec2(0.0, uPhase * PERIOD);
-    // Low down the nebulae go into the haze along the horizon.
-    float nebula;
-    vec3 light = nebulaLight(at, vec2(0.0), smoothstep(0.02, 0.3, up), nebula);
-    vec3 colour = mix(horizon, DARK, smoothstep(0.0, 0.4, up)) + light;
-    float shows = mix(DOME_HORIZON, DOME_ZENITH, smoothstep(0.0, 0.9, up));
-    return vec4(colour * shows, shows);
+vec3 skyGrid(vec3 d) {
+    vec3 a = abs(d);
+    float faceHalf = SKY_CELLS * 0.5;
+    if (a.x >= a.y && a.x >= a.z) return vec3(d.zy / a.x * faceHalf, d.x > 0.0 ? 0.0 : 1.0);
+    if (a.y >= a.z) return vec3(d.xz / a.y * faceHalf, d.y > 0.0 ? 2.0 : 3.0);
+    return vec3(d.xy / a.z * faceHalf, d.z > 0.0 ? 4.0 : 5.0);
+}
+
+/** The direction through the middle of the square of skyGrid() that `g` lies in. */
+vec3 skySquare(vec3 g) {
+    vec2 c = (floor(g.xy) + 0.5) / (SKY_CELLS * 0.5);
+    float side = mod(g.z, 2.0) < 0.5 ? 1.0 : -1.0;
+    if (g.z < 1.5) return normalize(vec3(side, c.y, c.x));
+    if (g.z < 3.5) return normalize(vec3(c.x, side, c.y));
+    return normalize(vec3(c.x, c.y, side));
+}
+
+/** Where direction d lies in the sky's noise: on a sphere, which the moving patterns drift through. */
+vec3 skyPlace(vec3 d) {
+    return d * SKY_RADIUS + vec3(0.0, uPhase, 0.0);
 }
 
 /**
- * The finished pixel `effect` with the dome behind it, where the ray rises and meets no terrain: `distance` is
- * the terrain's along the ray, INF for none.
+ * The nebulae and stars of the sky in direction d, seen with `seen` of their light: the light they add, and in
+ * `nebula` how much of a nebula is there, 0..1. Each style draws its own, after its nebulae on the floor.
+ */
+vec3 skyNebula(vec3 d, float seen, out float nebula);
+
+/**
+ * The void all around, a sky on a sphere about the camera that closes over the real one: premultiplied colour and
+ * how much of the sky it hides. It is the same in every direction except for its light: the haze's colour along
+ * the horizon on both sides of it, so the haze runs into it with no line, darkening to the void's near-black
+ * above and below, with nebulae and stars that thin out into that band. It is fixed to the camera, as a sky is.
+ * Straight down the floor's nebulae and fallen islands are drawn over it, and slide as the camera moves.
+ */
+vec4 sky(vec3 dir) {
+    float off = abs(dir.y);
+    float nebula;
+    vec3 light = skyNebula(dir, smoothstep(0.02, 0.3, off), nebula);
+    vec3 colour = mix(horizon, DARK, smoothstep(0.0, SKY_BAND, off)) + light;
+    float shows = dir.y > 0.0 ? mix(1.0, DOME_ZENITH, smoothstep(0.0, 0.9, dir.y)) : 1.0;
+    return vec4(colour * shows, shows);
+}
+
+/** How much of the floor is drawn over the sky along a ray going down: none along the horizon, so it has no edge there. */
+float floorShows(vec3 dir) {
+    return smoothstep(0.0, FLOOR_FADE, -dir.y);
+}
+
+/**
+ * The finished pixel `effect` with the sky behind it, where the ray meets no terrain: `distance` is the
+ * terrain's along the ray, INF for none.
  */
 vec4 surround(vec4 effect, vec3 dir, float distance) {
-    // Near the sides of the region the dome comes and goes with the skirt, which only shows from inside.
-    if (dir.y <= 0.0 || distance < INF * 0.5 || uMirror.x > 0.5 || uSkirt <= 0.0) return effect;
-    // The dome takes its colour from the light; on a pixel the effect left early that is not worked out yet.
+    // Near the sides of the region the sky comes and goes with the skirt, which only shows from inside.
+    if (distance < INF * 0.5 || uMirror.x > 0.5 || uSkirt <= 0.0) return effect;
+    // The sky takes its colour from the light; on a pixel the effect left early that is not worked out yet.
     vec3 pale;
     vec3 dusk;
     cloudLight(pale, dusk);
-    return effect + dome(dir) * (uSkirt * (1.0 - effect.a));
+    return effect + sky(dir) * (uSkirt * (1.0 - effect.a));
 }
 #endif
 
@@ -224,7 +266,7 @@ float hazeDepth(float a, float b, float len) {
  * there it takes the sky's colour, and goes into the sky with no line between them.
  */
 vec4 hazeAlong(vec3 dir, float from, float to, vec3 pale, vec3 dusk) {
-    float level = uLevels.y + CELL;
+    float level = uLevels.z;
     float start = dir.y * from - level;
     float stop = dir.y * to - level;
     float high = max(start, stop);
@@ -235,12 +277,18 @@ vec4 hazeAlong(vec3 dir, float from, float to, vec3 pale, vec3 dusk) {
     float veil = hazeDepth(min(low, 0.0), min(high, 0.0), reach * (1.0 - above));
     float haze = min(1.0 - exp(-pall - veil), HAZE_MAX);
     vec3 colour = (pale * 0.94 * pall + dusk * 0.6 * veil) / max(pall + veil, 1.0e-6);
+#ifdef SURROUND
+    // The sky behind is the haze's own colour along the horizon, so the haze keeps its colour whichever way the
+    // ray goes: a colour that changed at the horizon would draw a line across the islands in front of it.
+    return vec4(colour, to >= terrainAt * 0.999 ? haze * TERRAIN_HAZE : haze);
+#else
     return vec4(mix(colour, horizon, uSkirt * (1.0 - smoothstep(0.0, HORIZON_BLEND, -dir.y))), haze);
+#endif
 }
 
 /** Where a ray that met nothing but haze is taken to have met it: at the haze's level. */
 float hazeFront(vec3 dir, float from, float to) {
-    return abs(dir.y) > 1.0e-4 ? clamp((uLevels.y + CELL) / dir.y, from, to) : from;
+    return abs(dir.y) > 1.0e-4 ? clamp(uLevels.z / dir.y, from, to) : from;
 }
 
 /**
@@ -287,6 +335,11 @@ vec4 finished(vec4 whole, float first, vec2 uv, vec2 ndc, vec3 dir) {
     vec4 cloud;
     float cloudAt = cloudDistance(uv, ndc, dir, cloud);
     float fogged = mix(first, min(first, areaExit(dir)), uSkirt);
+#ifdef SURROUND
+    // Where the ray meets no terrain the haze runs on into the sky on both sides of the horizon, so it takes the
+    // fog of the region's side either way: taken at the floor below and at the camera above, the two differed.
+    if (terrainAt >= INF * 0.5) fogged = mix(fogged, areaExit(dir), uSkirt);
+#endif
     float distant = 1.0 - exp(-fogged * 0.00022);
     vec4 result = underClouds(whole, cloudAt < first ? vec4(0.0) : whole, distant, cloud, dir * fogged);
     return result * max(withinArea(dir.xz * first), uSkirt);

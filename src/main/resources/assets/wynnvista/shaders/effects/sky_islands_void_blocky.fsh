@@ -320,6 +320,43 @@ vec3 nebulaLight(vec2 at, vec2 run, float seen, out float nebula) {
     return light;
 }
 
+#ifdef SURROUND
+/**
+ * The sky's nebulae and stars, as on the floor but on the sphere about the camera, from the same 3D noise read at
+ * the middle of the square of the sky the ray points into: pixel art with no seam and no horizon.
+ */
+vec3 skyNebula(vec3 d, float seen, out float nebula) {
+    vec3 g = skyGrid(d);
+    vec3 q = skyPlace(skySquare(g));
+    nebula = seen < 0.001 ? 0.0 : smoothstep(NEBULA_RARE, NEBULA_RARE + 0.12, noise(q));
+    float one = 0.0;
+    float two = 0.0;
+    vec3 light = vec3(0.0);
+    if (nebula > 0.0) {
+        float tone = (noise(q * 2.0 + vec3(0.19, 0.19, 0.45)) - 0.3) / 0.4;
+        float turn = 6.2832 * noise(q * 2.0 + vec3(0.0, 0.0, 0.77));
+        float tilt = 6.2832 * noise(q * 2.0 + vec3(0.31, 0.53, 0.27));
+        vec3 bent = q + NEBULA_WARP * vec3(cos(turn) * cos(tilt), sin(tilt), sin(turn) * cos(tilt));
+        one = nebulaCloud(fbm(bent * 2.0 + vec3(0.0, 0.0, 0.21), 4), 0.42);
+        two = nebulaCloud(fbm(bent * 3.0 + vec3(0.43, 0.43, 0.57), 4), 0.47);
+        float thread = 1.0 - abs(2.0 * noise(bent * 8.0 + vec3(0.0, 0.0, 0.89)) - 1.0);
+        thread = step(0.86, thread) * max(one, two);
+        vec3 glow = nebulaHue(tone) * 0.55 * one + nebulaHue(fract(tone + 0.3)) * 0.45 * two;
+        glow = mix(glow, mix(nebulaHue(fract(tone + 0.6)), vec3(0.86, 0.82, 1.0), 0.4) * 0.75, thread * 0.8);
+        light = glow * nebula * NEBULA_STRENGTH * seen;
+    }
+    // A star fills its square: brighter ones in the nebulae, faint ones between them.
+    vec3 random = hash3(vec3(floor(g.xy), 13.0 + 7.0 * g.z));
+    if (seen >= 0.001 && random.x < NEBULA_STARS + FIELD_STARS) {
+        bool inside = random.x < NEBULA_STARS;
+        float twinkle = 0.6 + 0.4 * sin(6.2832 * (uPhase * (inside ? 64.0 : 48.0) + random.y));
+        float bright = inside ? (0.25 + 0.75 * max(one, two)) * nebula : mix(0.25, 0.45, random.z) * (1.0 - nebula);
+        light += vec3(0.74, 0.72, 0.98) * twinkle * bright * seen;
+    }
+    return light;
+}
+#endif
+
 void main() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
@@ -328,6 +365,9 @@ void main() {
     // Pixels without the effect write zero rather than discarding: the half-resolution path needs their distance.
     fragColor = vec4(0.0);
     fragDistance = sceneDistance(uv, ndc);
+#ifdef SURROUND
+    terrainAt = fragDistance;
+#endif
     vec2 span = boxSpan(dir);
     float end = rayEnd(dir, span.y, fragDistance);
     if (end <= span.x) {
@@ -360,7 +400,13 @@ void main() {
         vec4 behind = vec4(0.0);
         float floorAt = dir.y < 0.0 ? uLevels.x / dir.y : INF;
         if (floorAt > 0.0 && floorAt <= end * 1.0001 + 0.01) {
+#ifdef SURROUND
+            // The floor comes in over the sky going down, from none along the horizon; the sky is behind it.
+            float shows = floorShows(dir);
+            behind = vec4(depths(dir, floorAt, lit) * shows, shows);
+#else
             behind = vec4(depths(dir, floorAt, lit), 1.0);
+#endif
             if (first < 0.0) first = floorAt;
         }
         if (front < end) {

@@ -3,7 +3,7 @@
 ## 2.2.1
 
 **Added**
-- World effect: the void of the Void and Outer Void ("Void and Outer Void"). The Sky Islands void, but all around you: the same clouds drift beneath the floating islands, a deeper violet haze rises among them and closes the view in every direction, nebulae are commoner and brighter and show by day as well, faint stars lie between them, more fallen islands sink into the dark, and above the horizon the void closes over the sky, thinning towards the top so the sun and moon still show through. It has its own toggle on the World Effects config page.
+- World effect: the void of the Void and Outer Void ("Void and Outer Void"). The Sky Islands void, but all around you: the void is a sky on a sphere around you, above the horizon and below it, with no line between them, holding glowing nebulae and stars that show by day as well. Clouds drift deep beneath the floating islands, a violet haze rises towards them and closes the view in every direction, and more fallen islands sink into the dark below. Overhead the void thins so the sun and moon still show through. It has its own toggle on the World Effects config page.
 
 **Changed**
 - Config: "Sky Islands Void Style" is now "Void Style" and sets the style of both voids. Your setting is kept.
