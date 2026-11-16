@@ -6,10 +6,10 @@ Compatibility with the Flashback replay mod.
 
 **Changed**
 - Region messages are back to the chat lines "The Fog lifts." (entering a region whose LOD terrain is shown) and "The Fog descends." (leaving it), in place of the "WynnVista: MAIN" line above the hotbar. They are now off by default for new installations; an existing installation keeps its setting. "Show Region Messages" on the General config tab switches them on or off.
+- ReplayMod and Flashback replays get LOD masking and world effects however they were recorded: WynnVista now only notices that a replay is playing and no longer works out which server it came from, so a replay recorded on another server is treated as Wynncraft too. Other servers and ordinary singleplayer worlds are still left alone.
 
 **Fixed**
-- Flashback: LOD masking and world effects now work in replays recorded on Wynncraft, while watching them in the editor and in exported videos. Before, a replay was treated as an unknown world, with no masking and no effects.
-- Flashback does not save which server a replay was recorded on, so WynnVista now notes it itself while Flashback records on Wynncraft (in `config/WynnVista-flashback.txt`). Replays recorded before this update, or on another installation, are recognised when the server's name in your server list contained "Wynn" at the time (for example "Wynncraft"), or by the names Bobby or Distant Horizons saved for the server.
+- Flashback: LOD masking and world effects now work in replays, while watching them in the editor and in exported videos. Before, a replay was treated as an unknown world, with no masking and no effects.
 
 ## 2.2.1
 

@@ -50,17 +50,7 @@ repositories {
     }
 }
 
-configurations {
-    // The released jars of the replay mods, as players install them: read by ReplayModJarsTest, never loaded.
-    replayMods {
-        transitive = false
-    }
-}
-
 dependencies {
-    replayMods "maven.modrinth:replaymod:${project.replaymod_artifact_version}"
-    replayMods "maven.modrinth:flashback:${project.flashback_artifact_version}"
-
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
@@ -140,16 +130,6 @@ dependencies {
 
 test {
     useJUnitPlatform()
-    // The replay mod jars ReplayModJarsTest checks: those of gradle.properties, or with
-    // -PreplayModJars=<folder> every jar in that folder instead (to try a new release before changing the IDs).
-    def replayModJars = project.hasProperty('replayModJars')
-            ? fileTree(dir: project.property('replayModJars'), include: '*.jar')
-            : configurations.replayMods
-    inputs.files(replayModJars)
-    doFirst {
-        systemProperty 'wynnvista.replayModJars', replayModJars.files.join(File.pathSeparator)
-        systemProperty 'wynnvista.replayModJars.byHand', project.hasProperty('replayModJars')
-    }
 }
 
 tasks.named('runClient', JavaExec) {

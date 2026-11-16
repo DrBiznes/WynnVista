@@ -3,7 +3,6 @@ package me.jamino.wynndhrangelimiter.effects;
 import me.jamino.wynndhrangelimiter.ModConfig;
 import me.jamino.wynndhrangelimiter.WynnVistaMod;
 import me.jamino.wynndhrangelimiter.compat.iris.IrisSupport;
-import me.jamino.wynndhrangelimiter.visibility.RegionPolicy;
 import me.jamino.wynndhrangelimiter.visibility.VisibilitySnapshot;
 import me.jamino.wynndhrangelimiter.visibility.WorldContextResolver;
 import net.minecraft.client.MinecraftClient;
@@ -232,9 +231,7 @@ public final class WorldEffects {
     private static List<Visible> cull(MinecraftClient client, Vec3d cameraPos, Matrix4f viewProjection,
                                       boolean reflections) {
         List<Visible> visible = new ArrayList<>();
-        boolean recognized = RegionPolicy.isWynncraftHost(WorldContextResolver.host(client))
-                || WorldContextResolver.isFixture(client);
-        if (!recognized) return visible;
+        if (!WorldContextResolver.recognized(client)) return visible;
         VisibilitySnapshot snapshot = WynnVistaMod.refreshForRender(client);
         String dimension = client.world.getRegistryKey().getValue().toString();
         for (EffectArea area : EffectAreas.all()) {

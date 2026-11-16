@@ -6,7 +6,6 @@ import me.jamino.wynndhrangelimiter.compat.betterclouds.BetterCloudsLayer;
 import me.jamino.wynndhrangelimiter.compat.betterclouds.BetterCloudsSupport;
 import me.jamino.wynndhrangelimiter.compat.dh.DhEffectDepth;
 import me.jamino.wynndhrangelimiter.compat.dh.DhVersionSupport;
-import me.jamino.wynndhrangelimiter.compat.flashback.FlashbackSupport;
 import me.jamino.wynndhrangelimiter.compat.voxy.VoxyEffectDepth;
 import me.jamino.wynndhrangelimiter.compat.voxy.VoxyVersionSupport;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
@@ -63,7 +62,6 @@ public final class WynnVistaMod {
     }
 
     void onClientTick(MinecraftClient client) {
-        FlashbackSupport.noteRecording(client);
         refresh(client);
     }
 

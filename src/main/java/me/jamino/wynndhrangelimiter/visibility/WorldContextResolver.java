@@ -1,8 +1,7 @@
 package me.jamino.wynndhrangelimiter.visibility;
 
 import me.jamino.wynndhrangelimiter.ModConfig;
-import me.jamino.wynndhrangelimiter.compat.flashback.FlashbackSupport;
-import me.jamino.wynndhrangelimiter.compat.replaymod.ReplayModSupport;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.util.WorldSavePath;
 
@@ -13,6 +12,9 @@ import java.nio.file.InvalidPathException;
 public final class WorldContextResolver {
     public record Resolution(String worldToken, String dimension, MaskMode mode, boolean fixture) {}
 
+    /** Flashback's replay server, compared by name: Flashback is optional and not compiled against. */
+    private static final String FLASHBACK_REPLAY_SERVER = "com.moulberry.flashback.playback.ReplayServer";
+
     private WorldContextResolver() {}
 
     public static Resolution resolve(MinecraftClient client) {
@@ -21,9 +23,8 @@ public final class WorldContextResolver {
         }
         String dimension = client.world.getRegistryKey().getValue().toString();
         boolean fixture = isFixture(client);
-        String host = host(client);
-        boolean recognized = fixture || RegionPolicy.isWynncraftHost(host);
-        String token = fixture ? fixturePath().toString() : host;
+        boolean recognized = fixture || recognized(client);
+        String token = fixture ? fixturePath().toString() : host(client);
         MaskMode mode = client.player == null
                 ? (recognized ? MaskMode.NONE : MaskMode.PASSTHROUGH)
                 : RegionPolicy.select(recognized, dimension, client.player.getX(), client.player.getZ());
@@ -35,13 +36,30 @@ public final class WorldContextResolver {
     }
 
     /**
-     * The address of the server the world comes from: the one connected to, or for a ReplayMod or Flashback
-     * replay, which has no server entry, the one it was recorded on. Empty when there is neither.
+     * Whether the world is masked and gets world effects: a Wynncraft server, the fixture, or a replay.
+     * Other servers and ordinary singleplayer are left alone.
      */
+    public static boolean recognized(MinecraftClient client) {
+        if (client.getCurrentServerEntry() != null) return RegionPolicy.isWynncraftHost(host(client));
+        return isReplay(client) || isFixture(client);
+    }
+
+    /**
+     * Whether a ReplayMod or Flashback replay is playing. Which server it was recorded on is not asked: anyone
+     * watching a replay with WynnVista installed is taken to be watching Wynncraft.
+     */
+    public static boolean isReplay(MinecraftClient client) {
+        // ReplayMod plays from a file, with neither a server entry nor an integrated server.
+        if (!client.isIntegratedServerRunning()) {
+            return client.getCurrentServerEntry() == null && FabricLoader.getInstance().isModLoaded("replaymod");
+        }
+        // Flashback plays from an integrated server of its own.
+        return client.getServer() != null && FLASHBACK_REPLAY_SERVER.equals(client.getServer().getClass().getName());
+    }
+
+    /** The address of the server connected to, which names the world; empty in singleplayer and in replays. */
     public static String host(MinecraftClient client) {
-        if (client.getCurrentServerEntry() != null) return client.getCurrentServerEntry().address;
-        String replay = ReplayModSupport.replayServer();
-        return replay.isEmpty() ? FlashbackSupport.replayServer() : replay;
+        return client.getCurrentServerEntry() == null ? "" : client.getCurrentServerEntry().address;
     }
 
     public static boolean isFixture(MinecraftClient client) {
