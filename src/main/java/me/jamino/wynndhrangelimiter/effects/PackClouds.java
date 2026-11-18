@@ -46,8 +46,44 @@ public record PackClouds(Kind kind, float uvScale, float distanceScale) {
         /** Index of a second buffer it is spread over, or -1. */
         public int second() { return second; }
 
+        /**
+         * True when the distances have to be gathered from the texels around each pixel, which
+         * {@code pack_clouds.fsh} does in two stages. Photon's are unusable along a cloud's edge, where it has
+         * mixed the million blocks it stores for "no cloud" into them. Wynn-Photon is
+         * Photon with other settings and is recognised as it.
+         */
+        public boolean spread() { return this == PHOTON; }
+
         /** True when the buffer only holds the clouds between the pack's deferred and composite passes. */
         public boolean afterDeferred() { return this == COMPLEMENTARY; }
+    }
+
+    /** When the edge of a pack's cloud in front of an effect is smoothed by those two stages. */
+    public enum Smoothing {
+        /** For the packs whose distances need it ({@link Kind#spread}); the others keep their one cheap stage. */
+        PHOTON_ONLY,
+        /** For every recognised pack: BSL's and Complementary's cloud edges become wider and softer. */
+        ALWAYS,
+        /** Never: one cheap stage for every pack, which leaves the edges of Photon's clouds flickering. */
+        OFF;
+
+        /** Whether the two stages are run for a pack. */
+        public boolean applies(Kind kind) {
+            return this == ALWAYS || this == PHOTON_ONLY && kind.spread();
+        }
+    }
+
+    /** Texels to either side that {@code pack_clouds.fsh} gathers a distance from, in steps of {@link #spreadStep}. */
+    public static final int SPREAD_TAPS = 6;
+
+    /** Pixels between those texels: one in a view 720 high, more in a larger one. */
+    public static float spreadStep(int viewHeight) {
+        return Math.max(1f, viewHeight / 720f);
+    }
+
+    /** Rows above and below a pixel that the second stage reads from the first. */
+    public static int spreadReach(int viewHeight) {
+        return (int) Math.ceil(SPREAD_TAPS * spreadStep(viewHeight)) + 1;
     }
 
     /** Iris gives a pack this far plane for Distant Horizons: the LOD distance and 512 blocks, times root two. */

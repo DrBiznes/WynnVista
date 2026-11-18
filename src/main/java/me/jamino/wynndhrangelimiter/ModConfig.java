@@ -8,6 +8,7 @@ import com.google.gson.JsonPrimitive;
 import me.jamino.wynndhrangelimiter.effects.EffectArea;
 import me.jamino.wynndhrangelimiter.effects.EffectAreas;
 import me.jamino.wynndhrangelimiter.effects.EffectOption;
+import me.jamino.wynndhrangelimiter.effects.PackClouds;
 import me.jamino.wynndhrangelimiter.effects.WorldEffect;
 import me.jamino.wynndhrangelimiter.visibility.BlockRect;
 import me.jamino.wynndhrangelimiter.visibility.MaskMode;
@@ -53,6 +54,8 @@ public final class ModConfig {
         boolean effectFogModels = true;
         boolean effectPackLighting = true;
         boolean effectPackClouds = true;
+        /** A {@link PackClouds.Smoothing} by name. */
+        String effectPackCloudSmoothing = PackClouds.Smoothing.PHOTON_ONLY.name();
         boolean effectPackReflections = true;
         /** Per-area switches by {@link EffectArea#id()}; an area that is not listed is on. */
         Map<String, Boolean> effectAreas = new LinkedHashMap<>();
@@ -85,6 +88,7 @@ public final class ModConfig {
                 if (json.has("effectFogModels")) result.effectFogModels = json.get("effectFogModels").getAsBoolean();
                 if (json.has("effectPackLighting")) result.effectPackLighting = json.get("effectPackLighting").getAsBoolean();
                 if (json.has("effectPackClouds")) result.effectPackClouds = json.get("effectPackClouds").getAsBoolean();
+                if (json.has("effectPackCloudSmoothing")) result.effectPackCloudSmoothing = json.get("effectPackCloudSmoothing").getAsString();
                 if (json.has("effectPackReflections")) result.effectPackReflections = json.get("effectPackReflections").getAsBoolean();
                 readSwitches(json, "effectAreas", result.effectAreas);
                 readSwitches(json, "effects", result.effects);
@@ -178,6 +182,20 @@ public final class ModConfig {
     public static boolean effectPackLighting() { return config.effectPackLighting; }
     /** Whether a supported shader pack's own clouds hide the effects behind them. */
     public static boolean effectPackClouds() { return config.effectPackClouds; }
+    /**
+     * For which shader packs the edge of a cloud in front of an effect is smoothed. Without it the reading is
+     * cheaper and leaves such an edge of Photon's flickering. A value that is not known means Photon only.
+     */
+    public static PackClouds.Smoothing effectPackCloudSmoothing() {
+        return (PackClouds.Smoothing) CHOICES.computeIfAbsent("effectPackCloudSmoothing", key -> {
+            try {
+                return PackClouds.Smoothing.valueOf(config.effectPackCloudSmoothing.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                LOGGER.warn("Invalid {}: {}", key, config.effectPackCloudSmoothing);
+                return PackClouds.Smoothing.PHOTON_ONLY;
+            }
+        });
+    }
     /** Whether effects are mirrored in the water of a shader pack that draws reflections on it. */
     public static boolean effectPackReflections() { return config.effectPackReflections; }
 

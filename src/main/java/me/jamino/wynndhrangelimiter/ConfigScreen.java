@@ -3,6 +3,7 @@ package me.jamino.wynndhrangelimiter;
 import me.jamino.wynndhrangelimiter.effects.EffectArea;
 import me.jamino.wynndhrangelimiter.effects.EffectAreas;
 import me.jamino.wynndhrangelimiter.effects.EffectOption;
+import me.jamino.wynndhrangelimiter.effects.PackClouds;
 import me.jamino.wynndhrangelimiter.effects.WorldEffect;
 import me.shedaniel.clothconfig2.api.AbstractConfigListEntry;
 import me.shedaniel.clothconfig2.api.ConfigBuilder;
@@ -79,6 +80,19 @@ final class ConfigScreen {
                 .setTooltip(Text.literal("Draw effects behind the clouds of the shader pack in use "
                         + "(Complementary, BSL, Photon). Off: effects are drawn over the pack's clouds"))
                 .setSaveConsumer(value -> ModConfig.config.effectPackClouds = value).build());
+        effects.addEntry(entries.startEnumSelector(Text.literal("Smooth Shader Pack Cloud Edges"),
+                        PackClouds.Smoothing.class, ModConfig.effectPackCloudSmoothing())
+                .setDefaultValue(PackClouds.Smoothing.PHOTON_ONLY)
+                .setEnumNameProvider(value -> Text.literal(switch ((PackClouds.Smoothing) value) {
+                    case PHOTON_ONLY -> "Photon Only";
+                    case ALWAYS -> "Always";
+                    case OFF -> "Off";
+                }))
+                .setTooltip(Text.literal("Keep the edge of a shader pack's cloud in front of an effect soft and "
+                        + "steady. Photon Only: with Photon and Wynn-Photon, whose clouds need it. Always: with "
+                        + "Complementary and BSL too, for softer edges. Off: a little faster, but the edges of "
+                        + "Photon's clouds can shimmer"))
+                .setSaveConsumer(value -> ModConfig.config.effectPackCloudSmoothing = value.name()).build());
         effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Water Reflections"),
                         ModConfig.config.effectPackReflections)
                 .setDefaultValue(true)

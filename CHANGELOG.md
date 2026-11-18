@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.3
+
+Compatibility with the Wynn-Photon shader pack.
+
+**Added**
+- Wynn-Photon: the pack is recognised as Photon, so world effects get its fog, its lighting and its clouds in front of them as they do with Photon. "Photon Only" under "Smooth Shader Pack Cloud Edges" covers it too.
+- "Smooth Shader Pack Cloud Edges" on the World Effects config tab: "Photon Only" (the default), "Always" or "Off". It chooses for which shader packs the edge of a cloud in front of a world effect is smoothed.
+
+**Fixed**
+- Photon and Wynn-Photon: where one of the pack's clouds passed in front of a world effect, such as the Mount Wynn smoke plume, the cloud's edge shimmered and broke into small squares. The cloud's edge now lies over the effect as softly as it does over the sky. "Smooth Shader Pack Cloud Edges" on the World Effects config tab is set to "Photon Only" by default, so other shader packs, which do not need it, are read as before. "Off" gives a little more speed on a slow graphics card, and the edge can then shimmer; "Always" also softens the cloud edges of Complementary and BSL.
+- Roots of Corruption lava fog, Realistic style: the grain in the fog no longer stays in place on the screen while the fog moves behind it. Its detail is now fixed in the world and moves with the fog as you walk past.
+
 ## 2.2.2
 
 Compatibility with the Flashback replay mod.

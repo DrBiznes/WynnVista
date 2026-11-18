@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -277,6 +278,16 @@ class FogModelsTest {
         assertEquals(0.6f, upscaled.clouds(voxy, 512).uvScale(), "its buffers cover the view with part of themselves");
         assertEquals(11, PackClouds.Kind.PHOTON.first());
         assertEquals(12, PackClouds.Kind.PHOTON.second());
+        assertTrue(PackClouds.Kind.PHOTON.spread(), "its distances are gathered from around each pixel");
+        assertFalse(PackClouds.Kind.BSL.spread());
+        assertTrue(PackClouds.Smoothing.PHOTON_ONLY.applies(PackClouds.Kind.PHOTON));
+        assertFalse(PackClouds.Smoothing.PHOTON_ONLY.applies(PackClouds.Kind.BSL), "only the pack that needs it");
+        assertFalse(PackClouds.Smoothing.PHOTON_ONLY.applies(PackClouds.Kind.COMPLEMENTARY));
+        assertTrue(PackClouds.Smoothing.ALWAYS.applies(PackClouds.Kind.COMPLEMENTARY));
+        assertFalse(PackClouds.Smoothing.OFF.applies(PackClouds.Kind.PHOTON));
+        assertEquals(7, PackClouds.spreadReach(720), "six texels a pixel apart, and one to spare");
+        assertEquals(10, PackClouds.spreadReach(1080), "one and a half pixels apart");
+        assertEquals(7, PackClouds.spreadReach(480), "never nearer than a pixel");
 
         FogModel bsl = FogModels.forPack(pack("x", BSL, Map.of()));
         assertEquals(new PackClouds(PackClouds.Kind.BSL, 1, 4096), bsl.clouds(voxy, 512), "the LOD distance when it is the larger");

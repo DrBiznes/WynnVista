@@ -23,6 +23,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import wynnphoton_pack
+
 ROOT = Path(__file__).resolve().parents[1]
 SAVE_NAME = "New World"
 WIN = os.name == "nt"
@@ -60,7 +62,7 @@ def write_state(update: dict) -> None:
 def write_configs(masking: bool, override: str, render_distance: float, custom_rect: str = "",
                   dh_engine: str = None, effects: bool = True, disabled_effects: str = "",
                   plume_style: str = "REALISTIC", fog_style: str = "REALISTIC",
-                  void_style: str = "BLOCKY", disabled_parts: str = "") -> None:
+                  void_style: str = "BLOCKY", disabled_parts: str = "", cloud_smoothing: str = "PHOTON_ONLY") -> None:
     config = RUN / "config"
     config.mkdir(parents=True, exist_ok=True)
     options = {"smoke_plume.style": plume_style, "nether_fog.style": fog_style,
@@ -75,6 +77,7 @@ def write_configs(masking: bool, override: str, render_distance: float, custom_r
         "fixtureOverride": override,
         "fixtureCustomRect": custom_rect,
         "effectsEnabled": effects,
+        "effectPackCloudSmoothing": cloud_smoothing,
         "effects": {name: False for name in disabled_effects.split(",") if name},
         "effectOptions": options,
     }, indent=2) + "\n")
@@ -297,12 +300,15 @@ def cmd_run(args) -> None:
         raise SystemExit("Fixture is not installed; run create-world and install first")
     write_configs(args.masking, args.override, args.render_distance, args.custom_rect, args.dh_engine,
                   not args.no_effects, args.disable_effects, args.plume_style, args.fog_style,
-                  args.void_style, args.disable_parts)
+                  args.void_style, args.disable_parts, args.cloud_smoothing)
     env = {"WYNNVISTA_FIXTURE_COMMANDS": args.commands, "WYNNVISTA_FIXTURE_SCREENSHOT": args.screenshot,
            "WYNNVISTA_FIXTURE_TIMELINE": args.timeline, "WYNNVISTA_FIXTURE_CAPTURE_PREFIX": args.capture_prefix,
            "WYNNVISTA_FIXTURE_AUTOSTOP_TICKS": str(args.ticks)}
     if args.iris:
-        write_iris(args.shaderpack or "off", Path(args.shaderpack_source) if args.shaderpack_source else None)
+        pack = args.shaderpack or "off"
+        if pack == wynnphoton_pack.ALIAS:
+            pack = wynnphoton_pack.ensure(RUN / "shaderpacks")
+        write_iris(pack, Path(args.shaderpack_source) if args.shaderpack_source else None)
     code = run_client(env, args.timeout, args.iris, args.better_clouds)
     out = Path(args.results) if args.results else RUN / "test-results" / time.strftime("%Y%m%d-%H%M%S")
     out.mkdir(parents=True, exist_ok=True)
@@ -378,6 +384,8 @@ def main() -> None:
                            help="rendering style of the Roots of Corruption lava fog")
             p.add_argument("--void-style", default="BLOCKY", choices=["REALISTIC", "BLOCKY"],
                            help="rendering style of the Sky Islands void")
+            p.add_argument("--cloud-smoothing", default="PHOTON_ONLY", choices=["PHOTON_ONLY", "ALWAYS", "OFF"],
+                           help="the 'Smooth Shader Pack Cloud Edges' setting")
             p.add_argument("--commands")
             p.add_argument("--screenshot")
             p.add_argument("--timeline")
@@ -385,7 +393,8 @@ def main() -> None:
             p.add_argument("--ticks", type=int, default=400)
             p.add_argument("--iris", action="store_true", help="run with WynnIris (shaders stay off unless --shaderpack)")
             p.add_argument("--better-clouds", action="store_true", help="run with the Better Clouds mod")
-            p.add_argument("--shaderpack", help="pack folder/zip name inside <run dir>/shaderpacks, or 'off'")
+            p.add_argument("--shaderpack", help="pack folder/zip name inside <run dir>/shaderpacks, 'off', or 'wynnphoton' "
+                                "(the pinned Wynn-Photon zip, downloaded once)")
             p.add_argument("--shaderpack-source", help="local pack folder or zip copied into shaderpacks once")
             p.add_argument("--results")
     args = parser.parse_args()

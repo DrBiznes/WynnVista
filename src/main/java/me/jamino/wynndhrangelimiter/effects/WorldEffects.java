@@ -72,6 +72,9 @@ public final class WorldEffects {
     private static PackClouds.Kind wantedPackClouds;
     private static int packCloudFramebuffer;
     private static int packCloudTexture;
+    private static int packCloudSpreadFramebuffer;
+    private static int packCloudSpreadTexture;
+    private static final int PACK_CLOUD_MARGIN = 3;
     private static int packCloudWidth;
     private static int packCloudHeight;
     private static EffectFog.PackOptions waterPack;
@@ -322,9 +325,12 @@ public final class WorldEffects {
             bind(13, GL11C.GL_TEXTURE_2D, lod == null ? depth : lodWater ? lod.opaqueTextureId() : lod.textureId());
             if (fog != null) uploadFogTable(fog, env, scene.fogRange());
             GL30C.glBindVertexArray(vertexArray);
-            if (packTextures != null) readPackClouds(packClouds, packTextures, width, height);
-
             EffectProfile.begin();
+            if (packTextures != null) {
+                readPackClouds(packClouds, packTextures, width, height, visible);
+                EffectProfile.mark("pack clouds");
+            }
+
             // The fog already in the image is measured before anything is drawn over it.
             GL11C.glDisable(GL11C.GL_BLEND);
             GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
@@ -700,10 +706,12 @@ public final class WorldEffects {
 
     /**
      * Draws the pack's cloud buffers into a view-sized texture of distance and opacity ({@code pack_clouds.fsh})
-     * and binds it where a cloud layer's colour would be. If its shader is unusable the pack's clouds are
-     * given up on and nothing is bound.
+     * and binds it where a cloud layer's colour would be. Only the part of the view the effects in {@code visible}
+     * can cover is drawn; the rest of the texture is left as it was and is never read. If its shader is unusable
+     * the pack's clouds are given up on and nothing is bound.
      */
-    private static void readPackClouds(PackClouds clouds, int[] textures, int width, int height) {
+    private static void readPackClouds(PackClouds clouds, int[] textures, int width, int height,
+                                       List<Visible> visible) {
         if (packCloudProgram == null) {
             try {
                 packCloudProgram = EffectProgram.link("pack_clouds.fsh");
@@ -717,36 +725,75 @@ public final class WorldEffects {
             if (packCloudFramebuffer == 0) {
                 packCloudFramebuffer = GL30C.glGenFramebuffers();
                 packCloudTexture = GL11C.glGenTextures();
+                packCloudSpreadFramebuffer = GL30C.glGenFramebuffers();
+                packCloudSpreadTexture = GL11C.glGenTextures();
             }
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE9);
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, packCloudTexture);
-            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
-            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, width, height, 0, GL11C.GL_RGBA,
-                    GL11C.GL_FLOAT, (ByteBuffer) null);
-            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudFramebuffer);
-            GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
-                    packCloudTexture, 0);
-            if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
-                throw new IllegalStateException("Pack cloud buffer is incomplete");
-            }
+            allocatePackClouds(packCloudFramebuffer, packCloudTexture, width, height);
+            allocatePackClouds(packCloudSpreadFramebuffer, packCloudSpreadTexture, width, height);
             packCloudWidth = width;
             packCloudHeight = height;
         }
-        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudFramebuffer);
+        bind(9, GL11C.GL_TEXTURE_2D, packCloudTexture);
+        // The pixels the effects are drawn on, with the few around them that the half-resolution path reads.
+        // A reflection is drawn without clouds in front of it.
+        int x0 = width, y0 = height, x1 = 0, y1 = 0;
+        for (Visible entry : visible) {
+            EffectCulling.ScreenRect rect = entry.rect();
+            if (rect == null) continue;
+            x0 = Math.min(x0, (int) Math.floor(rect.minX() * width) - PACK_CLOUD_MARGIN);
+            y0 = Math.min(y0, (int) Math.floor(rect.minY() * height) - PACK_CLOUD_MARGIN);
+            x1 = Math.max(x1, (int) Math.ceil(rect.maxX() * width) + PACK_CLOUD_MARGIN);
+            y1 = Math.max(y1, (int) Math.ceil(rect.maxY() * height) + PACK_CLOUD_MARGIN);
+        }
+        x0 = Math.max(x0, 0);
+        y0 = Math.max(y0, 0);
+        x1 = Math.min(x1, width);
+        y1 = Math.min(y1, height);
+        if (x1 <= x0 || y1 <= y0) return;
         GL11C.glViewport(0, 0, width, height);
         GL11C.glDisable(GL11C.GL_BLEND);
-        GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
+        GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
         bind(3, GL11C.GL_TEXTURE_2D, textures[0]);
         bind(4, GL11C.GL_TEXTURE_2D, textures[1] > 0 ? textures[1] : textures[0]);
+        bind(5, GL11C.GL_TEXTURE_2D, packCloudSpreadTexture);
         packCloudProgram.use();
         packCloudProgram.set("uPackFirst", 3);
         packCloudProgram.set("uPackSecond", 4);
+        packCloudProgram.set("uPackSpread", 5);
         packCloudProgram.set("uKind", clouds.kind().ordinal());
         packCloudProgram.set("uPackScale", clouds.uvScale(), clouds.distanceScale());
         packCloudProgram.set("uViewSize", (float) width, (float) height);
+        boolean smooth = ModConfig.effectPackCloudSmoothing().applies(clouds.kind());
+        if (smooth) {
+            // The first of two stages: the distances around each pixel summed along x, then below along y,
+            // which reads this stage's rows up to the kernel's reach above and below.
+            int reach = PackClouds.spreadReach(height);
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudSpreadFramebuffer);
+            int low = Math.max(y0 - reach, 0);
+            GL11C.glScissor(x0, low, x1 - x0, Math.min(y1 + reach, height) - low);
+            packCloudProgram.set("uStage", 1);
+            GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+        }
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudFramebuffer);
+        GL11C.glScissor(x0, y0, x1 - x0, y1 - y0);
+        packCloudProgram.set("uStage", smooth ? 0 : 2);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+        GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
         GL11C.glEnable(GL11C.GL_BLEND);
-        bind(9, GL11C.GL_TEXTURE_2D, packCloudTexture);
+    }
+
+    private static void allocatePackClouds(int framebuffer, int texture, int width, int height) {
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE9);
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
+        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+        GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, width, height, 0, GL11C.GL_RGBA,
+                GL11C.GL_FLOAT, (ByteBuffer) null);
+        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
+        GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                texture, 0);
+        if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+            throw new IllegalStateException("Pack cloud buffer is incomplete");
+        }
     }
 
     private static void createLowResolution(int lowWidth, int lowHeight) {

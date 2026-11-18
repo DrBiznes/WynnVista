@@ -60,6 +60,8 @@ python scripts/lod_fixture.py --backend dh check
 
 `--backend voxy` works the same with a Voxy storage as `--source`. `--iris` adds WynnIris (`-Piris=true` to Gradle); `--shaderpack off` loads Iris with shaders disabled. With Iris debug options on (the script enables them) Iris writes the transformed shaders to `<run dir>/patched_shaders/`, which is where the DH anchors were read.
 
+`--shaderpack wynnphoton` uses the Wynn-Photon pack (Photon v1.4 with Wynn-Photon's patches): `scripts/wynnphoton_pack.py` downloads the zip pinned by `wynnphoton_version` and `wynnphoton_sha256` in `gradle.properties` from Wynn-Photon's GitHub release into `<run dir>/shaderpacks/` once and checks its hash. The Wynn-Photon mod is not needed, since the zip is already patched.
+
 ## Not verified / open
 
 - **Shadows.** Complementary's DH support has no `dh_shadow` program, so DH is cancelled for the shadow pass and nothing from DH casts shadows; and in this pack Voxy produced only one viewport (no shadow viewport), so shadow-pass masking is **not** exercised. Both paths are implemented the same way (DH shadow programs are built by the same patched `patchDHTerrain`; Voxy uploads per viewport) but are unproven. A pack with DH/Voxy shadows is needed; none is installed locally (the other pack entries in the profile are download links only).
