@@ -131,6 +131,7 @@ public final class WorldEffects {
     public static void beginFrame() {
         LodDepth.beginFrame();
         CloudLayer.beginFrame();
+        SceneDepth.beginFrame();
     }
 
     /**
@@ -204,8 +205,8 @@ public final class WorldEffects {
         try {
             if (!created) create();
             draw(visible, frame, viewProjection, projection.m11(), cloudHeight,
-                    client.gameRenderer.getViewDistanceBlocks(), fogColor, main, color.getGlId(), depth.getGlId(),
-                    water);
+                    client.gameRenderer.getViewDistanceBlocks(), fogColor, main, color.getGlId(),
+                    SceneDepth.texture(depth.getGlId()), water);
         } catch (RuntimeException e) {
             failed = true;
             LOGGER.error("World effects disabled after a rendering error", e);

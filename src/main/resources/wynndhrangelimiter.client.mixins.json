@@ -8,6 +8,7 @@
     "MixinIntegratedServerLoader",
     "InvokerCreateWorldScreen",
     "MixinGameRendererEffects",
+    "MixinWorldRendererGizmoDepth",
     "MixinDhRenderBufferHandler",
     "MixinDhBlazeShaderLoader",
     "MixinDhBlazeTerrainRenderer",
