@@ -9,6 +9,7 @@ import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.text.Text;
 import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.WorldChunk;
@@ -37,19 +38,25 @@ import java.util.zip.GZIPOutputStream;
  * anywhere. See docs/TERRAIN_MASKS.md for how to build a jar with it and what to do with the file.
  *
  * <p>File (gzip, big-endian): the magic line, then ints minX, minY, minZ, sizeX, sizeY, sizeZ, one byte per
- * chunk (1 = recorded, x then z), a bit per block for visible blocks and a bit per block for fluids. Bit
- * index is {@code (y * sizeZ + z) * sizeX + x} from the minimum corner, lowest bit of each byte first.
+ * chunk (1 = recorded, x then z), a bit per block for visible blocks, a bit per block for fluids and a bit
+ * per block for leaves. Bit index is {@code (y * sizeZ + z) * sizeX + x} from the minimum corner, lowest bit of each byte first.
  */
 public final class MaskDump {
     private static final Logger LOGGER = LoggerFactory.getLogger("wynnvista-maskdump");
-    private static final String MAGIC = "WVMASK1\n";
+    private static final String MAGIC = "WVMASK2\n";
 
     /** Name of the area; the file and its preview are named after it. */
-    private static final String NAME = "sky_islands";
+    private static final String NAME = "mistwoods";
 
-    /** Chunk-aligned box around the Sky Islands (776..1468, -4928..-4427) with a margin of some 70 blocks. */
-    private static final int MIN_CHUNK_X = 44, MAX_CHUNK_X = 95;
-    private static final int MIN_CHUNK_Z = -313, MAX_CHUNK_Z = -274;
+    /**
+     * Chunk-aligned box around the Mistwoods (-1644..-988, -967..-425, the extent of the region WynnIris'
+     * world ambience pack draws for them) with a margin of some 70 blocks to the west, north and east:
+     * x -1728..-913, z -1040..-465. The south stops at z -465, short of that region's edge: the wall to the
+     * wastelands cannot be passed, so the chunks beyond it cannot be loaded and recorded.
+     * The Sky Islands were 44..95, -313..-274.
+     */
+    private static final int MIN_CHUNK_X = -108, MAX_CHUNK_X = -58;
+    private static final int MIN_CHUNK_Z = -65, MAX_CHUNK_Z = -30;
     private static final int CHUNKS_X = MAX_CHUNK_X - MIN_CHUNK_X + 1;
     private static final int CHUNKS_Z = MAX_CHUNK_Z - MIN_CHUNK_Z + 1;
     private static final int MIN_X = MIN_CHUNK_X * 16, MIN_Z = MIN_CHUNK_Z * 16;
@@ -69,6 +76,7 @@ public final class MaskDump {
     private static byte[] recorded;
     private static byte[] solid;
     private static byte[] fluid;
+    private static byte[] leaves;
     private static int recordedCount;
     private static boolean dirty;
     private static int ticks;
@@ -157,6 +165,7 @@ public final class MaskDump {
         recorded = new byte[CHUNKS_X * CHUNKS_Z];
         solid = new byte[(int) ((bits + 7) / 8)];
         fluid = new byte[solid.length];
+        leaves = new byte[solid.length];
         recordedCount = 0;
         Path file = file(client);
         if (ignoreFile || !Files.isRegularFile(file)) return true;
@@ -176,6 +185,7 @@ public final class MaskDump {
             in.readFully(recorded);
             in.readFully(solid);
             in.readFully(fluid);
+            in.readFully(leaves);
             for (byte flag : recorded) recordedCount += flag;
             LOGGER.info("Resumed mask dump: {} of {} chunks", recordedCount, recorded.length);
         } catch (IOException e) {
@@ -183,6 +193,7 @@ public final class MaskDump {
             recorded = new byte[CHUNKS_X * CHUNKS_Z];
             solid = new byte[solid.length];
             fluid = new byte[solid.length];
+            leaves = new byte[solid.length];
             recordedCount = 0;
         }
         return true;
@@ -208,6 +219,10 @@ public final class MaskDump {
                         }
                         if (!state.getFluidState().isEmpty()) {
                             fluid[(int) (bit >>> 3)] |= (byte) (1 << (bit & 7));
+                        }
+                        // A canopy is leaves; what is left of a tree is its trunk and boughs.
+                        if (state.isIn(BlockTags.LEAVES)) {
+                            leaves[(int) (bit >>> 3)] |= (byte) (1 << (bit & 7));
                         }
                     }
                 }
@@ -259,6 +274,7 @@ public final class MaskDump {
         byte[] flags = recorded.clone();
         byte[] blocks = solid.clone();
         byte[] fluids = fluid.clone();
+        byte[] canopy = leaves.clone();
         int bottom = minY, height = sizeY, count = recordedCount;
         dirty = false;
         WRITER.execute(() -> {
@@ -273,6 +289,7 @@ public final class MaskDump {
                     out.write(flags);
                     out.write(blocks);
                     out.write(fluids);
+                    out.write(canopy);
                 }
                 Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
                 ImageIO.write(preview(flags, blocks, height), "png",

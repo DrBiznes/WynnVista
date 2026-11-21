@@ -35,6 +35,7 @@ class EffectAreasTest {
     void areasHoldTheEffectsOfTheirPartOfTheMap() {
         assertEquals(List.of(SmokePlume.ID, NetherFog.ID), ids(EffectAreas.WYNN_PLAINS));
         assertEquals(List.of(SkyIslandsVoid.ID, SkyIslandsAir.ID), ids(EffectAreas.SKY_ISLANDS));
+        assertEquals(List.of(MistwoodsMist.ID), ids(EffectAreas.FRUMA));
     }
 
     @Test

@@ -199,7 +199,11 @@ public final class WorldEffects {
         boolean packLighting = ModConfig.effectPackLighting() && IrisSupport.shaderPackInUse();
         EffectFrame frame = new EffectFrame(cameraPos.x, cameraPos.y, cameraPos.z, client.world.getTime(),
                 client.world.getTimeOfDay(), tickProgress, client.world.getRainGradient(tickProgress),
-                packLighting, packLighting ? IrisSupport.sunPathRotation() : 0);
+                packLighting, packLighting ? IrisSupport.sunPathRotation() : 0,
+                client.world.getEnvironmentAttributes()
+                        .getAttributeValue(EnvironmentAttributes.FOG_START_DISTANCE_VISUAL, cameraPos),
+                client.world.getEnvironmentAttributes()
+                        .getAttributeValue(EnvironmentAttributes.FOG_END_DISTANCE_VISUAL, cameraPos));
         float cloudHeight = client.world.getEnvironmentAttributes()
                 .getAttributeValue(EnvironmentAttributes.CLOUD_HEIGHT_VISUAL, cameraPos) - (float) cameraPos.y;
         try {

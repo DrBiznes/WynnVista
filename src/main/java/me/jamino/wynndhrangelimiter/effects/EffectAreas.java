@@ -18,7 +18,11 @@ public final class EffectAreas {
             "Effects of the Sky Islands: the void under them and what rises through their air",
             List.of(new SkyIslandsVoid(), new SkyIslandsAir()));
 
-    private static final List<EffectArea> AREAS = List.of(WYNN_PLAINS, SKY_ISLANDS);
+    public static final EffectArea FRUMA = new EffectArea("fruma", "Fruma",
+            "Effects of Fruma: the mist of the Mistwoods",
+            List.of(new MistwoodsMist()));
+
+    private static final List<EffectArea> AREAS = List.of(WYNN_PLAINS, SKY_ISLANDS, FRUMA);
 
     private EffectAreas() {}
 
