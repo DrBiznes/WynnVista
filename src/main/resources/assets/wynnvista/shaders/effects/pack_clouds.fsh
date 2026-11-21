@@ -30,17 +30,23 @@ void main() {
         ivec2 size = textureSize(uPackSecond, 0);
         ivec2 centre = ivec2(uv * vec2(size));
         float weight = 0.0;
-        for (int x = -1; x <= 1; x++) {
-            for (int y = -1; y <= 1; y++) {
-                ivec2 texel = clamp(centre + ivec2(x, y) * 3, ivec2(0), size - 1);
-                vec4 cell = texelFetch(uPackSecond, texel, 0);
-                float stored = uEffectDistance == 1 ? cell.a : cell.x;
-                // A buffer the pack never drew clouds into holds zeroes, and a million blocks is "no cloud".
-                if (stored <= 0.0 || stored > 1.0e5) continue;
-                float share = 1.01 - clamp(texelFetch(uPackFirst, texel, 0).a, 0.0, 1.0);
-                if (x == 0 && y == 0) share *= 2.0;
-                reach += share * stored;
-                weight += share;
+        // A cloud's edge that has just come onto a pixel, and cloud right beside terrain, can be in the pack's
+        // image before any texel around holds a distance for it. Dropping the cloud there let the effect show
+        // through opaque cloud in specks, so the distance is then taken from further out instead.
+        for (int ring = 0; ring < 3 && weight <= 0.0; ring++) {
+            int apart = ring == 0 ? 3 : ring == 1 ? 9 : 18;
+            for (int x = -1; x <= 1; x++) {
+                for (int y = -1; y <= 1; y++) {
+                    ivec2 texel = clamp(centre + ivec2(x, y) * apart, ivec2(0), size - 1);
+                    vec4 cell = texelFetch(uPackSecond, texel, 0);
+                    float stored = uEffectDistance == 1 ? cell.a : cell.x;
+                    // A buffer the pack never drew clouds into holds zeroes, and a million blocks is "no cloud".
+                    if (stored <= 0.0 || stored > 1.0e5) continue;
+                    float share = 1.01 - clamp(texelFetch(uPackFirst, texel, 0).a, 0.0, 1.0);
+                    if (x == 0 && y == 0) share *= 2.0;
+                    reach += share * stored;
+                    weight += share;
+                }
             }
         }
         if (weight > 0.0) reach /= weight;
