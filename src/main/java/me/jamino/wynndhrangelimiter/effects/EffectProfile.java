@@ -12,6 +12,8 @@ import java.util.Map;
  * {@code -Dwynnvista.effects.profile=true} logs the GPU time of the effect pass and of each part of it: the fog
  * probes, and each effect's bake, reflection and shading. A timestamp is written after each part; the frame's
  * timestamps are read back at the start of the next frame, which waits for them, as is fine for a diagnostic run.
+ * It also logs the time from the start of the world's own rendering to the effect pass: the game, the LODs and
+ * all of a shader pack's passes but its last, which is what to compare two versions of a pack by.
  * Render thread only.
  */
 final class EffectProfile {
@@ -27,6 +29,11 @@ final class EffectProfile {
     private static int pending;
     private static int frames;
     private static long totalNanos;
+    private static int worldQuery;
+    /** When the world's rendering started: in the frame being drawn, and in the one waiting to be read back. */
+    private static long worldStart;
+    private static long pendingWorldStart;
+    private static long worldNanos;
     /** Per part: GPU nanoseconds and the frames it was drawn in, over the frames so far. */
     private static final Map<String, long[]> PARTS = new LinkedHashMap<>();
     /** Per part: what it drew in the last frame it was drawn in. */
@@ -39,6 +46,13 @@ final class EffectProfile {
         return ENABLED && frames == 0;
     }
 
+    /** Where the world's own rendering starts, before the game draws anything of it. */
+    static void world() {
+        if (!ENABLED) return;
+        if (worldQuery == 0) worldQuery = GL15C.glGenQueries();
+        GL33C.glQueryCounter(worldQuery, GL33C.GL_TIMESTAMP);
+    }
+
     /** Reads back the last frame and starts this one. */
     static void begin() {
         if (!ENABLED) return;
@@ -47,6 +61,7 @@ final class EffectProfile {
             GL15C.glGenQueries(queries);
         }
         if (pending > 1) collect();
+        if (worldQuery != 0) worldStart = GL33C.glGetQueryObjecti64(worldQuery, GL15C.GL_QUERY_RESULT);
         pending = 0;
         marks = 0;
         mark(null);
@@ -62,6 +77,7 @@ final class EffectProfile {
     static void end() {
         if (!ENABLED) return;
         pending = marks;
+        pendingWorldStart = worldStart;
     }
 
     static void detail(String label, String detail) {
@@ -79,9 +95,11 @@ final class EffectProfile {
             previous = now;
         }
         totalNanos += previous - start;
+        if (pendingWorldStart != 0) worldNanos += start - pendingWorldStart;
         if (++frames < FRAMES) return;
         StringBuilder log = new StringBuilder(String.format("World effects GPU time: %.3f ms/frame over %d frames",
                 totalNanos / 1.0e6 / FRAMES, FRAMES));
+        log.append(String.format("%n  before the effects (game, LODs, shader pack): %.3f ms", worldNanos / 1.0e6 / FRAMES));
         for (Map.Entry<String, long[]> part : PARTS.entrySet()) {
             long[] time = part.getValue();
             // Per frame it was drawn in, so a part that was in view only some of the time is not understated.
@@ -92,6 +110,7 @@ final class EffectProfile {
         LOGGER.info(log.toString());
         frames = 0;
         totalNanos = 0;
+        worldNanos = 0;
         PARTS.clear();
         DETAILS.clear();
     }

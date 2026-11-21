@@ -32,6 +32,15 @@ loom {
             if (System.getenv("WYNNVISTA_FIXTURE_CAPTURE_PREFIX")) {
                 property("wynnvista.fixture.capturePrefix", System.getenv("WYNNVISTA_FIXTURE_CAPTURE_PREFIX"))
             }
+            if (System.getenv("WYNNVISTA_FIXTURE_BURST")) {
+                property("wynnvista.fixture.burst", System.getenv("WYNNVISTA_FIXTURE_BURST"))
+            }
+            if (System.getenv("WYNNVISTA_FIXTURE_DUMP_CLOUDS")) {
+                property("wynnvista.fixture.dumpClouds", System.getenv("WYNNVISTA_FIXTURE_DUMP_CLOUDS"))
+            }
+            if (System.getenv("WYNNVISTA_FIXTURE_FLY")) {
+                property("wynnvista.fixture.fly", System.getenv("WYNNVISTA_FIXTURE_FLY"))
+            }
         }
     }
 }

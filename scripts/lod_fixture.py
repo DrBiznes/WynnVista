@@ -62,7 +62,8 @@ def write_state(update: dict) -> None:
 def write_configs(masking: bool, override: str, render_distance: float, custom_rect: str = "",
                   dh_engine: str = None, effects: bool = True, disabled_effects: str = "",
                   plume_style: str = "REALISTIC", fog_style: str = "REALISTIC",
-                  void_style: str = "BLOCKY", disabled_parts: str = "", cloud_smoothing: str = "PHOTON_ONLY") -> None:
+                  void_style: str = "BLOCKY", disabled_parts: str = "",
+                  window: tuple = (1280, 720)) -> None:
     config = RUN / "config"
     config.mkdir(parents=True, exist_ok=True)
     options = {"smoke_plume.style": plume_style, "nether_fog.style": fog_style,
@@ -77,7 +78,6 @@ def write_configs(masking: bool, override: str, render_distance: float, custom_r
         "fixtureOverride": override,
         "fixtureCustomRect": custom_rect,
         "effectsEnabled": effects,
-        "effectPackCloudSmoothing": cloud_smoothing,
         "effects": {name: False for name in disabled_effects.split(",") if name},
         "effectOptions": options,
     }, indent=2) + "\n")
@@ -98,7 +98,8 @@ def write_configs(masking: bool, override: str, render_distance: float, custom_r
     options = RUN / "options.txt"
     wanted = {"onboardAccessibility": "false", "pauseOnLostFocus": "false", "tutorialStep": "none",
               "joinedFirstServer": "true", "skipMultiplayerWarning": "true", "renderDistance": "6",
-              "narrator": "0", "soundCategory_master": "0.0"}
+              "narrator": "0", "soundCategory_master": "0.0",
+              "overrideWidth": str(window[0]), "overrideHeight": str(window[1])}
     lines = [l for l in (options.read_text().splitlines() if options.exists() else [])
              if l.split(":", 1)[0] not in wanted]
     options.write_text("\n".join(lines + [f"{k}:{v}" for k, v in wanted.items()]) + "\n")
@@ -300,9 +301,12 @@ def cmd_run(args) -> None:
         raise SystemExit("Fixture is not installed; run create-world and install first")
     write_configs(args.masking, args.override, args.render_distance, args.custom_rect, args.dh_engine,
                   not args.no_effects, args.disable_effects, args.plume_style, args.fog_style,
-                  args.void_style, args.disable_parts, args.cloud_smoothing)
+                  args.void_style, args.disable_parts,
+                  tuple(int(v) for v in args.window.lower().split("x")) if args.window else (1280, 720))
     env = {"WYNNVISTA_FIXTURE_COMMANDS": args.commands, "WYNNVISTA_FIXTURE_SCREENSHOT": args.screenshot,
            "WYNNVISTA_FIXTURE_TIMELINE": args.timeline, "WYNNVISTA_FIXTURE_CAPTURE_PREFIX": args.capture_prefix,
+           "WYNNVISTA_FIXTURE_BURST": args.burst, "WYNNVISTA_FIXTURE_FLY": args.fly,
+           "WYNNVISTA_FIXTURE_DUMP_CLOUDS": args.dump_clouds,
            "WYNNVISTA_FIXTURE_AUTOSTOP_TICKS": str(args.ticks)}
     if args.iris:
         pack = args.shaderpack or "off"
@@ -384,12 +388,20 @@ def main() -> None:
                            help="rendering style of the Roots of Corruption lava fog")
             p.add_argument("--void-style", default="BLOCKY", choices=["REALISTIC", "BLOCKY"],
                            help="rendering style of the Sky Islands void")
-            p.add_argument("--cloud-smoothing", default="PHOTON_ONLY", choices=["PHOTON_ONLY", "ALWAYS", "OFF"],
-                           help="the 'Smooth Shader Pack Cloud Edges' setting")
             p.add_argument("--commands")
             p.add_argument("--screenshot")
             p.add_argument("--timeline")
             p.add_argument("--capture-prefix")
+            p.add_argument("--burst", help="'TICK:FRAMES;...': from each world tick, save that many consecutive "
+                                           "rendered frames as <capture-prefix>-b<tick>-f<nn>.png "
+                                           "(scripts/frame_flicker.py reads them)")
+            p.add_argument("--dump-clouds", metavar="X0,Y0,X1,Y1",
+                           help="with each --burst frame, save that part of the shader pack's cloud layer as the effects read "
+                                "it and the pack's own cloud buffers (<name>.clouds, .pack0, .pack1, see "
+                                "debug/FixtureBurst)")
+            p.add_argument("--fly", help="'FROM-TO:VX,VY,VZ[,YAW,PITCH];...': between those world ticks, move the "
+                                         "player by that many blocks a tick and turn it by that many degrees a tick")
+            p.add_argument("--window", help="WIDTHxHEIGHT of the game window (1280x720 when left out)")
             p.add_argument("--ticks", type=int, default=400)
             p.add_argument("--iris", action="store_true", help="run with WynnIris (shaders stay off unless --shaderpack)")
             p.add_argument("--better-clouds", action="store_true", help="run with the Better Clouds mod")

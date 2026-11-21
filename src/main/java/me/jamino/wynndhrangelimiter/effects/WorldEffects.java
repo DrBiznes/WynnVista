@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter.effects;
 
+import me.jamino.wynndhrangelimiter.debug.FixtureBurst;
 import me.jamino.wynndhrangelimiter.ModConfig;
 import me.jamino.wynndhrangelimiter.WynnVistaMod;
 import me.jamino.wynndhrangelimiter.compat.iris.IrisSupport;
@@ -72,8 +73,6 @@ public final class WorldEffects {
     private static PackClouds.Kind wantedPackClouds;
     private static int packCloudFramebuffer;
     private static int packCloudTexture;
-    private static int packCloudSpreadFramebuffer;
-    private static int packCloudSpreadTexture;
     private static final int PACK_CLOUD_MARGIN = 3;
     private static int packCloudWidth;
     private static int packCloudHeight;
@@ -129,6 +128,7 @@ public final class WorldEffects {
 
     /** Called before the world is rendered, so LOD backends start the frame with no stale depth. */
     public static void beginFrame() {
+        EffectProfile.world();
         LodDepth.beginFrame();
         CloudLayer.beginFrame();
         SceneDepth.beginFrame();
@@ -726,11 +726,18 @@ public final class WorldEffects {
             if (packCloudFramebuffer == 0) {
                 packCloudFramebuffer = GL30C.glGenFramebuffers();
                 packCloudTexture = GL11C.glGenTextures();
-                packCloudSpreadFramebuffer = GL30C.glGenFramebuffers();
-                packCloudSpreadTexture = GL11C.glGenTextures();
             }
-            allocatePackClouds(packCloudFramebuffer, packCloudTexture, width, height);
-            allocatePackClouds(packCloudSpreadFramebuffer, packCloudSpreadTexture, width, height);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE9);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, packCloudTexture);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
+            GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, width, height, 0, GL11C.GL_RGBA,
+                    GL11C.GL_FLOAT, (ByteBuffer) null);
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudFramebuffer);
+            GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                    packCloudTexture, 0);
+            if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+                throw new IllegalStateException("Pack cloud buffer is incomplete");
+            }
             packCloudWidth = width;
             packCloudHeight = height;
         }
@@ -756,45 +763,63 @@ public final class WorldEffects {
         GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
         bind(3, GL11C.GL_TEXTURE_2D, textures[0]);
         bind(4, GL11C.GL_TEXTURE_2D, textures[1] > 0 ? textures[1] : textures[0]);
-        bind(5, GL11C.GL_TEXTURE_2D, packCloudSpreadTexture);
+        // Wynn-Photon gives Photon's second buffer an alpha channel and keeps a distance for effects in it.
+        boolean effectDistance = clouds.kind() == PackClouds.Kind.PHOTON && textures[1] > 0
+                && GL11C.glGetTexLevelParameteri(GL11C.GL_TEXTURE_2D, 0, GL11C.GL_TEXTURE_ALPHA_SIZE) > 0;
         packCloudProgram.use();
         packCloudProgram.set("uPackFirst", 3);
         packCloudProgram.set("uPackSecond", 4);
-        packCloudProgram.set("uPackSpread", 5);
         packCloudProgram.set("uKind", clouds.kind().ordinal());
+        packCloudProgram.set("uEffectDistance", effectDistance ? 1 : 0);
         packCloudProgram.set("uPackScale", clouds.uvScale(), clouds.distanceScale());
         packCloudProgram.set("uViewSize", (float) width, (float) height);
-        boolean smooth = ModConfig.effectPackCloudSmoothing().applies(clouds.kind());
-        if (smooth) {
-            // The first of two stages: the distances around each pixel summed along x, then below along y,
-            // which reads this stage's rows up to the kernel's reach above and below.
-            int reach = PackClouds.spreadReach(height);
-            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudSpreadFramebuffer);
-            int low = Math.max(y0 - reach, 0);
-            GL11C.glScissor(x0, low, x1 - x0, Math.min(y1 + reach, height) - low);
-            packCloudProgram.set("uStage", 1);
-            GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
-        }
         GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, packCloudFramebuffer);
         GL11C.glScissor(x0, y0, x1 - x0, y1 - y0);
-        packCloudProgram.set("uStage", smooth ? 0 : 2);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+        if (FixtureBurst.wantsClouds()) {
+            // For the fixture: the layer as it was just drawn, and the pack's own buffers it was drawn from.
+            int[] box = FixtureBurst.cloudBox(width, height);
+            int bx = Math.max(x0, box[0]), by = Math.max(y0, box[1]);
+            int bw = Math.min(x1, box[2]) - bx, bh = Math.min(y1, box[3]) - by;
+            if (bw > 0 && bh > 0) {
+                dumpPixels("clouds", packCloudFramebuffer, 0, bx, by, bw, bh);
+                for (int i = 0; i < 2; i++) {
+                    if (textures[i] > 0) dumpPixels("pack" + i, packCloudFramebuffer, textures[i], bx, by, bw, bh);
+                }
+            }
+            GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                    packCloudTexture, 0);
+        }
         GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
         GL11C.glEnable(GL11C.GL_BLEND);
     }
 
-    private static void allocatePackClouds(int framebuffer, int texture, int width, int height) {
-        GL13C.glActiveTexture(GL13C.GL_TEXTURE9);
-        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL12C.GL_TEXTURE_MAX_LEVEL, 0);
-        GL11C.glTexImage2D(GL11C.GL_TEXTURE_2D, 0, GL30C.GL_RGBA32F, width, height, 0, GL11C.GL_RGBA,
-                GL11C.GL_FLOAT, (ByteBuffer) null);
+    /**
+     * Fixture runs only: hands a rectangle of {@code framebuffer}'s colour to {@link FixtureBurst#savePixels},
+     * after attaching {@code texture} to it when that is not 0. The caller puts the attachment back.
+     */
+    private static void dumpPixels(String kind, int framebuffer, int texture, int x, int y, int width, int height) {
         GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
-        GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
-                texture, 0);
-        if (GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER) != GL30C.GL_FRAMEBUFFER_COMPLETE) {
-            throw new IllegalStateException("Pack cloud buffer is incomplete");
+        if (texture != 0) {
+            GL30C.glFramebufferTexture2D(GL30C.GL_FRAMEBUFFER, GL30C.GL_COLOR_ATTACHMENT0, GL11C.GL_TEXTURE_2D,
+                    texture, 0);
         }
+        java.nio.FloatBuffer pixels = org.lwjgl.BufferUtils.createFloatBuffer(width * height * 4);
+        int packBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
+        GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, 0);
+        // The game leaves a row length set for reading pixels.
+        int rowLength = GL11C.glGetInteger(GL11C.GL_PACK_ROW_LENGTH);
+        int skipRows = GL11C.glGetInteger(GL11C.GL_PACK_SKIP_ROWS);
+        int skipPixels = GL11C.glGetInteger(GL11C.GL_PACK_SKIP_PIXELS);
+        GL11C.glPixelStorei(GL11C.GL_PACK_ROW_LENGTH, 0);
+        GL11C.glPixelStorei(GL11C.GL_PACK_SKIP_ROWS, 0);
+        GL11C.glPixelStorei(GL11C.GL_PACK_SKIP_PIXELS, 0);
+        GL11C.glReadPixels(x, y, width, height, GL11C.GL_RGBA, GL11C.GL_FLOAT, pixels);
+        GL11C.glPixelStorei(GL11C.GL_PACK_ROW_LENGTH, rowLength);
+        GL11C.glPixelStorei(GL11C.GL_PACK_SKIP_ROWS, skipRows);
+        GL11C.glPixelStorei(GL11C.GL_PACK_SKIP_PIXELS, skipPixels);
+        GL21C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, packBuffer);
+        FixtureBurst.savePixels(MinecraftClient.getInstance(), kind, x, y, width, height, pixels);
     }
 
     private static void createLowResolution(int lowWidth, int lowHeight) {

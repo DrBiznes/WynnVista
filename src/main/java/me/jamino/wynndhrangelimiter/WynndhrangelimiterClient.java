@@ -1,5 +1,6 @@
 package me.jamino.wynndhrangelimiter;
 
+import me.jamino.wynndhrangelimiter.debug.FixtureBurst;
 import me.jamino.wynndhrangelimiter.debug.FixtureWorldCreator;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -80,6 +81,7 @@ public class WynndhrangelimiterClient implements ClientModInitializer {
                 || !me.jamino.wynndhrangelimiter.visibility.WorldContextResolver.isFixture(client)) return;
         fixtureWorldTicks++;
         runFixtureTimeline(client);
+        FixtureBurst.tick(client, fixtureWorldTicks);
         String commands = System.getProperty("wynnvista.fixture.commands");
         if (fixtureWorldTicks == 40 && !fixtureCommandsSent && commands != null) {
             fixtureCommandsSent = true;

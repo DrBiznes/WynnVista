@@ -3,6 +3,7 @@ package me.jamino.wynndhrangelimiter.mixin.client;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import me.jamino.wynndhrangelimiter.debug.FixtureBurst;
 import me.jamino.wynndhrangelimiter.effects.WorldEffects;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
@@ -33,5 +34,6 @@ public abstract class MixinGameRendererEffects {
                 basicProjectionMatrix, projectionMatrix, fogBuffer, fogColor, renderSky);
         WorldEffects.render(MinecraftClient.getInstance(), camera, view, projection, fogColor,
                 tickCounter.getTickProgress(false));
+        FixtureBurst.frame(MinecraftClient.getInstance());
     }
 }
