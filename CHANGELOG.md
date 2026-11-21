@@ -3,11 +3,11 @@
 ## 2.2.4
 
 **Fixed**
-- Wynn-Photon: where one of the pack's clouds was in front of a world effect, such as the Mount Wynn smoke plume, the cloud's edge jittered, and beside a mountain a patch of cloud flashed over the effect while you moved. Wynn-Photon 0.10.0 and later keeps the distance to its clouds in a form made for this, and WynnVista now reads it. This needs that version of Wynn-Photon.
-- Photon and Wynn-Photon: small specks of a world effect no longer show through the edge of a cloud in front of it, or through cloud right beside a mountain. The pack can have a cloud on a pixel a few frames before it has a distance for it, and the cloud was left out there.
+- Wynn-Photon: clouds in front of world effects, such as the Mount Wynn smoke plume, no longer jitter or flash over the effect while you move. Needs Wynn-Photon 0.10.0 or later.
+- Photon and Wynn-Photon: specks of a world effect no longer show through the edge of a cloud, or through cloud next to a mountain.
 
 **Removed**
-- "Smooth Shader Pack Cloud Edges" on the World Effects config tab, added in 2.2.3. Its smoothing did not remove the jitter and is gone. Stock Photon's clouds are read as they were before 2.2.3, so the edge of a cloud in front of an effect can shimmer there; Wynn-Photon does not have that. Complementary and BSL are unchanged.
+- The "Smooth Shader Pack Cloud Edges" option from 2.2.3, since it didn't fix the jitter. With stock Photon, cloud edges in front of effects may shimmer slightly; use Wynn-Photon to avoid this.
 
 ## 2.2.3
 
