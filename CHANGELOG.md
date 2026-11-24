@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.5
+
+**Fixed**
+- Wynn-Photon: world effects no longer shimmer along the edges of the blocks in front of them. It showed most on the dark void under the Sky Islands, around the outline of every island, at sunrise and sunset. Needs Wynn-Photon 0.10.2 or later, with its "WynnVista Effect Edges" option on; with stock Photon and other shader packs nothing changes. "Steady Effect Edges" on the World Effects config tab turns it off.
+
 ## 2.2.4
 
 **Fixed**

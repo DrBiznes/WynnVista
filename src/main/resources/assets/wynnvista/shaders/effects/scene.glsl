@@ -29,6 +29,8 @@ uniform sampler2D uLodOpaque;     // and without it; the same texture as uLodSur
 uniform vec2 uMirror;         // x: 1 while an effect's reflection in water is drawn instead of the effect, y: seconds, for the ripples
 uniform vec3 uMirrorCamera;   // the camera's place in the ripple pattern, which repeats
 uniform vec3 uWater;          // how much the pack's water reflects: x: seen from straight above, y: exponent of the rise towards a grazing view, z: strength
+uniform sampler2D uSceneResolved;  // a shader pack's distance to the scene, resolved over frames as its image is (see sceneEdge)
+uniform float uEdges;         // 1 while that is bound and this pass steadies the effect along terrain edges with it
 uniform int uSteps;           // ray-march samples, already reduced for small or distant effects
 uniform int uOctaves;         // noise octaves worth sampling at this distance
 
@@ -65,7 +67,14 @@ vec2 boxSpan(vec3 dir) {
     return vec2(max(max(lo.x, lo.y), max(lo.z, rayStart)), min(min(hi.x, hi.y), hi.z));
 }
 
-float sceneDistance(vec2 uv, vec2 ndc) {
+/**
+ * While not negative, the distance sceneDistance() returns in place of what the depth buffers hold on the
+ * pixel: effect_main.glsl marches an edge pixel once for each of the two surfaces that share it.
+ */
+float sceneOverride = -1.0;
+
+/** Distance along a pixel's ray to the nearest terrain the depth buffers hold on it, INF for sky. */
+float depthDistance(vec2 uv, vec2 ndc) {
     float nearest = INF;
     float depth = texelFetch(uSceneDepth, ivec2(uv * vec2(textureSize(uSceneDepth, 0))), 0).r;
     if (uCloudParams.x > 0.5 && uCloudParams.x < 1.5) {
@@ -85,6 +94,82 @@ float sceneDistance(vec2 uv, vec2 ndc) {
         }
     }
     return nearest;
+}
+
+/** Distance along this pixel's ray at which the terrain ends an effect. */
+float sceneDistance(vec2 uv, vec2 ndc) {
+    return sceneOverride >= 0.0 ? sceneOverride : depthDistance(uv, ndc);
+}
+
+const float EDGE_RANGE = 16.0;      // log2 of the furthest distance a pack's resolved distance holds
+const float EDGE_SAME = 0.004;      // distances within this many doublings of each other are one surface: 0.3%
+const float EDGE_APART = 0.012;     // and only surfaces at least this many apart make an edge worth two marches
+
+/** A distance as the pack stores it: log2(1 + blocks) / EDGE_RANGE, sky 1. */
+float resolvedCode(float blocks) {
+    return log2(1.0 + min(blocks, 65535.0)) / EDGE_RANGE;
+}
+
+/** The distance a pack's stored value stands for, INF for sky. */
+float resolvedBlocks(float code) {
+    return code > 0.99998 ? INF : exp2(code * EDGE_RANGE) - 1.0;
+}
+
+/**
+ * Whether two surfaces share this pixel. If so, their distances and the share of the pixel that the near one
+ * covers; if not, the distance to the one surface in `near`.
+ *
+ * A shader pack with temporal anti-aliasing shifts the scene by part of a pixel each frame and blends the
+ * frames into a still image. The depth buffer is that of one shifted frame, so along the edge of a block a
+ * pixel is the block in one frame and what is behind it in the next, and an effect cut off by the depth is
+ * there and gone by turns over an image that does not move. A pack that also resolves its scene's distance
+ * the way it resolves its colour (uSceneResolved; Wynn-Photon does) tells how much of the pixel each of the
+ * two covers: its value lies between the nearest and the furthest distance among this pixel and the eight
+ * around it, by the share of each. The effect is then marched for both and mixed by that share, the same in
+ * every frame.
+ *
+ * On a pixel that is all one surface the pack's value is that surface's distance without the frame's shift,
+ * and is returned in place of the depth's: where a wall seen at a slant passes through something an effect
+ * draws, the depth of one frame put the wall in front of it and that of the next behind it.
+ *
+ * The pack's value is only used where it lies between the nearest and furthest of the nine, which a buffer
+ * the pack did not write this frame would not; elsewhere the pixel is as the depth has it.
+ */
+bool sceneEdge(vec2 uv, vec2 ndc, out float near, out float far, out float nearShare) {
+    float here = depthDistance(uv, ndc);
+    near = here;
+    far = here;
+    nearShare = 1.0;
+    float resolved = texelFetch(uSceneResolved, ivec2(uv * vec2(textureSize(uSceneResolved, 0))), 0).r;
+    float same = EDGE_SAME / EDGE_RANGE;
+    if (abs(resolved - resolvedCode(here)) < same) {
+        near = resolvedBlocks(resolved);
+        return false;
+    }
+    vec2 pixel = 1.0 / uViewSize;
+    for (int i = 0; i < 9; i++) {
+        if (i == 4) continue;
+        vec2 offset = vec2(float(i % 3) - 1.0, float(i / 3) - 1.0) * pixel;
+        float d = depthDistance(clamp(uv + offset, 0.5 * pixel, 1.0 - 0.5 * pixel), ndc + 2.0 * offset);
+        near = min(near, d);
+        far = max(far, d);
+    }
+    float nearCode = resolvedCode(near);
+    float farCode = resolvedCode(far);
+    if (resolved < nearCode - same || resolved > farCode + same) {
+        near = here;
+        return false;
+    }
+    if (farCode - nearCode < EDGE_APART / EDGE_RANGE) {
+        near = resolvedBlocks(resolved);
+        return false;
+    }
+    float share = clamp((farCode - resolved) / (farCode - nearCode), 0.0, 1.0);
+    // The image on an edge pixel is the pack's blend of the near surface with what it drew behind it, its sky
+    // where an effect is the first thing there. Left in by the near surface's full share, that sky is a light
+    // rim around terrain in front of a dark effect; the square leaves a little over half of it at most.
+    nearShare = share * share;
+    return true;
 }
 
 /**
@@ -147,6 +232,12 @@ float beforeCloud(float t, float cloudAt) {
 
 vec4 gatheredBefore = vec4(0.0);
 float shareBefore = 1.0;
+
+/** Forgets what a march has gathered, before the pixel is marched a second time. */
+void resetMarch() {
+    gatheredBefore = vec4(0.0);
+    shareBefore = 1.0;
+}
 
 /**
  * Keeps `front`, the part of a march that is in front of the clouds, up to date. Called with what the march

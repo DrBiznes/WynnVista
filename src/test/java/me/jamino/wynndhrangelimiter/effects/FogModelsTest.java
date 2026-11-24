@@ -266,6 +266,16 @@ class FogModelsTest {
     }
 
     @Test
+    void onlyPhotonNamesABufferForADistanceResolvedOverFrames() {
+        assertEquals(20, FogModels.forPack(pack("photon", PHOTON, Map.of())).resolvedDistanceBuffer(),
+                "Wynn-Photon's colortex20; stock Photon has no such buffer, which the renderer finds out");
+        assertEquals(-1, FogModels.forPack(pack("x", BSL, Map.of())).resolvedDistanceBuffer());
+        assertEquals(-1, FogModels.forPack(pack("x", COMPLEMENTARY, Map.of())).resolvedDistanceBuffer());
+        assertEquals(-1, new FogModels.UnknownPack().resolvedDistanceBuffer());
+        assertEquals(-1, new FogModels.Voxy(0.001f, 0, 1, 1, 0, 0, 0).resolvedDistanceBuffer());
+    }
+
+    @Test
     void packsSayWhereTheirCloudsAreKeptAndHowDistancesAreStored() {
         FogModel.Env voxy = env(100, 0, NOON, LodDepth.Backend.VOXY, 4096);
         FogModel.Env dh = env(100, 0, NOON, LodDepth.Backend.DISTANT_HORIZONS, 4096);

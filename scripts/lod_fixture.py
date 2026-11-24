@@ -63,7 +63,7 @@ def write_configs(masking: bool, override: str, render_distance: float, custom_r
                   dh_engine: str = None, effects: bool = True, disabled_effects: str = "",
                   plume_style: str = "REALISTIC", fog_style: str = "REALISTIC",
                   void_style: str = "BLOCKY", disabled_parts: str = "",
-                  window: tuple = (1280, 720)) -> None:
+                  window: tuple = (1280, 720), pack_edges: bool = True) -> None:
     config = RUN / "config"
     config.mkdir(parents=True, exist_ok=True)
     options = {"smoke_plume.style": plume_style, "nether_fog.style": fog_style,
@@ -78,6 +78,7 @@ def write_configs(masking: bool, override: str, render_distance: float, custom_r
         "fixtureOverride": override,
         "fixtureCustomRect": custom_rect,
         "effectsEnabled": effects,
+        "effectPackEdges": pack_edges,
         "effects": {name: False for name in disabled_effects.split(",") if name},
         "effectOptions": options,
     }, indent=2) + "\n")
@@ -302,7 +303,8 @@ def cmd_run(args) -> None:
     write_configs(args.masking, args.override, args.render_distance, args.custom_rect, args.dh_engine,
                   not args.no_effects, args.disable_effects, args.plume_style, args.fog_style,
                   args.void_style, args.disable_parts,
-                  tuple(int(v) for v in args.window.lower().split("x")) if args.window else (1280, 720))
+                  tuple(int(v) for v in args.window.lower().split("x")) if args.window else (1280, 720),
+                  not args.no_effect_edges)
     env = {"WYNNVISTA_FIXTURE_COMMANDS": args.commands, "WYNNVISTA_FIXTURE_SCREENSHOT": args.screenshot,
            "WYNNVISTA_FIXTURE_TIMELINE": args.timeline, "WYNNVISTA_FIXTURE_CAPTURE_PREFIX": args.capture_prefix,
            "WYNNVISTA_FIXTURE_BURST": args.burst, "WYNNVISTA_FIXTURE_FLY": args.fly,
@@ -378,6 +380,8 @@ def main() -> None:
             p.add_argument("--custom-rect", default="",
                            help='inclusive block corners "x1,z1,x2,z2" used by --override FIXTURE_CUSTOM')
             p.add_argument("--no-effects", action="store_true", help="turn the world-effects master switch off")
+            p.add_argument("--no-effect-edges", action="store_true",
+                           help="switch off 'Steady Effect Edges' (effectPackEdges), to compare against")
             p.add_argument("--disable-effects", default="", help="comma-separated effect ids to switch off")
             p.add_argument("--disable-parts", default="",
                            help="comma-separated effect parts to switch off, as <effect id>.<option id>: "

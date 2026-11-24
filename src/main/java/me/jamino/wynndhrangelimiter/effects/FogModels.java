@@ -170,6 +170,15 @@ public final class FogModels {
             return new PackClouds(PackClouds.Kind.PHOTON, renderScale, 1);
         }
 
+        /**
+         * Wynn-Photon, which is recognised as Photon, keeps the distance to its scene resolved over frames in
+         * {@code colortex20} ({@code program/wynn_scene_distance.fsh} there). Photon itself has no such buffer.
+         */
+        @Override
+        public int resolvedDistanceBuffer() {
+            return 20;
+        }
+
         /** How strongly a haze of the pack's colour setting dims what is behind it, as one number. */
         private static float brightness(EffectFog.PackOptions pack, String suffix, float r, float g, float b) {
             return (float) (0.2126 * Math.pow(number(pack, "AIR_FOG_RAYLEIGH_R" + suffix, r), 2.2)

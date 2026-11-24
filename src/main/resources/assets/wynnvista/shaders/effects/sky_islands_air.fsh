@@ -190,7 +190,8 @@ vec4 line(vec2 square, vec2 eye, vec3 dir, float end, vec3 daylight) {
     return vec4(VIOLET * mote.x * alpha, alpha);
 }
 
-void main() {
+/** One pixel, marched up to sceneDistance(); main() is in effect_main.glsl. */
+void effect() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
     vec3 dir = viewRay(ndc);
@@ -254,3 +255,5 @@ void main() {
     // Too near for haze; a shader pack's fog and a cloud in front still apply.
     fragColor = underClouds(whole, cloudAt < first ? vec4(0.0) : whole, 0.0, cloud, dir * first);
 }
+
+#include "effect_main.glsl"

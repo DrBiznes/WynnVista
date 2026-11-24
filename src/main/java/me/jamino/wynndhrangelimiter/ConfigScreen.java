@@ -79,6 +79,13 @@ final class ConfigScreen {
                 .setTooltip(Text.literal("Draw effects behind the clouds of the shader pack in use "
                         + "(Complementary, BSL, Photon). Off: effects are drawn over the pack's clouds"))
                 .setSaveConsumer(value -> ModConfig.config.effectPackClouds = value).build());
+        effects.addEntry(entries.startBooleanToggle(Text.literal("Steady Effect Edges"),
+                        ModConfig.config.effectPackEdges)
+                .setDefaultValue(true)
+                .setTooltip(Text.literal("With Wynn-Photon, keep effects from shimmering along the edges of "
+                        + "blocks in front of them. Other shader packs do not provide what this needs and are "
+                        + "not affected. Off: effects are cut off by each frame's depth alone"))
+                .setSaveConsumer(value -> ModConfig.config.effectPackEdges = value).build());
         effects.addEntry(entries.startBooleanToggle(Text.literal("Shader Pack Water Reflections"),
                         ModConfig.config.effectPackReflections)
                 .setDefaultValue(true)

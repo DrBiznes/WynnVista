@@ -17,7 +17,8 @@ layout(location = 1) out float fragDistance;   // terrain distance the march sto
 const float EXTINCTION = 0.05;
 const int COARSE_STEPS = 32;
 
-void main() {
+/** One pixel, marched up to sceneDistance(); main() is in effect_main.glsl. */
+void effect() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
     vec3 dir;
@@ -90,3 +91,5 @@ void main() {
     // That, the fog that has swallowed the mountain, and any cloud the smoke is behind.
     fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, rayOrigin + dir * max(firstHit, 0.0));
 }
+
+#include "effect_main.glsl"

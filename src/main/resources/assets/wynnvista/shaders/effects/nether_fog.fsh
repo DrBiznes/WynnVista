@@ -47,7 +47,8 @@ float coarseness(float t) {
     return min(log2(max(t, NEAR_DEPTH) / NEAR_DEPTH), 6.0);
 }
 
-void main() {
+/** One pixel, marched up to sceneDistance(); main() is in effect_main.glsl. */
+void effect() {
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
     vec3 dir;
@@ -166,3 +167,5 @@ void main() {
     // That, a shader pack's fog that has swallowed the canyon, and any cloud the fog is behind.
     fragColor = underClouds(vec4(colour, alpha), front, haze, cloud, rayOrigin + dir * max(firstHit, 0.0));
 }
+
+#include "effect_main.glsl"

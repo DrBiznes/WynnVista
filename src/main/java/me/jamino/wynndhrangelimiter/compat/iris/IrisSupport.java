@@ -24,6 +24,7 @@ public final class IrisSupport {
     private static boolean packOptionsBroken;
     private static boolean sunPathBroken;
     private static boolean packCloudsBroken;
+    private static boolean packColorBroken;
     private static boolean opaqueDepthBroken;
     private static boolean dhDepthBroken;
 
@@ -99,6 +100,22 @@ public final class IrisSupport {
             LOGGER.warn("The shader pack's buffers are not readable from this Iris build; its clouds will not "
                     + "hide world effects", e);
             return null;
+        }
+    }
+
+    /**
+     * GL name of the texture holding the finished contents of the active shader pack's {@code colortexN}, 0
+     * when no pack renders, it has no such buffer or its buffers are not readable.
+     */
+    public static int packColorTexture(int index) {
+        if (packColorBroken || !shaderPackInUse()) return 0;
+        try {
+            return IrisPackOptions.colorTexture(index);
+        } catch (LinkageError | ReflectiveOperationException | RuntimeException e) {
+            packColorBroken = true;
+            LOGGER.warn("The shader pack's buffers are not readable from this Iris build; world effects will "
+                    + "not be steadied along terrain edges", e);
+            return 0;
         }
     }
 

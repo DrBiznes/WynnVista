@@ -87,6 +87,11 @@ public final class WorldEffects {
     private static int lowDistance;
     private static int lowSizeX;
     private static int lowSizeY;
+    /**
+     * Internal format of the buffer in which a shader pack keeps the distance to its scene resolved over
+     * frames ({@link FogModel#resolvedDistanceBuffer}): one 16-bit channel.
+     */
+    static final int RESOLVED_DISTANCE_FORMAT = GL30C.GL_R16;
     private static final Map<String, EffectProgram> PROGRAMS = new HashMap<>();
     private static final Map<String, FogProbe> FOG_PROBES = new HashMap<>();
     private static FogProbe clearProbe;
@@ -150,12 +155,13 @@ public final class WorldEffects {
      * What every program needs to place a pixel in the world: the vanilla projection, the LOD depth and the
      * cloud layer of this frame, either of which may be null, the cloud height relative to the camera, and
      * the modelled fog with the part of the world its table covers (see {@link EffectFog#model}), or null,
-     * whether a shader pack's clouds are bound in place of a cloud layer, and whether the effects read their
-     * fog probes this frame.
+     * whether a shader pack's clouds are bound in place of a cloud layer, whether the effects read their
+     * fog probes this frame, and whether a shader pack's resolved scene distance is bound, with which effects
+     * are steadied along terrain edges.
      */
     private record Scene(Matrix4f forward, Matrix4f inverse, LodDepth.Layer lod, CloudLayer.Layer clouds,
                          float cloudHeight, float cameraY, FogModel fog, FogTable.Range fogRange,
-                         boolean packClouds, boolean probes) {}
+                         boolean packClouds, boolean probes, boolean edges) {}
 
     /**
      * One effect's readings of the world image, side by side in a small texture: the fog measurement, then the
@@ -288,13 +294,16 @@ public final class WorldEffects {
                 ? null : known.clouds(env, viewDistance);
         wantedPackClouds = packClouds == null ? null : packClouds.kind();
         int[] packTextures = packClouds == null ? null : IrisSupport.packCloudTextures(packClouds.kind());
+        int width = main.textureWidth;
+        int height = main.textureHeight;
+        int resolvedDistance = known == null || !ModConfig.effectPackEdges() ? 0
+                : resolvedDistance(known.resolvedDistanceBuffer(), width, height);
         logState(visible.size() + " drawn with " + (lod == null ? "vanilla depth only" : "vanilla + LOD depth")
+                + (resolvedDistance != 0 ? ", edges steadied by the pack" : "")
                 + (clouds != null ? ", under a cloud layer" : packTextures != null ? ", under the pack's clouds" : "")
                 + ", fog: " + (fog == null ? "measured" : fog.name())
                 + (!mirrored ? "" : ", mirrored in " + (opaqueDepth > 0 && lodWater ? "vanilla and LOD"
                 : lodWater ? "LOD" : "vanilla") + " water"));
-        int width = main.textureWidth;
-        int height = main.textureHeight;
         List<WorldEffect.Bounds> boxes = new ArrayList<>(visible.size());
         for (Visible entry : visible) boxes.add(entry.effect().bounds());
         // The probe is read for the fog when that is measured, for the fog's colour when a model does not know
@@ -302,7 +311,8 @@ public final class WorldEffects {
         boolean probes = fog == null || fog.measured() || fog.colour() == null || frame.packLighting();
         Scene scene = new Scene(viewProjection, new Matrix4f(viewProjection).invert(), lod, clouds, cloudHeight,
                 (float) frame.cameraY(), fog,
-                FogTable.range(frame.cameraX(), frame.cameraZ(), boxes), packTextures != null, probes);
+                FogTable.range(frame.cameraX(), frame.cameraZ(), boxes), packTextures != null, probes,
+                resolvedDistance != 0);
 
         GlState saved = GlState.capture();
         try {
@@ -344,6 +354,8 @@ public final class WorldEffects {
             }
             for (Visible entry : visible) bake(entry.effect(), frame);
             GL11C.glEnable(GL11C.GL_BLEND);
+            // The probes read the world image on this unit; the effects are about to be drawn into that image.
+            bind(5, GL11C.GL_TEXTURE_2D, resolvedDistance != 0 ? resolvedDistance : depth);
 
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebuffer);
             // Attached anew every frame. The game recreates its framebuffer's textures when the view is resized,
@@ -414,6 +426,9 @@ public final class WorldEffects {
 
         program.use();
         setScene(program, scene, targetWidth, targetHeight);
+        // A reflection is cut off by what the reflected ray meets, and a half-resolution march is put on the
+        // edges when it is upsampled.
+        program.set("uEdges", scene.edges() && !mirror && !half ? 1f : 0f);
         if (mirror) {
             program.set("uMirror", 1, (float) ((Math.floorMod(frame.worldTime(), RIPPLE_TICKS) + frame.tickProgress()) / 20.0));
             program.set("uMirrorCamera", (float) (frame.cameraX() - Math.floor(frame.cameraX() / RIPPLE_PERIOD) * RIPPLE_PERIOD),
@@ -494,6 +509,29 @@ public final class WorldEffects {
         if (fogColour == null) program.set("uFogTableColor", 0, 0, 0, 0);
         else program.set("uFogTableColor", fogColour[0], fogColour[1], fogColour[2], 1);
         program.set("uViewSize", (float) targetWidth, (float) targetHeight);
+        program.set("uSceneResolved", 5);
+        program.set("uEdges", 0f);
+    }
+
+    /**
+     * GL name of the active shader pack's {@code colortex<index>} when it holds the distance to the scene
+     * resolved over frames, 0 when it does not. Which pack is running is not asked: the buffer has to be there,
+     * of the view's size and in {@link #RESOLVED_DISTANCE_FORMAT}, which no buffer of stock Photon is.
+     */
+    private static int resolvedDistance(int index, int width, int height) {
+        int texture = index < 0 ? 0 : IrisSupport.packColorTexture(index);
+        if (texture <= 0) return 0;
+        int active = GL11C.glGetInteger(GL13C.GL_ACTIVE_TEXTURE);
+        GL13C.glActiveTexture(GL13C.GL_TEXTURE5);
+        int bound = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
+        boolean held = GL11C.glGetTexLevelParameteri(GL11C.GL_TEXTURE_2D, 0, GL11C.GL_TEXTURE_INTERNAL_FORMAT)
+                == RESOLVED_DISTANCE_FORMAT
+                && GL11C.glGetTexLevelParameteri(GL11C.GL_TEXTURE_2D, 0, GL11C.GL_TEXTURE_WIDTH) == width
+                && GL11C.glGetTexLevelParameteri(GL11C.GL_TEXTURE_2D, 0, GL11C.GL_TEXTURE_HEIGHT) == height;
+        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, bound);
+        GL13C.glActiveTexture(active);
+        return held ? texture : 0;
     }
 
     /**
@@ -700,6 +738,7 @@ public final class WorldEffects {
         bind(4, GL11C.GL_TEXTURE_2D, lowDistance);
         upsample.use();
         setScene(upsample, scene, width, height);
+        upsample.set("uEdges", scene.edges() ? 1f : 0f);
         upsample.set("uLowColor", 3);
         upsample.set("uLowDistance", 4);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);

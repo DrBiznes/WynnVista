@@ -12,9 +12,8 @@ uniform sampler2D uLowDistance;
 
 out vec4 fragColor;
 
-void main() {
-    vec2 uv = gl_FragCoord.xy / uViewSize;
-    float here = min(sceneDistance(uv, uv * 2.0 - 1.0), 1.0e5);
+/** The effect on this pixel as the low-resolution marches around it have it, for terrain `here` blocks away. */
+vec4 marched(vec2 uv, float here) {
     ivec2 size = textureSize(uLowColor, 0);
     vec2 p = uv * vec2(size) - 0.5;
     ivec2 base = ivec2(floor(p));
@@ -36,6 +35,23 @@ void main() {
         if (difference > 0.08 * here + 1.0) agree = false;
         blended += colour * (o.x == 0 ? 1.0 - f.x : f.x) * (o.y == 0 ? 1.0 - f.y : f.y);
     }
-    fragColor = agree ? blended : best;
+    return agree ? blended : best;
+}
+
+void main() {
+    vec2 uv = gl_FragCoord.xy / uViewSize;
+    vec2 ndc = uv * 2.0 - 1.0;
+    float near;
+    float far;
+    float nearShare;
+    // Along a terrain edge that a shader pack resolves over frames, each of the two surfaces on the pixel
+    // takes the marches that match it, mixed by their shares of the pixel (sceneEdge() in scene.glsl).
+    if (uEdges < 0.5) {
+        fragColor = marched(uv, min(sceneDistance(uv, ndc), 1.0e5));
+    } else if (sceneEdge(uv, ndc, near, far, nearShare)) {
+        fragColor = mix(marched(uv, min(far, 1.0e5)), marched(uv, min(near, 1.0e5)), nearShare);
+    } else {
+        fragColor = marched(uv, min(near, 1.0e5));
+    }
     if (fragColor.a < 0.002) discard;
 }

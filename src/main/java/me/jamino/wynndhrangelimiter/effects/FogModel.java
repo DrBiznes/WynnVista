@@ -51,6 +51,14 @@ public interface FogModel {
     default PackClouds clouds(Env env, float viewDistance) { return null; }
 
     /**
+     * For a shader pack that resolves the distance to its scene over frames, as its anti-aliasing resolves its
+     * image: the index of the colour buffer ({@code colortexN}) it may keep that in, -1 for anything else. A
+     * pack is only taken to keep it when the buffer is there in the format of
+     * {@link WorldEffects#RESOLVED_DISTANCE_FORMAT} (see {@code sceneEdge()} in {@code scene.glsl}).
+     */
+    default int resolvedDistanceBuffer() { return -1; }
+
+    /**
      * True when the model only knows part of the fog, so the fog probe's measurement of the image is still
      * applied on top (an unrecognised shader pack).
      */

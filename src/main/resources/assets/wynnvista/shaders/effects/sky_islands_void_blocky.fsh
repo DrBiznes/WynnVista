@@ -304,7 +304,12 @@ vec3 depths(vec3 dir, float t, vec3 lit) {
     return mix(colour, fallen.rgb, fallen.a);
 }
 
-void main() {
+/** One pixel, marched up to sceneDistance(); main() is in effect_main.glsl. */
+void effect() {
+    // An edge pixel is marched twice.
+    gathered = vec3(0.0);
+    through = 1.0;
+    first = -1.0;
     vec2 uv = gl_FragCoord.xy / uViewSize;
     vec2 ndc = uv * 2.0 - 1.0;
     vec3 dir = viewRay(ndc);
@@ -358,3 +363,5 @@ void main() {
     if (first < 0.0) first = hazeFront(dir, span.x, end);
     fragColor = finished(vec4(colour, alpha), first, uv, ndc, dir);
 }
+
+#include "effect_main.glsl"

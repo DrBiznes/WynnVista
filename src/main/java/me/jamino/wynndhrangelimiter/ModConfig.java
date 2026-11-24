@@ -53,6 +53,7 @@ public final class ModConfig {
         boolean effectFogModels = true;
         boolean effectPackLighting = true;
         boolean effectPackClouds = true;
+        boolean effectPackEdges = true;
         boolean effectPackReflections = true;
         /** Per-area switches by {@link EffectArea#id()}; an area that is not listed is on. */
         Map<String, Boolean> effectAreas = new LinkedHashMap<>();
@@ -85,6 +86,7 @@ public final class ModConfig {
                 if (json.has("effectFogModels")) result.effectFogModels = json.get("effectFogModels").getAsBoolean();
                 if (json.has("effectPackLighting")) result.effectPackLighting = json.get("effectPackLighting").getAsBoolean();
                 if (json.has("effectPackClouds")) result.effectPackClouds = json.get("effectPackClouds").getAsBoolean();
+                if (json.has("effectPackEdges")) result.effectPackEdges = json.get("effectPackEdges").getAsBoolean();
                 if (json.has("effectPackReflections")) result.effectPackReflections = json.get("effectPackReflections").getAsBoolean();
                 readSwitches(json, "effectAreas", result.effectAreas);
                 readSwitches(json, "effects", result.effects);
@@ -178,6 +180,8 @@ public final class ModConfig {
     public static boolean effectPackLighting() { return config.effectPackLighting; }
     /** Whether a supported shader pack's own clouds hide the effects behind them. */
     public static boolean effectPackClouds() { return config.effectPackClouds; }
+    /** Whether effects are steadied along terrain edges with what a shader pack that supports it provides. */
+    public static boolean effectPackEdges() { return config.effectPackEdges; }
     /** Whether effects are mirrored in the water of a shader pack that draws reflections on it. */
     public static boolean effectPackReflections() { return config.effectPackReflections; }
 
